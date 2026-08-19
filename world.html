@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cosmos 3D: Advanced Universe</title>
+    <style>
+        body { margin: 0; padding: 0; overflow: hidden; background-color: #000; font-family: 'Segoe UI', sans-serif; color: white; }
+        #ui-overlay { position: absolute; top: 20px; left: 20px; pointer-events: none; z-index: 10; width: calc(100% - 40px); display: flex; justify-content: space-between; }
+        .stats-card { background: rgba(0, 0, 0, 0.6); backdrop-filter: blur(15px); padding: 15px; border-radius: 12px; border: 1px solid rgba(79, 195, 247, 0.3); pointer-events: auto; min-width: 180px; }
+        h1 { margin: 0; font-size: 1.1rem; letter-spacing: 2px; text-transform: uppercase; color: #4fc3f7; }
+        p { margin: 5px 0 0 0; font-size: 0.8rem; opacity: 0.9; font-family: monospace; }
+        #controls { position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); display: flex; gap: 10px; z-index: 10; flex-wrap: wrap; justify-content: center; width: 90%; }
+        button { background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.2); color: white; padding: 10px 18px; border-radius: 8px; cursor: pointer; backdrop-filter: blur(10px); transition: 0.3s; font-size: 0.7rem; text-transform: uppercase; font-weight: bold; }
+        button:hover { background: #4fc3f7; color: #000; border-color: #4fc3f7; }
+        button.active { background: #4fc3f7; color: #000; }
+        #loading { position: fixed; inset: 0; background: #000; display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 100; }
+        .spinner { width: 50px; height: 50px; border: 3px solid #1a1a1a; border-top: 3px solid #4fc3f7; border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 20px; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        #hud-hints { position: absolute; top: 50%; right: 20px; transform: translateY(-50%); text-align: right; pointer-events: none; font-size: 0.7rem; opacity: 0.6; }
+    </style>
+</head>
+<body>
+
+    <div id="loading">
+        <div class="spinner"></div>
+        <div id="loading-text">Calibrating Navigation Systems...</div>
+    </div>
+
+    <div id="ui-overlay">
+        <div class="stats-card">
+            <h1>USS GEMINI</h1>
+            <p id="target-info">Target: Deep Space</p>
+            <p id="coords">X: 0.00 Y: 0.00 Z: 0.00</p>
+        </div>
+        <div class="stats-card" style="text-align: right;">
+            <h1 id="speed-indicator">THRUST: 0%</h1>
+            <p id="dist-target">Distance: --</p>
+        </div>
+    </div>
+
+    <div id="hud-hints">
+        WASD: Move Ship<br>
+        Q/E: Roll<br>
+        SPACE: Brake<br>
+        SHIFT: Boost
+    </div>
+
+    <div id="controls">
+        <button onclick="focusBody('Earth')">Earth</button>
+        <button onclick="focusBody('Mars')">Mars</button>
+        <button onclick="focusBody('Saturn')">Saturn</button>
+        <button onclick="focusBody('ISS')">ISS Dock</button>
+        <button id="view-mode" onclick="toggleView()">Cockpit View</button>
+    </div>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.module.js",
+                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.128.0/examples/jsm/"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+        import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+        import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+
+        // --- Core Variables ---
+        let scene, camera, renderer, controls, composer, clock;
+        let ship, shipTarget = new THREE.Vector3(0, 5, 25);
+        let celestialBodies = {};
+        let keys = {};
+        let viewMode = 'orbit'; // 'orbit' or 'cockpit'
+        let shipVelocity = new THREE.Vector3();
+        const textureLoader = new THREE.TextureLoader();
+
+        // --- Constants ---
+        const SCALE = 1;
+        const TEXTURES = {
+            earth: 'https://raw.githubusercontent.com/mrdoob/three.js/master/examples/textures/planets/earth_atmos_2048.jpg',
+            earthNight: 'https://raw.githubusercontent.com/mrdoob/three.js/master/examples/textures/planets/earth_lights_2048.png',
+            mars: 'https://raw.githubusercontent.com/mrdoob/three.js/master/examples/textures/planets/mars_1k_color.jpg',
+            saturn: 'https://raw.githubusercontent.com/mrdoob/three.js/master/examples/textures/planets/sun.jpg', // Using as base for Saturn
+            rings: 'https://raw.githubusercontent.com/mrdoob/three.js/master/examples/textures/planets/earth_clouds_1024.png' // Proxy for rings
+        };
+
+        function init() {
+            scene = new THREE.Scene();
+            clock = new THREE.Clock();
+            
+            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 50000);
+            camera.position.set(0, 5, 30);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true, logarithmicDepthBuffer: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.toneMapping = THREE.ReinhardToneMapping;
+            document.body.appendChild(renderer.domElement);
+
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+
+            // Post-Processing
+            const renderPass = new RenderPass(scene, camera);
+            const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.0, 0.4, 0.85);
+            composer = new EffectComposer(renderer);
+            composer.addPass(renderPass);
+            composer.addPass(bloomPass);
+
+            setupLights();
+            createStars();
+            createPlanets();
+            createShip();
+            createISS();
+
+            window.addEventListener('keydown', (e) => keys[e.code] = true);
+            window.addEventListener('keyup', (e) => keys[e.code] = false);
+            window.addEventListener('resize', onWindowResize);
+
+            document.getElementById('loading').style.display = 'none';
+            animate();
+        }
+
+        function setupLights() {
+            const ambient = new THREE.AmbientLight(0x222233, 0.2);
+            scene.add(ambient);
+
+            const sun = new THREE.DirectionalLight(0xffffff, 1.5);
+            sun.position.set(100, 50, 100);
+            scene.add(sun);
+        }
+
+        function createStars() {
+            const geo = new THREE.BufferGeometry();
+            const count = 20000;
+            const pos = new Float32Array(count * 3);
+            for (let i = 0; i < count * 3; i++) pos[i] = (Math.random() - 0.5) * 10000;
+            geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+            const mat = new THREE.PointsMaterial({ color: 0xffffff, size: 1.5, sizeAttenuation: true });
+            scene.add(new THREE.Points(geo, mat));
+        }
+
+        function createPlanets() {
+            // Earth
+            const earthGroup = new THREE.Group();
+            const earthMain = new THREE.Mesh(
+                new THREE.SphereGeometry(10, 64, 64),
+                new THREE.MeshStandardMaterial({ 
+                    map: textureLoader.load(TEXTURES.earth),
+                    emissiveMap: textureLoader.load(TEXTURES.earthNight),
+                    emissive: new THREE.Color(0xffffaa),
+                    emissiveIntensity: 0.5
+                })
+            );
+            earthGroup.add(earthMain);
+            earthGroup.position.set(0, 0, 0);
+            scene.add(earthGroup);
+            celestialBodies.Earth = earthGroup;
+
+            // Mars
+            const marsGroup = new THREE.Group();
+            const marsMain = new THREE.Mesh(
+                new THREE.SphereGeometry(6, 64, 64),
+                new THREE.MeshStandardMaterial({ map: textureLoader.load(TEXTURES.mars), color: 0xffaa88 })
+            );
+            marsGroup.add(marsMain);
+            marsGroup.position.set(300, 0, -200);
+            scene.add(marsGroup);
+            celestialBodies.Mars = marsGroup;
+
+            // Saturn
+            const saturnGroup = new THREE.Group();
+            const saturnMain = new THREE.Mesh(
+                new THREE.SphereGeometry(15, 64, 64),
+                new THREE.MeshStandardMaterial({ color: 0xeeddaa, roughness: 0.8 })
+            );
+            saturnGroup.add(saturnMain);
+
+            // Saturn Rings
+            const ringGeo = new THREE.RingGeometry(18, 30, 64);
+            const ringMat = new THREE.MeshBasicMaterial({ 
+                color: 0x998877, 
+                side: THREE.DoubleSide, 
+                transparent: true, 
+                opacity: 0.7 
+            });
+            const ring = new THREE.Mesh(ringGeo, ringMat);
+            ring.rotation.x = Math.PI / 2.2;
+            saturnGroup.add(ring);
+            
+            saturnGroup.position.set(-800, 50, -600);
+            scene.add(saturnGroup);
+            celestialBodies.Saturn = saturnGroup;
+        }
+
+        function createISS() {
+            const issGroup = new THREE.Group();
+            // Modular ISS representation
+            const core = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 2), new THREE.MeshStandardMaterial({color: 0xcccccc}));
+            core.rotation.z = Math.PI/2;
+            issGroup.add(core);
+
+            const panelGeo = new THREE.BoxGeometry(3, 0.05, 0.8);
+            const panelMat = new THREE.MeshStandardMaterial({color: 0x4455aa, metalness: 0.8});
+            for(let i=0; i<4; i++) {
+                const p = new THREE.Mesh(panelGeo, panelMat);
+                p.position.set(i < 2 ? -1 : 1, i % 2 === 0 ? 0.5 : -0.5, 0);
+                issGroup.add(p);
+            }
+            
+            issGroup.position.set(0, 15, 0); // Orbiting Earth
+            scene.add(issGroup);
+            celestialBodies.ISS = issGroup;
+        }
+
+        function createShip() {
+            const shipGroup = new THREE.Group();
+            // Futuristic cockpit shape
+            const body = new THREE.Mesh(
+                new THREE.ConeGeometry(0.5, 2, 8),
+                new THREE.MeshStandardMaterial({ color: 0x222222, metalness: 0.9, roughness: 0.2 })
+            );
+            body.rotation.x = -Math.PI / 2;
+            shipGroup.add(body);
+
+            // Thrusters
+            const thruster = new THREE.PointLight(0x4fc3f7, 0, 5);
+            thruster.position.set(0, 0, 1);
+            shipGroup.add(thruster);
+            shipGroup.userData.thruster = thruster;
+
+            ship = shipGroup;
+            scene.add(ship);
+            ship.position.set(0, 5, 25);
+        }
+
+        function handleShipMovement(delta) {
+            const speed = keys['ShiftLeft'] ? 50 : 10;
+            const rotateSpeed = 1.5;
+
+            if (keys['KeyW']) shipVelocity.z -= speed * delta;
+            if (keys['KeyS']) shipVelocity.z += speed * delta;
+            if (keys['KeyA']) ship.rotation.y += rotateSpeed * delta;
+            if (keys['KeyD']) ship.rotation.y -= rotateSpeed * delta;
+            if (keys['KeyQ']) ship.rotation.z += rotateSpeed * delta;
+            if (keys['KeyE']) ship.rotation.z -= rotateSpeed * delta;
+            if (keys['Space']) shipVelocity.multiplyScalar(0.95);
+
+            // Apply thrust
+            const direction = new THREE.Vector3(0, 0, 1).applyQuaternion(ship.quaternion);
+            ship.position.addScaledVector(direction, shipVelocity.z * delta);
+            
+            // Friction
+            shipVelocity.z *= 0.99;
+
+            // UI Speed
+            const currentSpeed = Math.abs(shipVelocity.z * 100).toFixed(0);
+            document.getElementById('speed-indicator').innerText = `THRUST: ${currentSpeed}%`;
+            document.getElementById('coords').innerText = `X:${ship.position.x.toFixed(1)} Y:${ship.position.y.toFixed(1)} Z:${ship.position.z.toFixed(1)}`;
+            
+            // Dynamic FOV for speed feel
+            camera.fov = 60 + (Math.abs(shipVelocity.z) * 0.5);
+            camera.updateProjectionMatrix();
+
+            // Thruster Visual
+            ship.userData.thruster.intensity = Math.abs(shipVelocity.z) > 0.1 ? 2 : 0;
+        }
+
+        window.focusBody = (name) => {
+            const body = celestialBodies[name];
+            const targetPos = body.position.clone().add(new THREE.Vector3(0, 5, 30));
+            
+            // Smoothly move ship to the target planet area
+            const duration = 2000;
+            const startTime = performance.now();
+            const startPos = ship.position.clone();
+
+            function ease() {
+                const now = performance.now();
+                const t = Math.min(1, (now - startTime) / duration);
+                ship.position.lerpVectors(startPos, targetPos, t);
+                if (t < 1) requestAnimationFrame(ease);
+            }
+            ease();
+            document.getElementById('target-info').innerText = `Target: ${name}`;
+        };
+
+        window.toggleView = () => {
+            viewMode = viewMode === 'orbit' ? 'cockpit' : 'orbit';
+            const btn = document.getElementById('view-mode');
+            btn.innerText = viewMode === 'orbit' ? 'Cockpit View' : 'Orbit View';
+            controls.enabled = (viewMode === 'orbit');
+        };
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            composer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const delta = clock.getDelta();
+
+            handleShipMovement(delta);
+
+            // Celestial Rotations
+            Object.values(celestialBodies).forEach(body => {
+                body.rotation.y += delta * 0.05;
+            });
+
+            // Camera Modes
+            if (viewMode === 'cockpit') {
+                const offset = new THREE.Vector3(0, 0.4, 0.5).applyQuaternion(ship.quaternion);
+                camera.position.copy(ship.position).add(offset);
+                const lookAtPos = new THREE.Vector3(0, 0, -10).applyQuaternion(ship.quaternion).add(ship.position);
+                camera.lookAt(lookAtPos);
+            } else {
+                controls.target.copy(ship.position);
+                controls.update();
+            }
+
+            composer.render();
+        }
+
+        init();
+    </script>
+</body>
+</html>
+
