@@ -1,4 +1,5 @@
 import { Buffer } from "buffer";
+import { publicAppUrl } from "./env";
 import bs58 from "bs58";
 import * as Linking from "expo-linking";
 import * as SecureStore from "expo-secure-store";
@@ -17,7 +18,7 @@ export const WALLET_PUBKEY_KEY = "orbitx.wallet.pubkey";
 
 const PHANTOM_UL_CONNECT = "https://phantom.app/ul/v1/connect";
 const PHANTOM_UL_SIGN_MESSAGE = "https://phantom.app/ul/v1/signMessage";
-const APP_URL = "https://orbitx.ai";
+const APP_URL = publicAppUrl;
 const CLUSTER = "mainnet-beta";
 
 interface PhantomPublicKey {

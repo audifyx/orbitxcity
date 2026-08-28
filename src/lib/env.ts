@@ -33,3 +33,15 @@ export const supabaseProjectRef =
   new URL(supabaseUrl).hostname.split(".")[0] ?? "ffjipnkhcebjvttliptb";
 
 export const supabaseProjectName = "Soltools";
+
+export const solanaRpcUrl = requireEnv(
+  process.env.EXPO_PUBLIC_SOLANA_RPC_URL,
+  "EXPO_PUBLIC_SOLANA_RPC_URL",
+  "https://api.mainnet-beta.solana.com",
+);
+
+export const publicAppUrl = requireEnv(
+  process.env.EXPO_PUBLIC_APP_URL,
+  "EXPO_PUBLIC_APP_URL",
+  "https://orbitxcity.vercel.app",
+);

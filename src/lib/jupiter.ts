@@ -1,10 +1,10 @@
+import { solanaRpcUrl } from "./env";
 import { invokeFunction } from "./supabase";
 import { signAndSendSwapTransaction } from "./jupiterSign";
 
 export { signAndSendSwapTransaction };
 
 const JUPITER_LITE_SWAP = "https://lite-api.jup.ag/swap/v1/swap";
-const DEFAULT_RPC = "https://api.mainnet-beta.solana.com";
 
 export type JupiterQuote = {
   inputMint: string;
@@ -84,7 +84,7 @@ export async function fetchSwapTransaction(params: {
 export async function confirmSignature(
   signature: string,
 ): Promise<"confirmed" | "failed" | "pending"> {
-  const rpc = process.env.EXPO_PUBLIC_SOLANA_RPC_URL ?? DEFAULT_RPC;
+  const rpc = solanaRpcUrl;
   const response = await fetch(rpc, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

@@ -23,7 +23,8 @@
     "web": {
       "favicon": "./assets/favicon.png",
       "backgroundColor": "#000000",
-      "bundler": "metro"
+      "bundler": "metro",
+      "output": "single"
     },
     "plugins": [
       "expo-font",

@@ -46,6 +46,7 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
+    "build:web": "EXPO_NO_METRO_LAZY=1 expo export -p web",
     "typecheck": "tsc --noEmit"
   },
   "private": true

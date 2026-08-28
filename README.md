@@ -25,6 +25,25 @@ Use Expo Go on a phone, or:
 
 Copy `.env.example` to `.env` if you want to override the public Supabase URL/anon key. Never put a service-role key in the client.
 
+## Vercel (web)
+
+The GitHub project is connected to Vercel at `https://orbitxcity.vercel.app`.
+
+Set these **public** variables on the Vercel project (Production + Preview):
+
+- `EXPO_PUBLIC_SUPABASE_URL`
+- `EXPO_PUBLIC_SUPABASE_ANON_KEY`
+- `EXPO_PUBLIC_SOLANA_RPC_URL` (optional)
+- `EXPO_PUBLIC_APP_URL` (`https://orbitxcity.vercel.app`)
+
+LLM keys (`NVIDIA_API_KEY`, `GROQ_API_KEY`, `GEMINI_API_KEY`, `OPENROUTER_API_KEY`) and the Supabase service role belong on the **existing Soltools Edge Functions**, not in the Vercel client bundle.
+
+```bash
+npm run build:web
+```
+
+Vercel runs `expo export -p web` and serves `dist` as a single-page app.
+
 ## Backend
 
 The app reuses existing OrbitX tables, RLS, `wallet-auth`, Jupiter, OG Scan, and related functions.
