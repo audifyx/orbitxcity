@@ -1,0 +1,25 @@
+export const colors = {
+  void: "#000000",
+  abyss: "#05060A",
+  ink: "#08090E",
+  frost: "#F4F7FF",
+  mist: "rgba(226, 236, 255, 0.62)",
+  mute: "rgba(176, 198, 232, 0.42)",
+  ice: "#C9E3FF",
+  signal: "#7EB6FF",
+  plasma: "#8B7CFF",
+  core: "#FFFFFF",
+  grid: "rgba(132, 176, 255, 0.075)",
+  ring: "rgba(176, 210, 255, 0.55)",
+  ringDim: "rgba(140, 168, 255, 0.28)",
+  glowBlue: "rgba(90, 150, 255, 0.22)",
+  glowViolet: "rgba(124, 96, 255, 0.16)",
+  hairline: "rgba(150, 180, 255, 0.14)",
+  surface: "#0B0D14",
+  composer: "#10131C",
+} as const;
+
+export const timing = {
+  splashMs: 1850,
+  exitMs: 420,
+} as const;
