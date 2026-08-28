@@ -2,6 +2,7 @@
   "expo": {
     "name": "OrbitX",
     "slug": "orbitx",
+    "scheme": "orbitx",
     "version": "0.1.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -33,7 +34,9 @@
           "image": "./assets/splash-icon.png",
           "imageWidth": 1
         }
-      ]
+      ],
+      "expo-router",
+      "expo-secure-store"
     ]
   }
 }

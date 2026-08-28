@@ -17,6 +17,12 @@ export const colors = {
   hairline: "rgba(150, 180, 255, 0.14)",
   surface: "#0B0D14",
   composer: "#10131C",
+  danger: "#E87979",
+  success: "#7EE0C4",
+  warning: "#E8C17A",
+  glass: "rgba(11, 13, 20, 0.78)",
+  line: "rgba(150, 180, 255, 0.14)",
+  dim: "rgba(176, 198, 232, 0.42)",
 } as const;
 
 export const timing = {
