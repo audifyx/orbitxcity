@@ -93,8 +93,20 @@ async function getDappKeyPair(): Promise<nacl.BoxKeyPair> {
 }
 
 function parseRedirectParams(url: string): URLSearchParams {
-  const parsed = new URL(url);
-  return parsed.searchParams;
+  try {
+    const parsed = new URL(url);
+    if (parsed.searchParams.get("data") || parsed.searchParams.get("errorCode")) {
+      return parsed.searchParams;
+    }
+    const hash = parsed.hash.startsWith("#") ? parsed.hash.slice(1) : parsed.hash;
+    if (hash.includes("=")) {
+      return new URLSearchParams(hash);
+    }
+  } catch {
+    // Expo Go sometimes hands back a non-standard deep link.
+  }
+  const query = url.split("?")[1] ?? url.split("#")[1] ?? "";
+  return new URLSearchParams(query);
 }
 
 function assertNoPhantomError(params: URLSearchParams): void {
@@ -170,7 +182,7 @@ export async function startNativeConnect(): Promise<void> {
     dapp_encryption_public_key: bs58.encode(dappKeyPair.publicKey),
     cluster: CLUSTER,
     app_url: APP_URL,
-    redirect_link: Linking.createURL("onconnect"),
+    redirect_link: Linking.createURL("/onconnect"),
   });
 
   await Linking.openURL(`${PHANTOM_UL_CONNECT}?${params.toString()}`);
@@ -246,7 +258,7 @@ export async function startNativeSign(message: string): Promise<void> {
   const params = new URLSearchParams({
     dapp_encryption_public_key: bs58.encode(dappKeyPair.publicKey),
     nonce: bs58.encode(nonce),
-    redirect_link: Linking.createURL("onsign"),
+    redirect_link: Linking.createURL("/onsign"),
     payload: bs58.encode(encryptedPayload),
   });
 

@@ -56,3 +56,20 @@ export async function walletAuth(
 
   return data;
 }
+
+export async function pingWalletAuth(): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const data = await walletAuth("nonce", {
+      pubkey: "11111111111111111111111111111111",
+    });
+    if (typeof data.nonce !== "string" || typeof data.message !== "string") {
+      return { ok: false, error: "wallet-auth returned an unexpected payload" };
+    }
+    return { ok: true };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : "wallet-auth unreachable",
+    };
+  }
+}

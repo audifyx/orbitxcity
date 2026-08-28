@@ -28,3 +28,8 @@ export const supabaseAnonKey = requireEnv(
   "EXPO_PUBLIC_SUPABASE_ANON_KEY",
   FALLBACK_SUPABASE_ANON_KEY,
 );
+
+export const supabaseProjectRef =
+  new URL(supabaseUrl).hostname.split(".")[0] ?? "ffjipnkhcebjvttliptb";
+
+export const supabaseProjectName = "Soltools";

@@ -12,9 +12,6 @@ import type { Session } from "@supabase/supabase-js";
 import * as SecureStore from "expo-secure-store";
 import {
   clearPhantomSecureStore,
-  connectInjected,
-  isPhantomInjected,
-  signInjected,
   startNativeConnect,
   startNativeSign,
   handleNativeConnectRedirect,
@@ -22,6 +19,15 @@ import {
   WALLET_PUBKEY_KEY,
 } from "./phantom";
 import { supabase, walletAuth } from "./supabase";
+import {
+  connectBrowserWallet,
+  isSolanaPubkey,
+  isSolanaSignature,
+  isWalletInjected,
+  signBrowserWallet,
+  walletNeedsManualSiws,
+  type WalletId,
+} from "./wallets";
 
 interface WalletAuthNonceResponse {
   nonce: string;
@@ -41,7 +47,9 @@ interface AuthContextValue {
   loading: boolean;
   error: string | null;
   connecting: boolean;
-  connect: () => Promise<void>;
+  connect: (walletId?: WalletId) => Promise<void>;
+  requestSignInMessage: (pubkey: string) => Promise<string>;
+  signInWithSignature: (pubkey: string, signature: string) => Promise<void>;
   completeNativeConnect: (url: string) => Promise<void>;
   completeNativeSign: (url: string) => Promise<void>;
   disconnect: () => Promise<void>;
@@ -182,44 +190,97 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [],
   );
 
-  const connect = useCallback(async () => {
-    setConnecting(true);
-    setError(null);
+  const requestSignInMessage = useCallback(async (pubkey: string) => {
+    const trimmed = pubkey.trim();
+    if (!isSolanaPubkey(trimmed)) {
+      throw new Error("Enter a valid Solana wallet address.");
+    }
 
-    try {
-      if (Platform.OS === "web") {
-        if (!isPhantomInjected()) {
-          throw new Error(
-            "Phantom not found. Install Phantom and try again.",
-          );
+    const nonceData = parseNonceResponse(
+      await walletAuth("nonce", { pubkey: trimmed }),
+    );
+    setPendingPubkey(trimmed);
+    await SecureStore.setItemAsync(WALLET_PUBKEY_KEY, trimmed).catch(
+      () => undefined,
+    );
+    return nonceData.message;
+  }, []);
+
+  const signInWithSignature = useCallback(
+    async (pubkey: string, signature: string) => {
+      setConnecting(true);
+      setError(null);
+      try {
+        const trimmedPubkey = pubkey.trim();
+        const trimmedSignature = signature.trim();
+        if (!isSolanaPubkey(trimmedPubkey)) {
+          throw new Error("Enter a valid Solana wallet address.");
         }
-
-        const { pubkey } = await connectInjected();
-        setPendingPubkey(pubkey);
-        setWallet(pubkey);
-
-        const nonceData = parseNonceResponse(
-          await walletAuth("nonce", { pubkey }),
-        );
-        const signature = await signInjected(nonceData.message);
-        await finishVerification(pubkey, signature);
-        return;
-      }
-
-      await startNativeConnect();
-    } catch (connectError) {
-      const message =
-        connectError instanceof Error
-          ? connectError.message
-          : "Wallet connection failed.";
-      setError(message);
-      throw connectError;
-    } finally {
-      if (Platform.OS === "web") {
+        if (!isSolanaSignature(trimmedSignature)) {
+          throw new Error("Paste the base58 signature from your wallet.");
+        }
+        await finishVerification(trimmedPubkey, trimmedSignature);
+      } catch (verifyError) {
+        const message =
+          verifyError instanceof Error
+            ? verifyError.message
+            : "Wallet sign-in failed.";
+        setError(message);
+        throw verifyError;
+      } finally {
         setConnecting(false);
       }
-    }
-  }, [finishVerification]);
+    },
+    [finishVerification],
+  );
+
+  const connect = useCallback(
+    async (walletId: WalletId = "phantom") => {
+      setConnecting(true);
+      setError(null);
+
+      try {
+        if (walletNeedsManualSiws(walletId)) {
+          return;
+        }
+
+        if (Platform.OS === "web") {
+          if (!isWalletInjected(walletId)) {
+            throw new Error(
+              walletId === "jupiter"
+                ? "Jupiter Wallet is not installed. Install the Jupiter extension and try again."
+                : "Phantom is not installed. Install Phantom and try again.",
+            );
+          }
+
+          const { pubkey } = await connectBrowserWallet(walletId);
+          setPendingPubkey(pubkey);
+          setWallet(pubkey);
+
+          const nonceData = parseNonceResponse(
+            await walletAuth("nonce", { pubkey }),
+          );
+          const signature = await signBrowserWallet(walletId, nonceData.message);
+          await finishVerification(pubkey, signature);
+          return;
+        }
+
+        await startNativeConnect();
+      } catch (connectError) {
+        const message =
+          connectError instanceof Error
+            ? connectError.message
+            : "Wallet connection failed.";
+        setError(message);
+        throw connectError;
+      } finally {
+        if (Platform.OS === "web" || walletNeedsManualSiws(walletId)) {
+          setConnecting(false);
+        }
+      }
+    },
+    [finishVerification],
+  );
 
   const completeNativeConnect = useCallback(async (url: string) => {
     setConnecting(true);
@@ -299,6 +360,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       error,
       connecting,
       connect,
+      requestSignInMessage,
+      signInWithSignature,
       completeNativeConnect,
       completeNativeSign,
       disconnect,
@@ -310,6 +373,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       error,
       connecting,
       connect,
+      requestSignInMessage,
+      signInWithSignature,
       completeNativeConnect,
       completeNativeSign,
       disconnect,
