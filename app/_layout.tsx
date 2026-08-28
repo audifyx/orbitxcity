@@ -1,6 +1,6 @@
 import { Buffer } from "buffer";
-import { useEffect, useState, type ReactNode } from "react";
-import { Platform, StyleSheet, View } from "react-native";
+import { Component, useEffect, useState, type ErrorInfo, type ReactNode } from "react";
+import { Platform, StyleSheet, Text, View } from "react-native";
 import { Stack, usePathname, useRouter, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import * as NativeSplash from "expo-splash-screen";
@@ -31,6 +31,35 @@ if (Platform.OS === "web" && typeof document !== "undefined") {
   document.body.style.backgroundColor = colors.void;
 }
 
+const FONT_BOOT_TIMEOUT_MS = 2500;
+
+class BootErrorBoundary extends Component<
+  { children: ReactNode },
+  { error: Error | null }
+> {
+  state: { error: Error | null } = { error: null };
+
+  static getDerivedStateFromError(error: Error): { error: Error } {
+    return { error };
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo): void {
+    console.error("OrbitX boot error", error, info.componentStack);
+  }
+
+  render(): ReactNode {
+    if (this.state.error) {
+      return (
+        <View style={styles.crash}>
+          <Text style={styles.crashTitle}>OrbitX failed to start</Text>
+          <Text style={styles.crashBody}>{this.state.error.message}</Text>
+        </View>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 function AuthGate({ children }: { children: ReactNode }) {
   const { session, loading } = useAuth();
   const segments = useSegments();
@@ -59,7 +88,7 @@ function AuthGate({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
-export default function RootLayout() {
+function RootLayoutInner() {
   const [fontsLoaded] = useFonts({
     Inter_400Regular,
     Inter_500Medium,
@@ -70,13 +99,39 @@ export default function RootLayout() {
   const [showSplash, setShowSplash] = useState(true);
 
   useEffect(() => {
-    if (!fontsLoaded) {
+    let cancelled = false;
+
+    const reveal = () => {
+      if (cancelled) {
+        return;
+      }
+      NativeSplash.hideAsync()
+        .catch(() => undefined)
+        .finally(() => {
+          if (!cancelled) {
+            setBootReady(true);
+          }
+        });
+    };
+
+    const timeout = setTimeout(reveal, FONT_BOOT_TIMEOUT_MS);
+    if (fontsLoaded) {
+      reveal();
+    }
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timeout);
+    };
+  }, [fontsLoaded]);
+
+  useEffect(() => {
+    if (!bootReady || !showSplash) {
       return;
     }
-    NativeSplash.hideAsync()
-      .catch(() => undefined)
-      .finally(() => setBootReady(true));
-  }, [fontsLoaded]);
+    const timeout = setTimeout(() => setShowSplash(false), 4000);
+    return () => clearTimeout(timeout);
+  }, [bootReady, showSplash]);
 
   if (!bootReady) {
     return <View style={styles.boot} />;
@@ -112,6 +167,14 @@ export default function RootLayout() {
   );
 }
 
+export default function RootLayout() {
+  return (
+    <BootErrorBoundary>
+      <RootLayoutInner />
+    </BootErrorBoundary>
+  );
+}
+
 const styles = StyleSheet.create({
   boot: {
     flex: 1,
@@ -120,5 +183,21 @@ const styles = StyleSheet.create({
   flex: {
     flex: 1,
     backgroundColor: colors.void,
+  },
+  crash: {
+    flex: 1,
+    backgroundColor: colors.void,
+    justifyContent: "center",
+    padding: 24,
+    gap: 12,
+  },
+  crashTitle: {
+    color: colors.frost,
+    fontSize: 18,
+  },
+  crashBody: {
+    color: colors.mute,
+    fontSize: 14,
+    lineHeight: 20,
   },
 });
