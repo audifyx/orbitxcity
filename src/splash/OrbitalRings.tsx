@@ -1,15 +1,10 @@
 import { StyleSheet, View } from "react-native";
-import Svg, { Circle, Ellipse } from "react-native-svg";
 import Animated, {
   Extrapolation,
   interpolate,
   type SharedValue,
-  useAnimatedProps,
   useAnimatedStyle,
 } from "react-native-reanimated";
-
-const AnimatedEllipse = Animated.createAnimatedComponent(Ellipse);
-const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
 type OrbitalRingsProps = {
   progress: SharedValue<number>;
@@ -17,59 +12,52 @@ type OrbitalRingsProps = {
 };
 
 type RingSpec = {
-  rx: number;
-  ry: number;
-  base: number;
-  sweep: number;
-  length: number;
-  width: number;
-  opacity: number;
+  radius: number;
+  tilt: number;
+  spin: number;
+  thickness: number;
   color: string;
+  opacity: number;
 };
 
 const RINGS: RingSpec[] = [
   {
-    rx: 148,
-    ry: 46,
-    base: -26,
-    sweep: 210,
-    length: 620,
-    width: 1.15,
+    radius: 148,
+    tilt: -26,
+    spin: 1,
+    thickness: 1.15,
+    color: "rgba(201, 224, 255, 0.7)",
     opacity: 0.72,
-    color: "#C9E0FF",
   },
   {
-    rx: 132,
-    ry: 40,
-    base: 34,
-    sweep: -165,
-    length: 560,
-    width: 1,
+    radius: 132,
+    tilt: 34,
+    spin: -0.78,
+    thickness: 1,
+    color: "rgba(155, 182, 255, 0.55)",
     opacity: 0.5,
-    color: "#9BB6FF",
   },
   {
-    rx: 118,
-    ry: 34,
-    base: 72,
-    sweep: 130,
-    length: 500,
-    width: 0.9,
+    radius: 118,
+    tilt: 72,
+    spin: 0.62,
+    thickness: 0.9,
+    color: "rgba(169, 150, 255, 0.48)",
     opacity: 0.38,
-    color: "#A996FF",
   },
 ];
 
 function OrbitRing({
   ring,
   progress,
-  origin,
+  size,
 }: {
   ring: RingSpec;
   progress: SharedValue<number>;
-  origin: number;
+  size: number;
 }) {
-  const animatedProps = useAnimatedProps(() => {
+  const offset = (size - ring.radius * 2) / 2;
+  const style = useAnimatedStyle(() => {
     const drawn = interpolate(
       progress.value,
       [0.18, 0.42],
@@ -82,27 +70,33 @@ function OrbitRing({
       [0, 38, 168, 198],
       Extrapolation.CLAMP
     );
+
     return {
-      strokeDashoffset: ring.length * (1 - drawn),
-      rotation: ring.base + (spin * ring.sweep) / 210,
+      opacity: drawn * ring.opacity,
+      transform: [
+        { rotateZ: `${spin * ring.spin}deg` },
+        { scaleY: 0.33 },
+        { rotateZ: `${ring.tilt}deg` },
+        { scale: 0.92 + drawn * 0.08 },
+      ],
     };
   });
 
   return (
-    <AnimatedEllipse
-      cx={origin}
-      cy={origin}
-      rx={ring.rx}
-      ry={ring.ry}
-      originX={origin}
-      originY={origin}
-      fill="none"
-      stroke={ring.color}
-      strokeWidth={ring.width}
-      strokeOpacity={ring.opacity}
-      strokeDasharray={`${ring.length} ${ring.length}`}
-      strokeLinecap="round"
-      animatedProps={animatedProps}
+    <Animated.View
+      style={[
+        styles.ring,
+        {
+          width: ring.radius * 2,
+          height: ring.radius * 2,
+          borderRadius: ring.radius,
+          borderWidth: ring.thickness,
+          borderColor: ring.color,
+          top: offset,
+          left: offset,
+        },
+        style,
+      ]}
     />
   );
 }
@@ -150,7 +144,6 @@ function OrbitNode({
 }
 
 export function OrbitalRings({ progress, size = 320 }: OrbitalRingsProps) {
-  const origin = size / 2;
   const frameStyle = useAnimatedStyle(() => ({
     opacity: interpolate(
       progress.value,
@@ -160,7 +153,7 @@ export function OrbitalRings({ progress, size = 320 }: OrbitalRingsProps) {
     ),
   }));
 
-  const coreRingProps = useAnimatedProps(() => {
+  const coreStyle = useAnimatedStyle(() => {
     const drawn = interpolate(
       progress.value,
       [0.24, 0.46],
@@ -168,37 +161,34 @@ export function OrbitalRings({ progress, size = 320 }: OrbitalRingsProps) {
       Extrapolation.CLAMP
     );
     return {
-      strokeDashoffset: 420 * (1 - drawn),
+      opacity: drawn * 0.35,
+      transform: [{ scale: 0.9 + drawn * 0.1 }],
     };
   });
 
   return (
     <Animated.View
-      pointerEvents="none"
       style={[styles.frame, { width: size, height: size }, frameStyle]}
     >
-      <Svg width={size} height={size}>
-        {RINGS.map((ring) => (
-          <OrbitRing
-            key={`${ring.base}-${ring.rx}`}
-            ring={ring}
-            progress={progress}
-            origin={origin}
-          />
-        ))}
-        <AnimatedCircle
-          cx={origin}
-          cy={origin}
-          r={66}
-          fill="none"
-          stroke="#B9D4FF"
-          strokeWidth={0.7}
-          strokeOpacity={0.28}
-          strokeDasharray="420 420"
-          animatedProps={coreRingProps}
+      {RINGS.map((ring) => (
+        <OrbitRing
+          key={`${ring.tilt}-${ring.radius}`}
+          ring={ring}
+          progress={progress}
+          size={size}
         />
-      </Svg>
-      <View style={styles.nodes} pointerEvents="none">
+      ))}
+      <Animated.View
+        style={[
+          styles.coreRing,
+          {
+            top: (size - 132) / 2,
+            left: (size - 132) / 2,
+          },
+          coreStyle,
+        ]}
+      />
+      <View style={styles.nodes}>
         <OrbitNode
           progress={progress}
           radius={148}
@@ -226,11 +216,25 @@ const styles = StyleSheet.create({
   frame: {
     alignItems: "center",
     justifyContent: "center",
+    pointerEvents: "none",
+  },
+  ring: {
+    position: "absolute",
+    backgroundColor: "transparent",
+  },
+  coreRing: {
+    position: "absolute",
+    width: 132,
+    height: 132,
+    borderRadius: 66,
+    borderWidth: 0.7,
+    borderColor: "rgba(185, 212, 255, 0.55)",
   },
   nodes: {
     ...StyleSheet.absoluteFill,
     alignItems: "center",
     justifyContent: "center",
+    pointerEvents: "none",
   },
   nodeWrap: {
     position: "absolute",

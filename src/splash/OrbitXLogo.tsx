@@ -1,22 +1,11 @@
 import { StyleSheet, View } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
-import Svg, {
-  Circle,
-  Defs,
-  Line,
-  RadialGradient,
-  Stop,
-} from "react-native-svg";
 import Animated, {
   Extrapolation,
   interpolate,
   type SharedValue,
-  useAnimatedProps,
   useAnimatedStyle,
 } from "react-native-reanimated";
-
-const AnimatedLine = Animated.createAnimatedComponent(Line);
-const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
 type OrbitXLogoProps = {
   progress: SharedValue<number>;
@@ -24,9 +13,15 @@ type OrbitXLogoProps = {
 };
 
 export function OrbitXLogo({ progress, size = 168 }: OrbitXLogoProps) {
-  const cx = size / 2;
-  const cy = size / 2;
-  const xPad = size * 0.3;
+  const barLength = size * 0.42;
+  const barThickness = 2.7;
+  const center = (width: number, height: number) => ({
+    position: "absolute" as const,
+    top: (size - height) / 2,
+    left: (size - width) / 2,
+    width,
+    height,
+  });
 
   const markStyle = useAnimatedStyle(() => {
     const t = interpolate(
@@ -45,36 +40,42 @@ export function OrbitXLogo({ progress, size = 168 }: OrbitXLogoProps) {
     };
   });
 
-  const xPropsA = useAnimatedProps(() => {
-    const drawn = interpolate(
+  const barAStyle = useAnimatedStyle(() => {
+    const t = interpolate(
       progress.value,
       [0.36, 0.52],
       [0, 1],
       Extrapolation.CLAMP
     );
-    return { strokeDashoffset: 160 * (1 - drawn) };
+    return {
+      opacity: t,
+      transform: [{ rotate: "45deg" }, { scaleY: t }],
+    };
   });
 
-  const xPropsB = useAnimatedProps(() => {
-    const drawn = interpolate(
+  const barBStyle = useAnimatedStyle(() => {
+    const t = interpolate(
       progress.value,
       [0.38, 0.54],
       [0, 1],
       Extrapolation.CLAMP
     );
-    return { strokeDashoffset: 160 * (1 - drawn) };
+    return {
+      opacity: t,
+      transform: [{ rotate: "-45deg" }, { scaleY: t }],
+    };
   });
 
-  const coreProps = useAnimatedProps(() => {
-    const drawn = interpolate(
+  const coreStyle = useAnimatedStyle(() => {
+    const t = interpolate(
       progress.value,
-      [0.4, 0.56],
+      [0.42, 0.58],
       [0, 1],
       Extrapolation.CLAMP
     );
     return {
-      opacity: drawn,
-      r: interpolate(drawn, [0, 1], [0.5, size * 0.028], Extrapolation.CLAMP),
+      opacity: t,
+      transform: [{ scale: 0.4 + t * 0.6 }],
     };
   });
 
@@ -96,74 +97,62 @@ export function OrbitXLogo({ progress, size = 168 }: OrbitXLogoProps) {
   });
 
   return (
-    <Animated.View style={[{ width: size, height: size }, markStyle]}>
-      <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-        <Defs>
-          <RadialGradient id="nucleus" cx="50%" cy="50%" r="50%">
-            <Stop offset="0%" stopColor="#FFFFFF" stopOpacity="1" />
-            <Stop offset="42%" stopColor="#D5E8FF" stopOpacity="0.9" />
-            <Stop offset="100%" stopColor="#7EA6FF" stopOpacity="0" />
-          </RadialGradient>
-          <RadialGradient id="markGlow" cx="50%" cy="50%" r="50%">
-            <Stop offset="0%" stopColor="#B9D6FF" stopOpacity="0.42" />
-            <Stop offset="55%" stopColor="#6E7BFF" stopOpacity="0.12" />
-            <Stop offset="100%" stopColor="#000000" stopOpacity="0" />
-          </RadialGradient>
-        </Defs>
+    <Animated.View
+      style={[
+        {
+          width: size,
+          height: size,
+          alignItems: "center",
+          justifyContent: "center",
+        },
+        markStyle,
+      ]}
+    >
+      <View
+        style={[
+          styles.glow,
+          center(size * 0.84, size * 0.84),
+          { borderRadius: size * 0.42 },
+        ]}
+      />
+      <View
+        style={[
+          styles.ring,
+          center(size * 0.47, size * 0.47),
+          { borderRadius: size * 0.235 },
+        ]}
+      />
+      <View
+        style={[
+          styles.innerRing,
+          center(size * 0.276, size * 0.276),
+          { borderRadius: size * 0.138 },
+        ]}
+      />
 
-        <Circle cx={cx} cy={cy} r={size * 0.42} fill="url(#markGlow)" />
-        <Circle
-          cx={cx}
-          cy={cy}
-          r={size * 0.236}
-          fill="none"
-          stroke="#C5DCFF"
-          strokeWidth={1.05}
-          strokeOpacity={0.55}
-        />
-        <Circle
-          cx={cx}
-          cy={cy}
-          r={size * 0.138}
-          fill="none"
-          stroke="#9BB0FF"
-          strokeWidth={0.8}
-          strokeOpacity={0.35}
-        />
+      <Animated.View
+        style={[
+          styles.bar,
+          center(barThickness, barLength),
+          { borderRadius: barThickness },
+          barAStyle,
+        ]}
+      />
+      <Animated.View
+        style={[
+          styles.bar,
+          center(barThickness, barLength),
+          { borderRadius: barThickness },
+          barBStyle,
+        ]}
+      />
 
-        <AnimatedLine
-          x1={xPad}
-          y1={xPad}
-          x2={size - xPad}
-          y2={size - xPad}
-          stroke="#F5F9FF"
-          strokeWidth={2.7}
-          strokeLinecap="round"
-          strokeDasharray="160 160"
-          animatedProps={xPropsA}
-        />
-        <AnimatedLine
-          x1={size - xPad}
-          y1={xPad}
-          x2={xPad}
-          y2={size - xPad}
-          stroke="#E7F1FF"
-          strokeWidth={2.7}
-          strokeLinecap="round"
-          strokeDasharray="160 160"
-          animatedProps={xPropsB}
-        />
+      <Animated.View style={[styles.coreWrap, center(20, 20), coreStyle]}>
+        <View style={styles.coreHalo} />
+        <View style={styles.core} />
+      </Animated.View>
 
-        <Circle cx={cx} cy={cy} r={size * 0.072} fill="url(#nucleus)" />
-        <AnimatedCircle
-          cx={cx}
-          cy={cy}
-          fill="#FFFFFF"
-          animatedProps={coreProps}
-        />
-      </Svg>
-
-      <View style={styles.sweepClip} pointerEvents="none">
+      <View style={styles.sweepClip}>
         <Animated.View style={[styles.sweep, sweepStyle]}>
           <LinearGradient
             colors={[
@@ -184,10 +173,49 @@ export function OrbitXLogo({ progress, size = 168 }: OrbitXLogoProps) {
 }
 
 const styles = StyleSheet.create({
+  glow: {
+    position: "absolute",
+    backgroundColor: "rgba(110, 150, 255, 0.12)",
+  },
+  ring: {
+    position: "absolute",
+    borderWidth: 1.05,
+    borderColor: "rgba(197, 220, 255, 0.55)",
+  },
+  innerRing: {
+    position: "absolute",
+    borderWidth: 0.8,
+    borderColor: "rgba(155, 176, 255, 0.35)",
+  },
+  bar: {
+    position: "absolute",
+    backgroundColor: "#F5F9FF",
+  },
+  coreWrap: {
+    position: "absolute",
+    width: 20,
+    height: 20,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  coreHalo: {
+    position: "absolute",
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: "rgba(180, 210, 255, 0.35)",
+  },
+  core: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: "#FFFFFF",
+  },
   sweepClip: {
     ...StyleSheet.absoluteFill,
     overflow: "hidden",
     borderRadius: 999,
+    pointerEvents: "none",
   },
   sweep: {
     position: "absolute",

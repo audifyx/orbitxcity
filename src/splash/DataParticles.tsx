@@ -89,13 +89,7 @@ function ParticleView({
       <View
         style={
           particle.streak
-            ? [
-                styles.streak,
-                {
-                  backgroundColor: particle.color,
-                  shadowColor: particle.color,
-                },
-              ]
+            ? [styles.streak, { backgroundColor: particle.color }]
             : [
                 styles.dot,
                 {
@@ -103,7 +97,6 @@ function ParticleView({
                   height: particle.size,
                   borderRadius: particle.size / 2,
                   backgroundColor: particle.color,
-                  shadowColor: particle.color,
                 },
               ]
         }
@@ -150,7 +143,7 @@ export function DataParticles({
   }, [height, width]);
 
   return (
-    <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+    <View style={[StyleSheet.absoluteFill, styles.layer]}>
       {particles.map((particle) => (
         <ParticleView
           key={particle.id}
@@ -163,6 +156,9 @@ export function DataParticles({
 }
 
 const styles = StyleSheet.create({
+  layer: {
+    pointerEvents: "none",
+  },
   particleWrap: {
     position: "absolute",
     left: 0,
@@ -177,17 +173,10 @@ const styles = StyleSheet.create({
   halo: {
     position: "absolute",
   },
-  dot: {
-    shadowOpacity: 0.9,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 0 },
-  },
+  dot: {},
   streak: {
     width: 14,
     height: 1.4,
     borderRadius: 1,
-    shadowOpacity: 0.8,
-    shadowRadius: 5,
-    shadowOffset: { width: 0, height: 0 },
   },
 });

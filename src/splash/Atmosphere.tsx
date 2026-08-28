@@ -61,8 +61,7 @@ export function Atmosphere({ width, height, progress }: AtmosphereProps) {
 
   return (
     <Animated.View
-      pointerEvents="none"
-      style={[StyleSheet.absoluteFill, fadeStyle]}
+      style={[StyleSheet.absoluteFill, fadeStyle, styles.layer]}
     >
       <Svg width={width} height={height}>
         <Defs>
@@ -126,6 +125,9 @@ export function Atmosphere({ width, height, progress }: AtmosphereProps) {
 }
 
 const styles = StyleSheet.create({
+  layer: {
+    pointerEvents: "none",
+  },
   horizonFade: {
     position: "absolute",
     left: 0,

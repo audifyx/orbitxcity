@@ -95,7 +95,7 @@ export function StarField({ width, height, progress }: StarFieldProps) {
   }, [height, width]);
 
   return (
-    <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+    <View style={[StyleSheet.absoluteFill, styles.layer]}>
       {stars.map((star) => (
         <StarDot key={star.id} star={star} progress={progress} />
       ))}
@@ -104,6 +104,9 @@ export function StarField({ width, height, progress }: StarFieldProps) {
 }
 
 const styles = StyleSheet.create({
+  layer: {
+    pointerEvents: "none",
+  },
   star: {
     position: "absolute",
     backgroundColor: "#E7F1FF",
