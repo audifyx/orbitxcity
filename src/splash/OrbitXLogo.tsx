@@ -212,7 +212,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFFFFF",
   },
   sweepClip: {
-    ...StyleSheet.absoluteFill,
+    ...StyleSheet.absoluteFillObject,
     overflow: "hidden",
     borderRadius: 999,
     pointerEvents: "none",

@@ -231,7 +231,7 @@ const styles = StyleSheet.create({
     borderColor: "rgba(185, 212, 255, 0.55)",
   },
   nodes: {
-    ...StyleSheet.absoluteFill,
+    ...StyleSheet.absoluteFillObject,
     alignItems: "center",
     justifyContent: "center",
     pointerEvents: "none",

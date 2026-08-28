@@ -106,16 +106,16 @@ export function SplashScreen({ onComplete }: SplashScreenProps) {
 
 const styles = StyleSheet.create({
   root: {
-    ...StyleSheet.absoluteFill,
+    ...StyleSheet.absoluteFillObject,
     backgroundColor: colors.void,
     zIndex: 20,
   },
   void: {
-    ...StyleSheet.absoluteFill,
+    ...StyleSheet.absoluteFillObject,
     backgroundColor: colors.void,
   },
   center: {
-    ...StyleSheet.absoluteFill,
+    ...StyleSheet.absoluteFillObject,
     alignItems: "center",
     justifyContent: "center",
     paddingBottom: 28,
@@ -127,7 +127,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   logoLayer: {
-    ...StyleSheet.absoluteFill,
+    ...StyleSheet.absoluteFillObject,
     alignItems: "center",
     justifyContent: "center",
   },
