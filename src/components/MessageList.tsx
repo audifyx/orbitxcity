@@ -10,6 +10,7 @@ import {
 
 import { TokenCard } from "./TokenCard";
 import { ToolProgress } from "./ToolProgress";
+import { TxPreview, type TxPreviewStatus } from "./TxPreview";
 import { WalletCard } from "./WalletCard";
 import type { Message, MessageCard } from "./types";
 import { colors } from "../theme";
@@ -19,6 +20,8 @@ export type { Message, MessageCard, ToolEvent, ToolEventStatus } from "./types";
 export type MessageListProps = {
   messages: Message[];
   onRegenerate?: () => void;
+  onConfirmTx?: (card: MessageCard) => void;
+  onCancelTx?: (card: MessageCard) => void;
 };
 
 type InlineSegment = {
@@ -148,15 +151,38 @@ async function copyToClipboard(text: string): Promise<boolean> {
   return false;
 }
 
-function MessageCardView({ card }: { card: MessageCard }) {
+const TX_STATUSES: TxPreviewStatus[] = [
+  "preview",
+  "awaiting_signature",
+  "submitted",
+  "confirming",
+  "confirmed",
+  "failed",
+];
+
+function asTxStatus(value: unknown): TxPreviewStatus {
+  return TX_STATUSES.includes(value as TxPreviewStatus)
+    ? (value as TxPreviewStatus)
+    : "preview";
+}
+
+function MessageCardView({
+  card,
+  onConfirmTx,
+  onCancelTx,
+}: {
+  card: MessageCard;
+  onConfirmTx?: (card: MessageCard) => void;
+  onCancelTx?: (card: MessageCard) => void;
+}) {
   if (card.kind === "token") {
     return (
       <TokenCard
         symbol={String(card.data.symbol ?? card.title)}
         price={String(card.data.price ?? "—")}
-        marketCap={String(card.data.mcap ?? "—")}
-        liquidity={String(card.data.liq ?? "—")}
-        volume={String(card.data.vol ?? "—")}
+        marketCap={String(card.data.mcap ?? card.data.marketCap ?? "—")}
+        liquidity={String(card.data.liq ?? card.data.liquidity ?? "—")}
+        volume={String(card.data.vol ?? card.data.volume ?? "—")}
         risk={String(card.data.risk ?? "—")}
       />
     );
@@ -168,6 +194,25 @@ function MessageCardView({ card }: { card: MessageCard }) {
         address={String(card.data.address ?? card.title)}
         portfolio={String(card.data.portfolio ?? "—")}
         pnl={String(card.data.pnl ?? "—")}
+      />
+    );
+  }
+
+  if (card.kind === "tx") {
+    const warnings =
+      typeof card.data.warnings === "string" && card.data.warnings
+        ? card.data.warnings.split(" | ")
+        : [];
+    return (
+      <TxPreview
+        inAmount={String(card.data.inAmount ?? "—")}
+        outAmount={String(card.data.outAmount ?? "—")}
+        slippage={String(card.data.slippage ?? `${card.data.slippageBps ?? 50} bps`)}
+        route={String(card.data.route ?? "Jupiter")}
+        warnings={warnings}
+        status={asTxStatus(card.data.status)}
+        onConfirm={() => onConfirmTx?.(card)}
+        onCancel={() => onCancelTx?.(card)}
       />
     );
   }
@@ -184,9 +229,17 @@ type MessageItemProps = {
   message: Message;
   isLastAssistant: boolean;
   onRegenerate?: () => void;
+  onConfirmTx?: (card: MessageCard) => void;
+  onCancelTx?: (card: MessageCard) => void;
 };
 
-function MessageItem({ message, isLastAssistant, onRegenerate }: MessageItemProps) {
+function MessageItem({
+  message,
+  isLastAssistant,
+  onRegenerate,
+  onConfirmTx,
+  onCancelTx,
+}: MessageItemProps) {
   const [copied, setCopied] = useState(false);
   const blocks = parseMarkdown(message.content);
 
@@ -241,7 +294,11 @@ function MessageItem({ message, isLastAssistant, onRegenerate }: MessageItemProp
 
         {message.cards?.map((card, index) => (
           <View key={`${card.kind}-${index}`} style={styles.cardWrap}>
-            <MessageCardView card={card} />
+            <MessageCardView
+              card={card}
+              onConfirmTx={onConfirmTx}
+              onCancelTx={onCancelTx}
+            />
           </View>
         ))}
       </View>
@@ -273,7 +330,12 @@ function MessageItem({ message, isLastAssistant, onRegenerate }: MessageItemProp
   );
 }
 
-export function MessageList({ messages, onRegenerate }: MessageListProps) {
+export function MessageList({
+  messages,
+  onRegenerate,
+  onConfirmTx,
+  onCancelTx,
+}: MessageListProps) {
   const lastAssistantId = [...messages]
     .reverse()
     .find((message) => message.role === "assistant")?.id;
@@ -289,6 +351,8 @@ export function MessageList({ messages, onRegenerate }: MessageListProps) {
           message={item}
           isLastAssistant={item.id === lastAssistantId}
           onRegenerate={onRegenerate}
+          onConfirmTx={onConfirmTx}
+          onCancelTx={onCancelTx}
         />
       )}
     />

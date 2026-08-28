@@ -29,9 +29,16 @@ import {
   ToolSheet,
   type CommandResult,
   type Message,
+  type MessageCard,
   type ToolCategory,
 } from "../components";
 import { useAuth } from "../lib/auth";
+import {
+  confirmSignature,
+  fetchSwapTransaction,
+  parseQuoteJson,
+  signAndSendSwapTransaction,
+} from "../lib/jupiter";
 import { invokeFunction, supabase } from "../lib/supabase";
 import { colors } from "../theme";
 
@@ -48,6 +55,58 @@ function isUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
     value,
   );
+}
+
+function flattenCardData(
+  data: Record<string, unknown>,
+): Record<string, string | number | boolean | undefined> {
+  const out: Record<string, string | number | boolean | undefined> = {};
+  for (const [key, value] of Object.entries(data)) {
+    if (
+      typeof value === "string" ||
+      typeof value === "number" ||
+      typeof value === "boolean"
+    ) {
+      out[key] = value;
+    } else if (value != null) {
+      out[key] = JSON.stringify(value);
+    }
+  }
+  return out;
+}
+
+function cardFromUnknown(item: unknown): MessageCard[] {
+  if (typeof item !== "object" || item === null) return [];
+  const rec = item as Record<string, unknown>;
+  return [
+    {
+      kind: String(rec.kind ?? "token"),
+      title: String(rec.title ?? "Card"),
+      data:
+        typeof rec.data === "object" && rec.data !== null
+          ? flattenCardData(rec.data as Record<string, unknown>)
+          : {},
+    },
+  ];
+}
+
+function patchCardStatus(
+  messages: Message[],
+  matcher: (card: MessageCard) => boolean,
+  patch: Record<string, string | number | boolean | undefined>,
+): Message[] {
+  return messages.map((message) => ({
+    ...message,
+    cards: message.cards?.map((card) =>
+      matcher(card)
+        ? { ...card, data: { ...card.data, ...patch } }
+        : card,
+    ),
+  }));
+}
+
+async function sleep(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 export type ChatThreadProps = {
@@ -133,20 +192,7 @@ export function ChatThread({
               },
             ];
           }),
-          cards: cards.flatMap((item) => {
-            if (typeof item !== "object" || item === null) return [];
-            const rec = item as Record<string, unknown>;
-            return [
-              {
-                kind: String(rec.kind ?? "token"),
-                title: String(rec.title ?? "Card"),
-                data:
-                  typeof rec.data === "object" && rec.data !== null
-                    ? (rec.data as Record<string, string | number | boolean | undefined>)
-                    : {},
-              },
-            ];
-          }),
+          cards: cards.flatMap(cardFromUnknown),
         };
       });
       setMessages(mapped);
@@ -263,16 +309,7 @@ export function ChatThread({
       cards: result.cards.map((card) => ({
         kind: card.kind,
         title: card.title,
-        data: Object.fromEntries(
-          Object.entries(card.data).map(([key, value]) => [
-            key,
-            typeof value === "string" ||
-            typeof value === "number" ||
-            typeof value === "boolean"
-              ? value
-              : undefined,
-          ]),
-        ),
+        data: flattenCardData(card.data),
       })),
     };
 
@@ -295,6 +332,123 @@ export function ChatThread({
     wallet,
     onConversationCreated,
   ]);
+
+  const matchTxCard = useCallback((card: MessageCard, target: MessageCard) => {
+    if (target.data.intentId && card.data.intentId) {
+      return card.data.intentId === target.data.intentId;
+    }
+    return (
+      card.kind === "tx" &&
+      card.data.quoteJson === target.data.quoteJson &&
+      card.data.inAmount === target.data.inAmount
+    );
+  }, []);
+
+  const handleCancelTx = useCallback(
+    async (card: MessageCard) => {
+      const intentId = String(card.data.intentId ?? "");
+      setMessages((prev) =>
+        patchCardStatus(prev, (item) => matchTxCard(item, card), {
+          status: "failed",
+        }),
+      );
+      if (intentId && isUuid(intentId)) {
+        await supabase
+          .from("orbitx_ai_transaction_intents")
+          .update({ status: "failed", error_code: "cancelled" })
+          .eq("id", intentId);
+      }
+    },
+    [matchTxCard],
+  );
+
+  const handleConfirmTx = useCallback(
+    async (card: MessageCard) => {
+      if (!wallet) {
+        setStorageError("Connect Phantom before signing a swap.");
+        return;
+      }
+      const quote = parseQuoteJson(card.data.quoteJson);
+      if (!quote) {
+        setStorageError("This preview has no Jupiter quote payload to sign.");
+        return;
+      }
+      const intentId = String(card.data.intentId ?? "");
+      const patch = (status: string, extra?: Record<string, string>) => {
+        setMessages((prev) =>
+          patchCardStatus(prev, (item) => matchTxCard(item, card), {
+            status,
+            ...extra,
+          }),
+        );
+      };
+
+      patch("awaiting_signature");
+      try {
+        const swapTx = await fetchSwapTransaction({
+          quoteResponse: quote,
+          userPublicKey: wallet,
+        });
+        patch("submitted");
+        const signature = await signAndSendSwapTransaction(swapTx);
+        if (intentId && isUuid(intentId)) {
+          await supabase
+            .from("orbitx_ai_transaction_intents")
+            .update({ status: "submitted", signature })
+            .eq("id", intentId);
+        }
+        patch("confirming", { signature });
+
+        let outcome: "confirmed" | "failed" | "pending" = "pending";
+        for (let attempt = 0; attempt < 8; attempt += 1) {
+          await sleep(2000);
+          outcome = await confirmSignature(signature);
+          if (outcome !== "pending") break;
+        }
+
+        if (outcome === "confirmed") {
+          if (intentId && isUuid(intentId)) {
+            await supabase
+              .from("orbitx_ai_transaction_intents")
+              .update({ status: "confirmed" })
+              .eq("id", intentId);
+          }
+          patch("confirmed", { signature });
+        } else if (outcome === "failed") {
+          if (intentId && isUuid(intentId)) {
+            await supabase
+              .from("orbitx_ai_transaction_intents")
+              .update({ status: "failed", error_code: "rpc_err" })
+              .eq("id", intentId);
+          }
+          patch("failed", { signature });
+        } else {
+          if (intentId && isUuid(intentId)) {
+            await supabase
+              .from("orbitx_ai_transaction_intents")
+              .update({ status: "submitted", signature })
+              .eq("id", intentId);
+          }
+          patch("submitted", { signature });
+          setStorageError(
+            `Swap broadcast (${signature.slice(0, 8)}…). RPC has not confirmed it yet — not marked successful.`,
+          );
+        }
+      } catch (error) {
+        const detail =
+          error instanceof Error ? error.message : "Swap signing failed";
+        setStorageError(detail);
+        patch("failed");
+        if (intentId && isUuid(intentId)) {
+          await supabase
+            .from("orbitx_ai_transaction_intents")
+            .update({ status: "failed", error_code: "sign_failed" })
+            .eq("id", intentId);
+        }
+      }
+    },
+    [matchTxCard, wallet],
+  );
 
   const selectedModel = MODELS.find((model) => model.id === modelId) ?? MODELS[0];
 
@@ -335,6 +489,24 @@ export function ChatThread({
         id: "nav:wallet",
         title: "Wallet",
         subtitle: "Portfolio command center",
+        kind: "action",
+      },
+      {
+        id: "nav:paper",
+        title: "Paper",
+        subtitle: "Simulated trading book",
+        kind: "action",
+      },
+      {
+        id: "nav:launch",
+        title: "Launch",
+        subtitle: "Token launch drafts",
+        kind: "action",
+      },
+      {
+        id: "nav:research",
+        title: "Research",
+        subtitle: "OG Scan intelligence",
         kind: "action",
       },
     ];
@@ -386,6 +558,8 @@ export function ChatThread({
         ) : (
           <MessageList
             messages={messages}
+            onConfirmTx={(card) => void handleConfirmTx(card)}
+            onCancelTx={(card) => void handleCancelTx(card)}
             onRegenerate={() => {
               const lastUser = [...messages]
                 .reverse()

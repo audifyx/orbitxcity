@@ -243,8 +243,9 @@ function cardsFromTool(toolId: string, result: unknown): ChatCard[] {
       },
     ];
   }
-  if (toolId === "jupiter-quote" && (result.quote || result.success)) {
+  if (toolId === "jupiter-quote" && (result.quote || result.success || result.outAmount)) {
     const quote = isRecord(result.quote) ? result.quote : result;
+    const hops = Array.isArray(quote.routePlan) ? quote.routePlan.length : 0;
     return [
       {
         kind: "tx",
@@ -254,6 +255,10 @@ function cardsFromTool(toolId: string, result: unknown): ChatCard[] {
           outAmount: quote.outAmount,
           slippageBps: quote.slippageBps,
           status: "preview",
+          route: hops > 0 ? `${hops} hop Jupiter` : "Jupiter",
+          quoteJson: JSON.stringify(compact(quote)),
+          inputMint: quote.inputMint,
+          outputMint: quote.outputMint,
         },
       },
     ];
@@ -404,19 +409,41 @@ Deno.serve(async (req) => {
         const result = await callFn(toolId, payload, jwt);
         results.push(compact(result));
         event.status = "ok";
-        cards.push(...cardsFromTool(toolId, result));
 
         if (toolId === "jupiter-quote" && isRecord(result)) {
-          await userClient.from("orbitx_ai_transaction_intents").insert({
-            user_id: user.id,
-            conversation_id: conversationId,
-            kind: "swap",
-            status: "preview",
-            input_mint: SOL_MINT,
-            output_mint: addresses[0] ?? null,
-            amount_raw: String(payload.amount ?? ""),
-            quote: compact(result),
+          const quote = isRecord(result.quote) ? result.quote : result;
+          const { data: intentRow } = await userClient
+            .from("orbitx_ai_transaction_intents")
+            .insert({
+              user_id: user.id,
+              conversation_id: conversationId,
+              kind: "swap",
+              status: "preview",
+              input_mint: SOL_MINT,
+              output_mint: addresses[0] ?? null,
+              amount_raw: String(payload.amount ?? ""),
+              quote: compact(quote),
+            })
+            .select("id")
+            .single();
+          const hops = Array.isArray(quote.routePlan) ? quote.routePlan.length : 0;
+          cards.push({
+            kind: "tx",
+            title: "Swap quote preview",
+            data: {
+              inAmount: String(quote.inAmount ?? ""),
+              outAmount: String(quote.outAmount ?? ""),
+              slippageBps: quote.slippageBps ?? 50,
+              status: "preview",
+              route: hops > 0 ? `${hops} hop Jupiter` : "Jupiter",
+              intentId: intentRow?.id ?? "",
+              quoteJson: JSON.stringify(compact(quote)),
+              inputMint: SOL_MINT,
+              outputMint: addresses[0] ?? SOL_MINT,
+            },
           });
+        } else {
+          cards.push(...cardsFromTool(toolId, result));
         }
 
         await userClient.from("orbitx_ai_tool_executions").insert({

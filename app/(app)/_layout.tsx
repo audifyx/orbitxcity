@@ -27,6 +27,12 @@ const ROUTE_MAP: Record<NavRoute, string> = {
   agents: "/agents",
   activity: "/activity",
   alerts: "/alerts",
+  launch: "/launch",
+  nft: "/nft",
+  paper: "/paper",
+  research: "/research",
+  strategy: "/strategy",
+  social: "/social",
   profile: "/profile",
   settings: "/settings",
 };

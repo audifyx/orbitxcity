@@ -35,7 +35,12 @@
           "imageWidth": 1
         }
       ],
-      "expo-router",
+      [
+        "expo-router",
+        {
+          "root": "./app"
+        }
+      ],
       "expo-secure-store"
     ]
   }

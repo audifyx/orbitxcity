@@ -33,6 +33,9 @@ interface PhantomSolanaProvider {
     message: Uint8Array,
     display?: "utf8" | "hex",
   ): Promise<{ signature: Uint8Array }>;
+  signAndSendTransaction?: (
+    transaction: unknown,
+  ) => Promise<{ signature: string } | string>;
 }
 
 interface PhantomWindow extends Window {
@@ -126,6 +129,10 @@ function decryptPhantomPayload(
 
 export function isPhantomInjected(): boolean {
   return getInjectedProvider() !== null;
+}
+
+export function getInjectedPhantom(): PhantomSolanaProvider | null {
+  return getInjectedProvider();
 }
 
 export async function connectInjected(): Promise<{ pubkey: string }> {

@@ -17,6 +17,12 @@ export type NavRoute =
   | "agents"
   | "activity"
   | "alerts"
+  | "launch"
+  | "nft"
+  | "paper"
+  | "research"
+  | "strategy"
+  | "social"
   | "profile"
   | "settings";
 
@@ -38,6 +44,12 @@ const NAV_ITEMS: NavItem[] = [
   { route: "agents", label: "Agents" },
   { route: "activity", label: "Activity" },
   { route: "alerts", label: "Alerts" },
+  { route: "launch", label: "Launch" },
+  { route: "nft", label: "NFT" },
+  { route: "paper", label: "Paper" },
+  { route: "research", label: "Research" },
+  { route: "strategy", label: "Strategy" },
+  { route: "social", label: "Social" },
   { route: "profile", label: "Profile" },
   { route: "settings", label: "Settings" },
 ];
@@ -63,7 +75,12 @@ function routeFromPath(path?: string): NavRoute {
   if (path.includes("tools")) return "tools";
   if (path.includes("agents")) return "agents";
   if (path.includes("activity")) return "activity";
-  if (path.includes("alerts")) return "alerts";
+  if (path.includes("launch")) return "launch";
+  if (path.includes("nft")) return "nft";
+  if (path.includes("paper")) return "paper";
+  if (path.includes("research")) return "research";
+  if (path.includes("strategy")) return "strategy";
+  if (path.includes("social")) return "social";
   if (path.includes("profile")) return "profile";
   if (path.includes("settings")) return "settings";
   return "home";
