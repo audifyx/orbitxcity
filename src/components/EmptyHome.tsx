@@ -1,0 +1,114 @@
+import { Pressable, StyleSheet, Text, View } from "react-native";
+
+import { OrbitXMark } from "./OrbitXMark";
+import { colors } from "../theme";
+
+export type EmptyHomeProps = {
+  suggestions?: string[];
+  onSuggestionPress?: (suggestion: string) => void;
+};
+
+const DEFAULT_SUGGESTIONS = [
+  "Scan trending Solana tokens",
+  "Analyze my wallet PnL",
+  "Find low-cap gems under $1M",
+  "Explain this transaction route",
+];
+
+export function EmptyHome({
+  suggestions = DEFAULT_SUGGESTIONS,
+  onSuggestionPress,
+}: EmptyHomeProps) {
+  return (
+    <View style={styles.root}>
+      <View style={styles.markWrap}>
+        <OrbitXMark size={36} />
+      </View>
+
+      <Text style={styles.headline}>What are we exploring today?</Text>
+      <Text style={styles.subcopy}>
+        Markets, wallets, routes, and on-chain signals — ask in plain language.
+      </Text>
+
+      <View style={styles.chips}>
+        {suggestions.map((suggestion) => (
+          <Pressable
+            key={suggestion}
+            style={({ pressed }) => [styles.chip, pressed && styles.chipPressed]}
+            onPress={() => onSuggestionPress?.(suggestion)}
+            accessibilityRole="button"
+          >
+            <Text style={styles.chipText}>{suggestion}</Text>
+          </Pressable>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 28,
+    gap: 14,
+  },
+  markWrap: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.line,
+    backgroundColor: colors.glass,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 6,
+  },
+  headline: {
+    color: colors.frost,
+    fontFamily: "SpaceGrotesk_600SemiBold",
+    fontSize: 26,
+    letterSpacing: -0.4,
+    textAlign: "center",
+    lineHeight: 32,
+  },
+  subcopy: {
+    color: colors.dim,
+    fontFamily: "Inter_400Regular",
+    fontSize: 14,
+    lineHeight: 21,
+    textAlign: "center",
+    maxWidth: 360,
+    marginBottom: 8,
+  },
+  chips: {
+    width: "100%",
+    maxWidth: 420,
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "center",
+    gap: 10,
+    marginTop: 6,
+  },
+  chip: {
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.line,
+    backgroundColor: colors.glass,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    maxWidth: "100%",
+  },
+  chipPressed: {
+    opacity: 0.74,
+    backgroundColor: "rgba(126, 182, 255, 0.08)",
+    borderColor: "rgba(126, 182, 255, 0.24)",
+  },
+  chipText: {
+    color: colors.mist,
+    fontFamily: "Inter_500Medium",
+    fontSize: 13,
+    textAlign: "center",
+  },
+});
