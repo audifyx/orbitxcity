@@ -23,8 +23,8 @@ export function EmptyHome({
 
       <Text style={styles.headline}>OrbitX Agent</Text>
       <Text style={styles.subcopy}>
-        The OS for Solana. Scan tokens, wallets, markets, and quotes in one
-        chat — live tools, then a straight answer.
+        Talk to me like a person. I answer live. Type @ to call a tool — scan,
+        quote, news — only when you ask.
       </Text>
 
       <View style={styles.chips}>

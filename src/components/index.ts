@@ -3,7 +3,7 @@ export { Sidebar, VISIBLE_NAV_ROUTES } from "./Sidebar";
 export type { NavRoute, SidebarProps } from "./Sidebar";
 
 export { Composer } from "./Composer";
-export type { ComposerProps } from "./Composer";
+export type { ComposerProps, MentionOption } from "./Composer";
 
 export { MessageList } from "./MessageList";
 export type { MessageListProps } from "./MessageList";

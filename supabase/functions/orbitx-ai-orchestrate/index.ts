@@ -17,6 +17,34 @@ const SOL_MINT = "So11111111111111111111111111111111111111112";
 const BASE58_RE = /[1-9A-HJ-NP-Za-km-z]{32,44}/g;
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const ASK_FOR_TOOLS =
+  /\b(scan|analyze|analyse|quote|swap|inspect|look\s?up|lookup|deep[- ]?dive|fetch news|research this|run (the )?tool|use @)\b/i;
+const KNOWN_TOOLS = [
+  "token-data",
+  "token-safety",
+  "og-scan-token",
+  "og-wallet",
+  "og-holders",
+  "ogdex-intel",
+  "ogdex-intel-v2",
+  "ogdex-xray",
+  "ogdex-firstbuyer",
+  "pnl-scan",
+  "unified-intelligence",
+  "enhanced-intelligence",
+  "ai-analyzer",
+  "birdseye-analytics",
+  "solana-tracker",
+  "oxw-token-scan",
+  "jupiter-quote",
+  "jupiter-price",
+  "jupiter-tokens",
+  "alerts",
+  "wallet-manager",
+  "news-fetcher",
+  "migration-watch",
+  "pumpfun-migrations",
+];
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -44,6 +72,20 @@ type ChatCard = {
   title: string;
   data: Record<string, unknown>;
 };
+
+const CHAT_SYSTEM = `You are OrbitX, a live chat partner who also has on-chain Solana tools.
+
+Talk like a sharp human in a chat — first person, react to what they just said, ask a follow-up when it helps. Keep it moving. 2–6 short sentences unless they asked for a deep dive. Never write a status report.
+
+Iron laws:
+1. Never fabricate prices, holders, liquidity, or tx results.
+2. If a tool failed, say it failed.
+3. Never claim a swap or transfer landed. Quotes are previews until they sign in their wallet.
+4. Never ask for a seed phrase or private key.
+5. If they pasted a mint, that is the subject.
+6. Casual chat = just talk. If tools ran, weave the facts in like you just looked them up.
+
+Never say "N/N tools returned data" or "I ran live tools against existing backend functions".`;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -74,8 +116,8 @@ async function callOpenAiCompat(
       body: JSON.stringify({
         model,
         messages,
-        temperature: 0.35,
-        max_tokens: 1800,
+        temperature: 0.7,
+        max_tokens: 900,
       }),
     },
     22000,
@@ -85,6 +127,68 @@ async function callOpenAiCompat(
   const text = j?.choices?.[0]?.message?.content?.trim();
   if (!text) throw new Error(`${provider} empty`);
   return String(text);
+}
+
+async function* streamOpenAiCompat(
+  base: string,
+  key: string,
+  model: string,
+  provider: string,
+  messages: Msg[],
+): AsyncGenerator<string> {
+  if (!key) throw new Error(`no ${provider} key`);
+  const r = await tfetch(
+    `${base}/chat/completions`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${key}`,
+      },
+      body: JSON.stringify({
+        model,
+        messages,
+        temperature: 0.7,
+        max_tokens: 900,
+        stream: true,
+      }),
+    },
+    28000,
+  );
+  if (!r.ok || !r.body) throw new Error(`${provider} ${r.status}`);
+  const reader = r.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = "";
+  let saw = false;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    const lines = buf.split("\n");
+    buf = lines.pop() ?? "";
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith("data:")) continue;
+      const data = trimmed.slice(5).trim();
+      if (data === "[DONE]") {
+        if (!saw) throw new Error(`${provider} empty stream`);
+        return;
+      }
+      try {
+        const parsed = JSON.parse(data) as {
+          choices?: Array<{ delta?: { content?: string } }>;
+        };
+        const delta = parsed.choices?.[0]?.delta?.content;
+        if (delta) {
+          saw = true;
+          yield delta;
+        }
+      } catch {
+        // ignore malformed frames
+      }
+    }
+  }
+  if (!saw) throw new Error(`${provider} empty stream`);
 }
 
 async function callGemini(messages: Msg[]): Promise<string> {
@@ -102,7 +206,7 @@ async function callGemini(messages: Msg[]): Promise<string> {
           role: m.role === "assistant" ? "model" : "user",
           parts: [{ text: m.content }],
         })),
-        generationConfig: { temperature: 0.35, maxOutputTokens: 1800 },
+        generationConfig: { temperature: 0.7, maxOutputTokens: 900 },
       }),
     },
     22000,
@@ -147,6 +251,7 @@ async function synthesize(messages: Msg[]): Promise<string> {
       errors.push(error instanceof Error ? error.message : String(error));
     }
   }
+  console.error("orbitx synthesize failed", errors.join(" | "));
   throw new Error(errors.join(" | "));
 }
 
@@ -161,6 +266,33 @@ function parseSolAmount(text: string): number | null {
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
+function extractMentions(message: string): string[] {
+  const found: string[] = [];
+  const mentionRe = /@([a-z0-9][a-z0-9-]{0,40})/gi;
+  let match: RegExpExecArray | null = mentionRe.exec(message);
+  while (match) {
+    const raw = match[1].toLowerCase();
+    const id =
+      KNOWN_TOOLS.find((tool) => tool === raw) ??
+      KNOWN_TOOLS.find((tool) => tool.startsWith(raw));
+    if (id && !found.includes(id)) found.push(id);
+    match = mentionRe.exec(message);
+  }
+  return found;
+}
+
+function wantsTools(message: string, mentions: string[]): boolean {
+  if (mentions.length > 0) return true;
+  if (ASK_FOR_TOOLS.test(message)) return true;
+  const addresses = extractAddresses(message);
+  if (addresses.length === 0) return false;
+  const stripped = message
+    .replace(BASE58_RE, "")
+    .replace(/@[\w-]+/g, "")
+    .trim();
+  return stripped.length < 24;
+}
+
 function planTools(message: string, intentHint?: string): string[] {
   const lower = message.toLowerCase();
   const addresses = extractAddresses(message);
@@ -173,22 +305,20 @@ function planTools(message: string, intentHint?: string): string[] {
   const forensic = /\b(x-?ray|first\s?buyer|sniper|bundle|forensic)\b/.test(lower);
   const launch = /\b(launch|pump\.?fun|migrat)/.test(lower);
 
-  if (trade) tools.push("jupiter-quote", "jupiter-price", "token-safety");
-  if (wallet) tools.push("og-wallet", "pnl-scan", "wallet-manager");
+  if (trade) tools.push("jupiter-quote", "jupiter-price");
+  if (wallet) tools.push("og-wallet", "pnl-scan");
   if (alert) tools.push("alerts");
-  if (trending) tools.push("token-data", "birdseye-analytics", "news-fetcher");
-  if (news) tools.push("news-fetcher", "ai-analyzer");
+  if (trending) tools.push("token-data", "birdseye-analytics");
+  if (news) tools.push("news-fetcher");
   if (launch) tools.push("pumpfun-migrations", "migration-watch");
   if (addresses.length > 0 || /\b(token|scan|analyze|ca\b|mint)\b/.test(lower)) {
-    tools.push("og-scan-token", "token-safety", "og-holders");
-    tools.push(forensic ? "ogdex-xray" : "ogdex-intel-v2");
-    if (forensic) tools.push("ogdex-firstbuyer");
+    tools.push("og-scan-token", "token-safety");
+    if (forensic) tools.push("ogdex-xray", "ogdex-firstbuyer");
   }
   if (intentHint === "analyze_wallet") tools.push("og-wallet", "pnl-scan");
   if (intentHint === "screen") tools.push("token-data", "birdseye-analytics");
   if (intentHint === "news") tools.push("news-fetcher");
-  if (tools.length === 0) tools.push("unified-intelligence", "ai-analyzer", "news-fetcher");
-  return Array.from(new Set(tools)).slice(0, 6);
+  return Array.from(new Set(tools)).slice(0, 4);
 }
 
 async function callFn(
@@ -286,31 +416,122 @@ function cardsFromTool(toolId: string, result: unknown): ChatCard[] {
   return [];
 }
 
-function fallbackText(toolEvents: ToolEvent[], results: unknown[]): string {
-  const ok = toolEvents.filter((e) => e.status === "ok").length;
-  const lines = [
-    "OrbitX ran live tools against existing backend functions.",
-    `${ok}/${toolEvents.length} tools returned data.`,
-    "No transaction was broadcast. Quotes and scans are previews until you sign in your wallet.",
-  ];
-  for (const result of results.slice(0, 2)) {
-    if (isRecord(result) && typeof result.verdict === "string") {
-      lines.push(`Verdict: ${result.verdict}`);
-    }
+function firstUsefulString(value: unknown): string | null {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (trimmed.length > 24 && !trimmed.startsWith("{")) return trimmed.slice(0, 500);
   }
-  return lines.join("\n");
+  if (!isRecord(value)) return null;
+  for (const key of [
+    "analysis",
+    "summary",
+    "narrative",
+    "text",
+    "answer",
+    "insight",
+    "verdict",
+    "output",
+    "reply",
+  ]) {
+    const hit = firstUsefulString(value[key]);
+    if (hit) return hit;
+  }
+  if (isRecord(value.data)) return firstUsefulString(value.data);
+  if (isRecord(value.result)) return firstUsefulString(value.result);
+  return null;
 }
 
-const SYSTEM = `You are OrbitX AI — the OS agent for Solana (trained on OG Scan).
-You orchestrate live OrbitX tools. You are NOT the wallet or authorization layer.
-Non-custodial: never claim a trade, launch, mint, burn, or X post succeeded without a verified receipt in tool results.
-Quotes are PREVIEW only until the user signs in Phantom or Jupiter.
-The chain doesn't lie. Influencers, devs, and narratives do. Never invent prices, balances, holders, or signatures.
-Always analyze a CA/mint first when one is present. LP holder ≠ whale. pump.fun LP is locked by default on the curve.
-Do not shill. If a tool failed, say so. If new data contradicts an earlier take, update.
-Token scan: verdict HIGH/MEDIUM/LOW → metrics → forensics → red/green flags → next action. Always DYOR. NFA.
-Wallet: Quick Read → Style → What stands out → Risks → Takeaways.
-Be concise and skimmable. Never dump raw JSON.`;
+function speakFromResults(
+  message: string,
+  toolEvents: ToolEvent[],
+  results: unknown[],
+): string {
+  if (toolEvents.length === 0) {
+    return "I'm here. Ask me anything, or type @ and a tool when you want me to look something up — @og-scan-token, @jupiter-quote, @news-fetcher.";
+  }
+  const bits: string[] = [];
+  for (let i = 0; i < results.length; i += 1) {
+    const event = toolEvents[i];
+    const result = results[i];
+    if (!event) continue;
+    if (event.status === "error") {
+      bits.push(`${event.label} didn't come back${event.detail ? ` (${event.detail})` : ""}.`);
+      continue;
+    }
+    const useful = firstUsefulString(result);
+    if (useful) bits.push(useful);
+  }
+  if (bits.length === 0) {
+    const names = toolEvents.map((event) => event.label).join(", ");
+    return `I pulled ${names} for that. Want me to walk the interesting part, or should I @ another tool?`;
+  }
+  return bits.slice(0, 3).join(" ");
+}
+
+async function speakViaAnalyzer(
+  jwt: string,
+  message: string,
+  toolContext: string,
+): Promise<string> {
+  const result = await callFn(
+    "ai-analyzer",
+    {
+      query: `You are OrbitX. Speak in first person like a chat, 2–6 sentences. User said: ${message}\n\nContext:\n${toolContext}`,
+      subject: message.slice(0, 160),
+      mint: extractAddresses(message)[0],
+    },
+    jwt,
+  );
+  const text = firstUsefulString(result);
+  if (!text) throw new Error("analyzer empty");
+  return text;
+}
+
+function buildSpeakMessages(
+  knowledge: string,
+  history: Msg[],
+  message: string,
+  results: unknown[],
+): Msg[] {
+  let user = message;
+  if (results.length > 0) {
+    user += `\n\n[You just looked this up. Speak it naturally. Do not mention tool counts.]\n${JSON.stringify(results).slice(0, 3200)}`;
+  }
+  return [
+    { role: "system", content: knowledge.slice(0, 2400) },
+    ...history,
+    { role: "user", content: user },
+  ];
+}
+
+async function speakAll(
+  messages: Msg[],
+  jwt: string,
+  userMessage: string,
+  toolEvents: ToolEvent[],
+  results: unknown[],
+): Promise<string> {
+  try {
+    return await synthesize(messages);
+  } catch (error) {
+    console.error("orbitx speak synthesize", error instanceof Error ? error.message : error);
+  }
+  try {
+    return await speakViaAnalyzer(jwt, userMessage, JSON.stringify(results).slice(0, 2000));
+  } catch (error) {
+    console.error("orbitx speak analyzer", error instanceof Error ? error.message : error);
+  }
+  return speakFromResults(userMessage, toolEvents, results);
+}
+
+function chunkWords(text: string, size = 3): string[] {
+  const parts = text.split(/(\s+)/);
+  const chunks: string[] = [];
+  for (let i = 0; i < parts.length; i += size) {
+    chunks.push(parts.slice(i, i + size).join(""));
+  }
+  return chunks.filter((chunk) => chunk.length > 0);
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
@@ -331,6 +552,7 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const message = String(body.message || "").trim();
     if (!message) return json({ error: "message required" }, 400);
+    const stream = body.stream === true;
 
     const modelId = String(body.modelId || "orbitx-balanced");
     const page = String(body.page || "home");
@@ -343,22 +565,8 @@ Deno.serve(async (req) => {
     const intent = String(incomingPlan.intent || "");
     const knowledge =
       typeof body.knowledge === "string" && body.knowledge.length > 0
-        ? body.knowledge.slice(0, 6000)
-        : SYSTEM;
-    const specialists = Array.isArray(body.specialists)
-      ? body.specialists
-          .filter(isRecord)
-          .slice(0, 8)
-          .map((item) => ({
-            id: String(item.id ?? ""),
-            name: String(item.name ?? ""),
-            systemRole: String(item.systemRole ?? "").slice(0, 400),
-          }))
-          .filter((item) => item.id && item.systemRole)
-      : [];
-    const planNotes = Array.isArray(incomingPlan.notes)
-      ? incomingPlan.notes.map(String).slice(0, 12)
-      : [];
+        ? body.knowledge.slice(0, 2400)
+        : CHAT_SYSTEM;
 
     let conversationId =
       typeof body.conversationId === "string" && UUID_RE.test(body.conversationId)
@@ -383,19 +591,48 @@ Deno.serve(async (req) => {
       conversationId = String(conv.id);
     }
 
-    await userClient.from("ai_messages").insert({
-      conversation_id: conversationId,
-      user_id: user.id,
-      role: "user",
-      content: message,
-      model: modelId,
-    });
+    const { data: lastMessage } = await userClient
+      .from("ai_messages")
+      .select("role, content")
+      .eq("conversation_id", conversationId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (
+      !(
+        lastMessage &&
+        lastMessage.role === "user" &&
+        String(lastMessage.content ?? "") === message
+      )
+    ) {
+      await userClient.from("ai_messages").insert({
+        conversation_id: conversationId,
+        user_id: user.id,
+        role: "user",
+        content: message,
+        model: modelId,
+      });
+    }
 
     const addresses = extractAddresses(message);
-    const toolIds = (requestedTools.length > 0
-      ? requestedTools
-      : planTools(message, intent)
-    ).filter((id) => id !== "jupiter-swap" && id !== "jupiter-order" && id !== "post-to-x" && id !== "x-poster" && id !== "nft-execute-sale");
+    const mentions = extractMentions(message);
+    const live = wantsTools(message, mentions);
+    const blocked = new Set([
+      "jupiter-swap",
+      "jupiter-order",
+      "post-to-x",
+      "x-poster",
+      "nft-execute-sale",
+    ]);
+    const toolIds = (
+      !live
+        ? []
+        : mentions.length > 0
+          ? mentions
+          : requestedTools.length > 0
+            ? requestedTools
+            : planTools(message, intent)
+    ).filter((id) => !blocked.has(id));
 
     const toolEvents: ToolEvent[] = [];
     const results: unknown[] = [];
@@ -434,7 +671,13 @@ Deno.serve(async (req) => {
           payload = { action: "parse", nl_request: message };
         } else if (toolId === "og-holders") {
           payload = { mint: addresses[0], limit: 20 };
-        } else if (toolId === "ogdex-xray" || toolId === "ogdex-intel-v2" || toolId === "ogdex-intel" || toolId === "ogdex-firstbuyer" || toolId === "oxw-token-scan") {
+        } else if (
+          toolId === "ogdex-xray" ||
+          toolId === "ogdex-intel-v2" ||
+          toolId === "ogdex-intel" ||
+          toolId === "ogdex-firstbuyer" ||
+          toolId === "oxw-token-scan"
+        ) {
           payload = { mint: addresses[0] ?? message, query: addresses[0] ?? message };
         } else if (toolId === "wallet-manager") {
           payload = { action: "snapshot", wallet: walletAddress ?? addresses[0] };
@@ -444,8 +687,17 @@ Deno.serve(async (req) => {
           payload = { query: message.slice(0, 80) };
         } else if (toolId === "news-fetcher") {
           payload = { query: message.slice(0, 120), mint: addresses[0] };
-        } else if (toolId === "unified-intelligence" || toolId === "enhanced-intelligence" || toolId === "ai-analyzer") {
-          payload = { query: message, mint: addresses[0], wallet: walletAddress, subject: message.slice(0, 160) };
+        } else if (
+          toolId === "unified-intelligence" ||
+          toolId === "enhanced-intelligence" ||
+          toolId === "ai-analyzer"
+        ) {
+          payload = {
+            query: message,
+            mint: addresses[0],
+            wallet: walletAddress,
+            subject: message.slice(0, 160),
+          };
         } else if (toolId === "birdseye-analytics") {
           payload = { scope: "solana", timeframe: "24h", query: message };
         } else if (toolId === "pumpfun-migrations" || toolId === "migration-watch") {
@@ -521,7 +773,7 @@ Deno.serve(async (req) => {
       .select("role, content")
       .eq("conversation_id", conversationId)
       .order("created_at", { ascending: false })
-      .limit(10);
+      .limit(8);
 
     const history = Array.isArray(historyRows)
       ? [...historyRows]
@@ -530,58 +782,124 @@ Deno.serve(async (req) => {
           .slice(0, -1)
           .map((row) => ({
             role: row.role === "assistant" ? ("assistant" as const) : ("user" as const),
-            content: String(row.content ?? "").slice(0, 800),
+            content: String(row.content ?? "").slice(0, 500),
           }))
       : [];
 
-    let text = "";
-    try {
-      const specialistBrief = specialists
-        .map((item) => `${item.name}: ${item.systemRole}`)
-        .join("\n");
-      text = await synthesize([
-        { role: "system", content: knowledge },
-        ...(specialistBrief
-          ? [
-              {
-                role: "system" as const,
-                content: `Active specialists for this turn:\n${specialistBrief}`,
-              },
-            ]
-          : []),
-        ...history,
-        {
-          role: "user",
-          content: JSON.stringify({
-            page,
-            intent: intent || undefined,
-            notes: planNotes,
-            userMessage: message,
-            connectedWallet: walletAddress ?? null,
-            toolResults: results,
-            instructions:
-              "Synthesize for the user using tool results and history. Do not dump raw JSON. Never claim execution.",
-          }),
+    const speakMessages = buildSpeakMessages(knowledge, history, message, results);
+    const title = message.slice(0, 48);
+
+    const persist = async (text: string) => {
+      await userClient.from("ai_messages").insert({
+        conversation_id: conversationId,
+        user_id: user.id,
+        role: "assistant",
+        content: text,
+        model: modelId,
+        tool_events: toolEvents,
+        metadata: { cards, toolIds },
+      });
+      await userClient
+        .from("ai_conversations")
+        .update({ title, updated_at: new Date().toISOString() })
+        .eq("id", conversationId);
+    };
+
+    if (stream) {
+      const encoder = new TextEncoder();
+      const streamBody = new ReadableStream({
+        async start(controller) {
+          const send = (payload: Record<string, unknown>) => {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`));
+          };
+          try {
+            if (toolEvents.length > 0) {
+              send({ type: "tools", toolEvents });
+            }
+            let text = "";
+            try {
+              const streamers = [
+                () =>
+                  streamOpenAiCompat(
+                    NVIDIA_BASE_URL,
+                    NVIDIA_API_KEY,
+                    NVIDIA_MODEL,
+                    "nvidia",
+                    speakMessages,
+                  ),
+                () =>
+                  streamOpenAiCompat(
+                    "https://api.groq.com/openai/v1",
+                    GROQ_API_KEY,
+                    GROQ_MODEL,
+                    "groq",
+                    speakMessages,
+                  ),
+              ];
+              let streamed = false;
+              for (const start of streamers) {
+                try {
+                  for await (const token of start()) {
+                    text += token;
+                    send({ type: "token", text: token });
+                    streamed = true;
+                  }
+                  if (streamed) break;
+                } catch (error) {
+                  console.error(
+                    "orbitx stream provider failed",
+                    error instanceof Error ? error.message : error,
+                  );
+                  if (streamed) break;
+                }
+              }
+              if (!streamed) {
+                text = await speakAll(speakMessages, jwt, message, toolEvents, results);
+                for (const chunk of chunkWords(text, 3)) {
+                  send({ type: "token", text: chunk });
+                }
+              }
+            } catch (error) {
+              console.error(
+                "orbitx stream speak failed",
+                error instanceof Error ? error.message : error,
+              );
+              text = speakFromResults(message, toolEvents, results);
+              for (const chunk of chunkWords(text, 3)) {
+                send({ type: "token", text: chunk });
+              }
+            }
+            await persist(text);
+            send({
+              type: "done",
+              conversationId,
+              text,
+              toolEvents,
+              cards,
+              title,
+            });
+          } catch (error) {
+            send({
+              type: "error",
+              error: error instanceof Error ? error.message : "stream failed",
+            });
+          } finally {
+            controller.close();
+          }
         },
-      ]);
-    } catch {
-      text = fallbackText(toolEvents, results);
+      });
+
+      return new Response(streamBody, {
+        headers: {
+          ...cors,
+          "Content-Type": "text/event-stream; charset=utf-8",
+          "Cache-Control": "no-cache, no-transform",
+        },
+      });
     }
 
-    const title = message.slice(0, 48);
-    await userClient.from("ai_messages").insert({
-      conversation_id: conversationId,
-      user_id: user.id,
-      role: "assistant",
-      content: text,
-      model: modelId,
-      tool_events: toolEvents,
-      metadata: { cards, toolIds },
-    });
-    await userClient
-      .from("ai_conversations")
-      .update({ title, updated_at: new Date().toISOString() })
-      .eq("id", conversationId);
+    const text = await speakAll(speakMessages, jwt, message, toolEvents, results);
+    await persist(text);
 
     return json({
       conversationId,

@@ -9,6 +9,11 @@ import {
 
 import { colors } from "../theme";
 
+export type MentionOption = {
+  id: string;
+  name: string;
+};
+
 export type ComposerProps = {
   value: string;
   onChange: (text: string) => void;
@@ -19,6 +24,7 @@ export type ComposerProps = {
   onModelPress: () => void;
   onToolsPress: () => void;
   disabled?: boolean;
+  mentionTools?: MentionOption[];
 };
 
 export function Composer({
@@ -31,11 +37,49 @@ export function Composer({
   onModelPress,
   onToolsPress,
   disabled = false,
+  mentionTools = [],
 }: ComposerProps) {
   const canSend = !disabled && !loading && value.trim().length > 0;
+  const mentionMatch = value.match(/@([a-z0-9-]*)$/i);
+  const mentionQuery = mentionMatch ? mentionMatch[1].toLowerCase() : null;
+  const mentionHits =
+    mentionQuery !== null
+      ? mentionTools
+          .filter(
+            (tool) =>
+              tool.id.includes(mentionQuery) ||
+              tool.name.toLowerCase().includes(mentionQuery),
+          )
+          .slice(0, 6)
+      : [];
+
+  const insertMention = (id: string) => {
+    onChange(value.replace(/@([a-z0-9-]*)$/i, `@${id} `));
+  };
 
   return (
     <View style={styles.root}>
+      {mentionHits.length > 0 ? (
+        <View style={styles.mentionList}>
+          {mentionHits.map((tool) => (
+            <Pressable
+              key={tool.id}
+              style={({ pressed }) => [
+                styles.mentionRow,
+                pressed && styles.chipPressed,
+              ]}
+              onPress={() => insertMention(tool.id)}
+              accessibilityRole="button"
+              accessibilityLabel={`Mention ${tool.name}`}
+            >
+              <Text style={styles.mentionAt}>@{tool.id}</Text>
+              <Text style={styles.mentionName} numberOfLines={1}>
+                {tool.name}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
       <View style={styles.chipRow}>
         <Pressable
           style={({ pressed }) => [styles.chip, pressed && styles.chipPressed]}
@@ -110,6 +154,33 @@ export function Composer({
 const styles = StyleSheet.create({
   root: {
     gap: 8,
+  },
+  mentionList: {
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.line,
+    backgroundColor: colors.surface,
+    overflow: "hidden",
+  },
+  mentionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.hairline,
+  },
+  mentionAt: {
+    color: colors.signal,
+    fontFamily: "Inter_500Medium",
+    fontSize: 13,
+  },
+  mentionName: {
+    color: colors.mist,
+    fontFamily: "Inter_400Regular",
+    fontSize: 13,
+    flexShrink: 1,
   },
   chipRow: {
     flexDirection: "row",

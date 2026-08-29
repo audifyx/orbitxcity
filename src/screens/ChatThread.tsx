@@ -16,7 +16,9 @@ import {
   DEFAULT_MODEL_ID,
   MODELS,
   TOOLS,
-  orchestrate,
+  asStreamEvent,
+  orchestrateLive,
+  planFromUtterance,
   type OrbitXModelId,
 } from "../brain";
 import type { ToolCategory as BrainToolCategory } from "../brain/types";
@@ -39,7 +41,11 @@ import {
   parseQuoteJson,
   signAndSendSwapTransaction,
 } from "../lib/jupiter";
-import { invokeFunction, supabase } from "../lib/supabase";
+import {
+  invokeFunction,
+  invokeFunctionStream,
+  supabase,
+} from "../lib/supabase";
 import { colors } from "../theme";
 
 const CATEGORY_MAP: Record<BrainToolCategory, ToolCategory> = {
@@ -272,35 +278,95 @@ export function ChatThread({
       content: text,
     };
 
-    setMessages((prev) => [...prev, userMessage]);
+    const assistantId = `assistant-${Date.now()}`;
+    const plan = planFromUtterance(text, [...AGENTS], [...TOOLS]);
+    const plannedEvents = plan.toolIds.map((toolId) => ({
+      id: `tool_${toolId}`,
+      label: toolId.replace(/-/g, " "),
+      status: "running" as const,
+    }));
+
+    setMessages((prev) => [
+      ...prev,
+      userMessage,
+      {
+        id: assistantId,
+        role: "assistant",
+        content: "",
+        streaming: true,
+        toolEvents: plannedEvents,
+      },
+    ]);
     setDraft("");
     setSending(true);
     setStorageError(null);
 
     const convId = await ensureConversation(text);
+    let streamed = "";
 
-    setMessages((prev) => [
-      ...prev,
+    const patchAssistant = (patch: Partial<Message>) => {
+      setMessages((prev) =>
+        prev.map((message) =>
+          message.id === assistantId ? { ...message, ...patch } : message,
+        ),
+      );
+    };
+
+    const reveal = async (full: string) => {
+      if (streamed.length > 0) {
+        patchAssistant({ content: full, streaming: false });
+        return;
+      }
+      const chunks = full.split(/(\s+)/);
+      let acc = "";
+      for (const chunk of chunks) {
+        acc += chunk;
+        patchAssistant({ content: acc, streaming: true });
+        await sleep(16);
+      }
+      patchAssistant({ content: full, streaming: false });
+    };
+
+    const result = await orchestrateLive(
+      invokeFunction,
+      Platform.OS === "web"
+        ? async (name, body, onEvent) => {
+            return invokeFunctionStream(name, body, (raw) => {
+              const event = asStreamEvent(raw);
+              if (!event) {
+                return;
+              }
+              if (event.type === "token") {
+                streamed += event.text;
+                patchAssistant({ content: streamed, streaming: true });
+              }
+              if (event.type === "tools") {
+                patchAssistant({
+                  toolEvents: event.toolEvents.map((item) => ({
+                    id: item.id,
+                    label: item.label,
+                    status: item.status,
+                  })),
+                });
+              }
+              onEvent(event);
+            });
+          }
+        : undefined,
       {
-        id: `pending-${Date.now()}`,
-        role: "assistant",
-        content: "Working…",
-        toolEvents: [{ id: "plan", label: "Planning", status: "running" }],
+        message: text,
+        modelId,
+        page,
+        conversationId: convId,
+        walletAddress: wallet ?? undefined,
       },
-    ]);
+    );
 
-    const result = await orchestrate(invokeFunction, {
-      message: text,
-      modelId,
-      page,
-      conversationId: convId,
-      walletAddress: wallet ?? undefined,
-    });
+    await reveal(result.text);
 
-    const assistantMessage: Message = {
-      id: `assistant-${Date.now()}`,
-      role: "assistant",
+    patchAssistant({
       content: result.text,
+      streaming: false,
       toolEvents: result.toolEvents.map((event) => ({
         id: event.id,
         label: event.label,
@@ -311,11 +377,7 @@ export function ChatThread({
         title: card.title,
         data: flattenCardData(card.data),
       })),
-    };
-
-    setMessages((prev) =>
-      prev.filter((message) => !message.id.startsWith("pending-")).concat(assistantMessage),
-    );
+    });
 
     if (result.conversationId && isUuid(result.conversationId)) {
       setConversationId(result.conversationId);
@@ -568,6 +630,7 @@ export function ChatThread({
           modelLabel={selectedModel?.label ?? "Balanced"}
           onModelPress={() => setModelSheetOpen(true)}
           onToolsPress={() => setToolSheetOpen(true)}
+          mentionTools={TOOLS.map((tool) => ({ id: tool.id, name: tool.name }))}
         />
       </View>
 
@@ -589,7 +652,10 @@ export function ChatThread({
         onSelect={(id) => {
           const tool = TOOLS.find((item) => item.id === id);
           if (tool) {
-            setDraft(`Use ${tool.name}: ${tool.description}`);
+            setDraft((prev) => {
+              const base = prev.replace(/@([a-z0-9-]*)$/i, "").trimEnd();
+              return `${base}${base ? " " : ""}@${tool.id} `;
+            });
           }
           setToolSheetOpen(false);
         }}
@@ -606,7 +672,7 @@ export function ChatThread({
             router.push(`/${id.slice(4)}` as "/trending");
           } else if (id.startsWith("tool:")) {
             const tool = TOOLS.find((item) => item.id === id.slice(5));
-            if (tool) setDraft(`Use ${tool.name}`);
+            if (tool) setDraft(`@${tool.id} `);
           } else if (id.startsWith("agent:")) {
             const agent = AGENTS.find((item) => item.id === id.slice(6));
             if (agent) setDraft(`Run the ${agent.name} agent`);

@@ -156,16 +156,14 @@ function pickTools(
 
   switch (intent) {
     case "analyze_token":
-      add("token-data");
-      add("token-safety");
       add("og-scan-token");
-      add("oxw-token-scan");
-      add("og-holders");
+      add("token-safety");
+      if (/\b(holder|whale|concentration)\b/i.test(text)) {
+        add("og-holders");
+      }
       if (FORENSIC_VERBS.test(text) || /\b(ogdex|xray|x-ray)\b/i.test(text)) {
         add("ogdex-xray");
         add("ogdex-firstbuyer");
-      } else {
-        add("ogdex-intel-v2");
       }
       if (hasMint) {
         notes.push(`Detected mint candidate: ${addresses[0]}`);
@@ -185,9 +183,6 @@ function pickTools(
     case "trade":
       add("jupiter-quote");
       add("jupiter-price");
-      add("jupiter-tokens");
-      add("token-safety");
-      add("wallet-manager");
       notes.push(
         "Trade intent detected: quote-only stage. jupiter-swap and jupiter-order excluded until explicit execute request.",
       );
@@ -229,9 +224,9 @@ function pickTools(
 
     case "research":
       add("unified-intelligence");
-      add("enhanced-intelligence");
-      add("news-fetcher");
-      add("ai-analyzer");
+      if (/\bnews\b/i.test(text)) {
+        add("news-fetcher");
+      }
       if (/\breport\b/i.test(text)) {
         add("og-report-pdf");
       }
@@ -262,21 +257,15 @@ function pickTools(
     case "screen":
       add("token-data");
       add("birdseye-analytics");
-      add("pumpfun-migrations");
-      add("news-fetcher");
       notes.push("Screener / trending pass — no mint required.");
       break;
 
     case "news":
       add("news-fetcher");
-      add("ai-analyzer");
-      add("unified-intelligence");
       break;
 
     default:
-      add("unified-intelligence");
-      add("ai-analyzer");
-      add("news-fetcher");
+      notes.push("Chat only — no tools unless @mentioned or explicitly asked.");
       break;
   }
 
@@ -299,6 +288,70 @@ function pickTools(
   return { toolIds: filtered, notes };
 }
 
+const ASK_FOR_TOOLS =
+  /\b(scan|analyze|analyse|quote|swap|inspect|look\s?up|lookup|deep[- ]?dive|fetch news|research this|run (the )?tool|use @)\b/i;
+
+export function extractToolMentions(
+  text: string,
+  tools: ToolDefinition[],
+): ToolDefinition[] {
+  const found = new Map<string, ToolDefinition>();
+  const mentionRe = /@([a-z0-9][a-z0-9-]{0,40})/gi;
+  let match: RegExpExecArray | null = mentionRe.exec(text);
+  while (match) {
+    const raw = match[1].toLowerCase();
+    const tool =
+      tools.find((item) => item.id === raw) ??
+      tools.find((item) => item.name.toLowerCase().replace(/\s+/g, "-") === raw) ??
+      tools.find(
+        (item) =>
+          item.id.startsWith(raw) ||
+          item.name.toLowerCase().replace(/\s+/g, "-").startsWith(raw),
+      );
+    if (tool) {
+      found.set(tool.id, tool);
+    }
+    match = mentionRe.exec(text);
+  }
+  return [...found.values()];
+}
+
+export function mentionSuggestions(
+  partial: string,
+  tools: ToolDefinition[],
+): ToolDefinition[] {
+  const q = partial.toLowerCase();
+  return tools
+    .filter(
+      (tool) =>
+        tool.id.includes(q) ||
+        tool.name.toLowerCase().includes(q) ||
+        tool.description.toLowerCase().includes(q),
+    )
+    .slice(0, 8);
+}
+
+function wantsLiveTools(
+  text: string,
+  addresses: string[],
+  mentions: ToolDefinition[],
+): boolean {
+  if (mentions.length > 0) {
+    return true;
+  }
+  if (ASK_FOR_TOOLS.test(text)) {
+    return true;
+  }
+  if (addresses.length === 0) {
+    return false;
+  }
+  const stripped = text
+    .replace(new RegExp(BASE58_RE.source, "g"), "")
+    .replace(/@[\w-]+/g, "")
+    .trim();
+  return stripped.length < 24;
+}
+
 export function planFromUtterance(
   text: string,
   agents: AgentDefinition[],
@@ -306,12 +359,36 @@ export function planFromUtterance(
 ): UtterancePlan {
   const trimmed = text.trim();
   const addresses = extractAddresses(trimmed);
+  const mentions = extractToolMentions(trimmed, tools);
   const intent = detectIntent(trimmed, addresses);
   const explicitWrite = EXPLICIT_WRITE_VERBS.test(trimmed);
+  const live = wantsLiveTools(trimmed, addresses, mentions);
 
-  const agentIds = pickAgents(intent, trimmed).filter((id) =>
+  const agentIds = (live ? pickAgents(intent, trimmed) : ["master"]).filter((id) =>
     agents.some((a) => a.id === id),
   );
+
+  if (!live) {
+    return {
+      agentIds: agentIds.length > 0 ? agentIds : ["master"],
+      toolIds: [],
+      intent,
+      notes: ["Just talking — no @tool and no scan/quote ask."],
+    };
+  }
+
+  if (mentions.length > 0) {
+    const notes = [`Using @ ${mentions.map((tool) => tool.id).join(", ")}`];
+    if (addresses.length > 0) {
+      notes.push(`Solana address(es) detected: ${addresses.join(", ")}`);
+    }
+    return {
+      agentIds: agentIds.length > 0 ? agentIds : ["master"],
+      toolIds: mentions.map((tool) => tool.id),
+      intent,
+      notes,
+    };
+  }
 
   const { toolIds, notes: toolNotes } = pickTools(
     intent,
