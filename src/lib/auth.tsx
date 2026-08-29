@@ -78,7 +78,12 @@ function publicAuthError(error: unknown, fallback: string): string {
   ) {
     return "Can't reach OrbitX sign-in. Check your connection and try again.";
   }
-  if (lower.includes("invalid account")) {
+  if (
+    lower.includes("invalid account") ||
+    (lower.includes("cannot read properties of undefined") &&
+      lower.includes("publickey")) ||
+    lower.includes("reading 'publickey'")
+  ) {
     return "Wallet could not sign with that account. Pick the wallet again and approve the request.";
   }
   if (

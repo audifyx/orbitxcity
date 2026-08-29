@@ -7,6 +7,7 @@ import {
 } from "@solana-mobile/wallet-standard-mobile";
 
 import { MWA_IDENTITY } from "./mwaIdentity";
+import { isInsideWalletBrowser } from "./walletOpen";
 
 let registered = false;
 
@@ -15,6 +16,9 @@ export function registerWebMwa(): void {
     return;
   }
   if (!/Android/i.test(navigator.userAgent)) {
+    return;
+  }
+  if (isInsideWalletBrowser()) {
     return;
   }
 

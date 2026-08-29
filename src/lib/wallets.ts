@@ -1,6 +1,8 @@
 import { Platform } from "react-native";
 import bs58 from "bs58";
 
+import { isInsideWalletBrowser } from "./walletOpen";
+
 export type WalletId = "jupiter" | "phantom";
 
 export const WALLET_LABELS: Record<WalletId, string> = {
@@ -137,13 +139,117 @@ function isMwaWalletName(name: string): boolean {
 
 function walletNameMatches(name: string, id: WalletId): boolean {
   const lower = name.toLowerCase();
-  if (isMwaWalletName(name)) {
-    return true;
-  }
   if (id === "jupiter") {
     return lower.includes("jupiter") || lower === "jup";
   }
   return lower.includes("phantom");
+}
+
+function isRetryableSignError(text: string): boolean {
+  return (
+    /invalid account/i.test(text) ||
+    /publickey/i.test(text) ||
+    /cannot read properties of undefined/i.test(text) ||
+    /not connected/i.test(text)
+  );
+}
+
+function decodeAddressBytes(address: string): Uint8Array | null {
+  try {
+    const decoded = bs58.decode(address.trim());
+    if (decoded.length === 32) {
+      return decoded;
+    }
+  } catch {
+    // Address may be base64 (Mobile Wallet Adapter).
+  }
+
+  try {
+    const normalized = address.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = normalized + "=".repeat((4 - (normalized.length % 4 || 4)) % 4);
+    const binary = globalThis.atob(padded);
+    const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+    if (bytes.length === 32) {
+      return bytes;
+    }
+  } catch {
+    // Not a 32-byte address.
+  }
+
+  return null;
+}
+
+function ensureAccountPublicKey(account: StandardAccount): StandardAccount {
+  if (account.publicKey && account.publicKey.length === 32) {
+    return account;
+  }
+  const bytes = decodeAddressBytes(account.address);
+  if (bytes) {
+    account.publicKey = bytes;
+  }
+  return account;
+}
+
+function readInjectedPubkey(injected: InjectedProvider): string | null {
+  try {
+    return injected.publicKey ? pubkeyFromKey(injected.publicKey) : null;
+  } catch {
+    return null;
+  }
+}
+
+async function connectInjectedProvider(injected: InjectedProvider): Promise<string> {
+  const existing = readInjectedPubkey(injected);
+  if (existing) {
+    return existing;
+  }
+
+  const response = await injected.connect();
+  if (response && typeof response === "object" && response.publicKey) {
+    return pubkeyFromKey(response.publicKey);
+  }
+
+  const afterConnect = readInjectedPubkey(injected);
+  if (afterConnect) {
+    return afterConnect;
+  }
+
+  for (let attempt = 0; attempt < 25; attempt += 1) {
+    await sleep(80);
+    const pubkey = readInjectedPubkey(injected);
+    if (pubkey) {
+      return pubkey;
+    }
+  }
+
+  throw new Error("Wallet did not return a public key. Approve the connect request and try again.");
+}
+
+async function signInjectedProvider(
+  injected: InjectedProvider,
+  message: string,
+): Promise<string> {
+  const bytes = new TextEncoder().encode(message);
+
+  const attempt = async (): Promise<string> => {
+    const raw = await injected.signMessage(bytes, "utf8");
+    return bs58.encode(toBytes(raw));
+  };
+
+  if (!readInjectedPubkey(injected)) {
+    await connectInjectedProvider(injected);
+  }
+
+  try {
+    return await attempt();
+  } catch (error) {
+    const text = error instanceof Error ? error.message : String(error);
+    if (!isRetryableSignError(text)) {
+      throw error instanceof Error ? error : new Error(text);
+    }
+    await connectInjectedProvider(injected);
+    return attempt();
+  }
 }
 
 const standardWallets = new Map<string, StandardWallet>();
@@ -201,11 +307,75 @@ function getStandardFeature<T>(wallet: StandardWallet, name: string): T | null {
   return feature ? (feature as T) : null;
 }
 
-async function connectStandard(id: WalletId): Promise<{ pubkey: string; wallet: StandardWallet; account: StandardAccount }> {
+function findStandardWallet(id: WalletId, allowMwa: boolean): StandardWallet | null {
   const wallets = discoverStandardWallets();
-  const wallet =
-    wallets.find((item) => walletNameMatches(item.name, id) && !isMwaWalletName(item.name)) ??
-    wallets.find((item) => walletNameMatches(item.name, id));
+  const named = wallets.find((item) => walletNameMatches(item.name, id));
+  if (named) {
+    return named;
+  }
+  if (!allowMwa) {
+    return null;
+  }
+  return wallets.find((item) => isMwaWalletName(item.name)) ?? null;
+}
+
+function extractSignature(signed: unknown): Uint8Array | null {
+  const source = Array.isArray(signed) ? signed[0] : signed;
+  if (!source || typeof source !== "object" || !("signature" in source)) {
+    return null;
+  }
+  try {
+    return toBytes((source as { signature: unknown }).signature);
+  } catch {
+    return null;
+  }
+}
+
+async function invokeSignMessage(
+  wallet: StandardWallet,
+  account: StandardAccount,
+  message: Uint8Array,
+): Promise<Uint8Array> {
+  const signFeature = getStandardFeature<{
+    signMessage: (...args: unknown[]) => Promise<unknown>;
+  }>(wallet, "solana:signMessage");
+
+  if (!signFeature?.signMessage) {
+    throw new Error(`${wallet.name} does not support message signing.`);
+  }
+
+  const input = { account: ensureAccountPublicKey(account), message };
+  // Mobile Wallet Adapter implements rest args (`signMessage(input)`), while
+  // Phantom/Jupiter follow the Wallet Standard array form (`signMessage([input])`).
+  const calls = isMwaWalletName(wallet.name)
+    ? [() => signFeature.signMessage(input), () => signFeature.signMessage([input])]
+    : [() => signFeature.signMessage([input]), () => signFeature.signMessage(input)];
+
+  let lastError: Error | null = null;
+  for (const call of calls) {
+    try {
+      const signature = extractSignature(await call());
+      if (signature) {
+        return signature;
+      }
+      lastError = new Error(`${wallet.name} did not return a signature.`);
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+      if (!isRetryableSignError(lastError.message)) {
+        throw lastError;
+      }
+    }
+  }
+
+  throw lastError ?? new Error(`${wallet.name} did not return a signature.`);
+}
+
+async function connectStandard(
+  id: WalletId,
+  options?: { allowMwa?: boolean },
+): Promise<{ pubkey: string; wallet: StandardWallet; account: StandardAccount }> {
+  const allowMwa = options?.allowMwa ?? !isInsideWalletBrowser(id);
+  const wallet = findStandardWallet(id, allowMwa);
   if (!wallet) {
     throw new Error(
       id === "jupiter"
@@ -234,14 +404,14 @@ async function signStandard(
   account: StandardAccount,
   message: string,
 ): Promise<string> {
-  const signFeature = getStandardFeature<{
-    signMessage: (input: { account: StandardAccount; message: Uint8Array }[]) => Promise<
-      Array<{ signature: Uint8Array }>
-    >;
-  }>(wallet, "solana:signMessage");
-
-  if (!signFeature?.signMessage) {
-    throw new Error(`${wallet.name} does not support message signing.`);
+  if (!wallet.accounts[0]?.address) {
+    const connectFeature = getStandardFeature<{ connect: () => Promise<unknown> }>(
+      wallet,
+      "standard:connect",
+    );
+    if (connectFeature?.connect) {
+      await connectFeature.connect();
+    }
   }
 
   const bytes = new TextEncoder().encode(message);
@@ -254,18 +424,12 @@ async function signStandard(
   let lastError: Error | null = null;
   for (const candidate of candidates) {
     try {
-      const signed = await signFeature.signMessage([
-        { account: candidate, message: bytes },
-      ]);
-      const signature = signed[0]?.signature;
-      if (!signature) {
-        throw new Error(`${wallet.name} did not return a signature.`);
-      }
+      const signature = await invokeSignMessage(wallet, candidate, bytes);
       return bs58.encode(signature);
     } catch (error) {
       const text = error instanceof Error ? error.message : String(error);
       lastError = error instanceof Error ? error : new Error(text);
-      if (!/invalid account/i.test(text)) {
+      if (!isRetryableSignError(text)) {
         throw lastError;
       }
     }
@@ -280,7 +444,9 @@ export function isWalletInjected(id: WalletId): boolean {
   if (getInjectedById(id)) {
     return true;
   }
-  return discoverStandardWallets().some((wallet) => walletNameMatches(wallet.name, id));
+  return discoverStandardWallets().some(
+    (wallet) => walletNameMatches(wallet.name, id) && !isMwaWalletName(wallet.name),
+  );
 }
 
 export async function waitForWallet(id: WalletId, timeoutMs = 2500): Promise<boolean> {
@@ -298,8 +464,7 @@ export async function waitForWallet(id: WalletId, timeoutMs = 2500): Promise<boo
 export async function connectBrowserWallet(id: WalletId): Promise<{ pubkey: string }> {
   const injected = getInjectedById(id);
   if (injected) {
-    const response = await injected.connect();
-    const pubkey = pubkeyFromKey(response && "publicKey" in response ? response.publicKey : injected.publicKey);
+    const pubkey = await connectInjectedProvider(injected);
     standardSession = null;
     return { pubkey };
   }
@@ -312,9 +477,7 @@ export async function connectBrowserWallet(id: WalletId): Promise<{ pubkey: stri
 export async function signBrowserWallet(id: WalletId, message: string): Promise<string> {
   const injected = getInjectedById(id);
   if (injected) {
-    const raw = await injected.signMessage(new TextEncoder().encode(message), "utf8");
-    const bytes = toBytes(raw);
-    return bs58.encode(bytes);
+    return signInjectedProvider(injected, message);
   }
 
   if (standardSession && standardSession.id === id) {

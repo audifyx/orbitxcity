@@ -1,13 +1,25 @@
 import { Buffer } from "buffer";
-import { Platform } from "react-native";
+import Constants from "expo-constants";
+import { NativeModules, Platform } from "react-native";
 import { PublicKey } from "@solana/web3.js";
 import bs58 from "bs58";
 
 import { isSolanaPubkey, isSolanaSignature } from "./wallets";
 import { MWA_CHAIN, MWA_IDENTITY } from "./mwaIdentity";
 
+function isExpoGoRuntime(): boolean {
+  const ownership = Constants.appOwnership;
+  const environment = String(Constants.executionEnvironment ?? "");
+  return ownership === "expo" || environment === "storeClient";
+}
+
 export function isNativeMwaSupported(): boolean {
-  return Platform.OS === "android";
+  if (Platform.OS !== "android" || isExpoGoRuntime()) {
+    return false;
+  }
+
+  const modules = NativeModules as Record<string, unknown>;
+  return Boolean(modules.SolanaMobileWalletAdapter);
 }
 
 export function isMwaUnavailableError(error: unknown): boolean {
@@ -15,7 +27,9 @@ export function isMwaUnavailableError(error: unknown): boolean {
   return (
     message === "MWA_UNAVAILABLE" ||
     /doesn't seem to be linked/i.test(message) ||
-    /native module/i.test(message)
+    /native module/i.test(message) ||
+    /TurboModuleRegistry/i.test(message) ||
+    /SolanaMobileWalletAdapter/i.test(message)
   );
 }
 
