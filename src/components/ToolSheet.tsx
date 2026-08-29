@@ -174,7 +174,7 @@ export function ToolSheet({ visible, tools, onSelect, onClose }: ToolSheetProps)
               >
                 <View style={styles.itemHeader}>
                   <Text style={styles.itemName}>{tool.name}</Text>
-                  <Text style={styles.itemCategory}>{tool.category}</Text>
+                  <Text style={styles.itemCategory}>@{tool.id}</Text>
                 </View>
                 <Text style={styles.itemDescription}>{tool.description}</Text>
               </Pressable>

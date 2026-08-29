@@ -63,8 +63,10 @@ export {
 
 export {
   extractToolMentions,
+  FULL_TOKEN_REPORT_TOOLS,
   mentionSuggestions,
   planFromUtterance,
+  rewriteLegacyToolPrompt,
 } from "./planner";
 
 export {

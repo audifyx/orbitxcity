@@ -87,7 +87,7 @@ export const AGENTS: readonly AgentDefinition[] = [
     name: "Launch Monitor",
     description: "Track new launches, migrations, and bonding-curve exits.",
     category: "monitor",
-    tools: ["pumpfun-migrations", "migration-watch", "ogdex-firstbuyer", "token-data"],
+    tools: ["launch-coin", "pumpfun-migrations", "migration-watch", "ogdex-firstbuyer", "token-data"],
     permission: "read",
     systemRole:
       "Monitor launch lifecycle from curve to migration. Highlight timing and liquidity transitions.",
@@ -97,7 +97,7 @@ export const AGENTS: readonly AgentDefinition[] = [
     name: "NFT Specialist",
     description: "NFT holdings, floor context, and sale transaction prep.",
     category: "create",
-    tools: ["wallet-manager", "nft-execute-sale", "jupiter-price"],
+    tools: ["nft-mint", "wallet-manager", "nft-execute-sale", "jupiter-price"],
     permission: "confirm",
     systemRole:
       "Advise on NFT positions. Build sale txs only after explicit user confirmation.",
