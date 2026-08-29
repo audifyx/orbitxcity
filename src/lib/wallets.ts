@@ -130,8 +130,16 @@ function getInjectedById(id: WalletId): InjectedProvider | null {
   );
 }
 
+function isMwaWalletName(name: string): boolean {
+  const lower = name.toLowerCase();
+  return lower.includes("mobile wallet adapter") || lower === "mwa";
+}
+
 function walletNameMatches(name: string, id: WalletId): boolean {
   const lower = name.toLowerCase();
+  if (isMwaWalletName(name)) {
+    return true;
+  }
   if (id === "jupiter") {
     return lower.includes("jupiter") || lower === "jup";
   }
@@ -195,7 +203,9 @@ function getStandardFeature<T>(wallet: StandardWallet, name: string): T | null {
 
 async function connectStandard(id: WalletId): Promise<{ pubkey: string; wallet: StandardWallet; account: StandardAccount }> {
   const wallets = discoverStandardWallets();
-  const wallet = wallets.find((item) => walletNameMatches(item.name, id));
+  const wallet =
+    wallets.find((item) => walletNameMatches(item.name, id) && !isMwaWalletName(item.name)) ??
+    wallets.find((item) => walletNameMatches(item.name, id));
   if (!wallet) {
     throw new Error(
       id === "jupiter"

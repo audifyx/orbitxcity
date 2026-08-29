@@ -27,6 +27,7 @@
       "output": "single"
     },
     "plugins": [
+      "expo-dev-client",
       "expo-font",
       [
         "expo-splash-screen",

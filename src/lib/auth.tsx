@@ -18,6 +18,12 @@ import {
 } from "./phantom";
 import { supabase, walletAuth, warmWalletAuth } from "./supabase";
 import {
+  connectAndSignWithMwa,
+  isMwaUnavailableError,
+  isNativeMwaSupported,
+} from "./mwaConnect";
+import { registerWebMwa } from "./registerMwa";
+import {
   isInsideWalletBrowser,
   isMobileDevice,
   openWalletInAppBrowser,
@@ -74,6 +80,17 @@ function publicAuthError(error: unknown, fallback: string): string {
   }
   if (lower.includes("invalid account")) {
     return "Wallet could not sign with that account. Pick the wallet again and approve the request.";
+  }
+  if (
+    lower.includes("declined") ||
+    lower.includes("rejected") ||
+    lower.includes("cancelled") ||
+    lower.includes("canceled")
+  ) {
+    return "Wallet request was cancelled.";
+  }
+  if (lower.includes("wallet not found") || lower.includes("no wallet found")) {
+    return "Install Phantom or Jupiter, then try Connect Wallet again.";
   }
   if (lower.includes("not installed") || lower.includes("jupiter_siws_required")) {
     return "Opening your wallet. Approve the connection, then sign. This is not a transaction.";
@@ -160,6 +177,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
+    registerWebMwa();
     void warmWalletAuth();
   }, []);
 
@@ -294,6 +312,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           throw new Error(
             "Approve the connect request in your wallet, then sign. This is not a transaction.",
           );
+        }
+
+        if (isNativeMwaSupported()) {
+          try {
+            const signed = await connectAndSignWithMwa(async (pubkey) => {
+              setPendingPubkey(pubkey);
+              setWallet(pubkey);
+              const nonceData = parseNonceResponse(
+                await walletAuth("nonce", { pubkey }),
+              );
+              return nonceData.message;
+            });
+            await finishVerification(signed.pubkey, signed.signature);
+            return;
+          } catch (mwaError) {
+            if (!isMwaUnavailableError(mwaError)) {
+              throw mwaError;
+            }
+          }
         }
 
         if (!isMobileDevice()) {
