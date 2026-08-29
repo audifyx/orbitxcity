@@ -22,11 +22,16 @@ export {
 } from "./agents";
 
 export {
+  asStreamEvent,
   orchestrate,
+  orchestrateLive,
   type ChatCard,
   type EdgeInvokeFn,
+  type EdgeStreamFn,
   type OrchestrateRequest,
   type OrchestrateResponse,
+  type StreamEvent,
+  type StreamHandlers,
   type ToolEvent,
 } from "./client";
 
@@ -49,9 +54,18 @@ export {
   type ToolAllowanceResult,
 } from "./permissions";
 
-export { AGENT_CAPABILITY_CHIPS, AGENT_KNOWLEDGE, ORBITX_TOKEN_MINT } from "./knowledge";
+export {
+  AGENT_CAPABILITY_CHIPS,
+  AGENT_KNOWLEDGE,
+  CHAT_SYSTEM,
+  ORBITX_TOKEN_MINT,
+} from "./knowledge";
 
-export { planFromUtterance } from "./planner";
+export {
+  extractToolMentions,
+  mentionSuggestions,
+  planFromUtterance,
+} from "./planner";
 
 export {
   getTool,

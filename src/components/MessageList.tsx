@@ -282,9 +282,16 @@ function MessageItem({
           return (
             <View key={`p-${blockIndex}`} style={styles.paragraph}>
               <InlineText segments={block.segments} />
+              {message.streaming && blockIndex === blocks.length - 1 ? (
+                <Text style={styles.cursor}>▍</Text>
+              ) : null}
             </View>
           );
         })}
+
+        {message.streaming && blocks.length === 0 ? (
+          <Text style={styles.cursor}>▍</Text>
+        ) : null}
 
         {message.toolEvents && message.toolEvents.length > 0 ? (
           <View style={styles.toolProgressWrap}>
@@ -393,6 +400,12 @@ const styles = StyleSheet.create({
   bodyText: {
     color: colors.frost,
     fontFamily: "Inter_400Regular",
+    fontSize: 15,
+    lineHeight: 23,
+  },
+  cursor: {
+    color: colors.signal,
+    fontFamily: "Inter_500Medium",
     fontSize: 15,
     lineHeight: 23,
   },

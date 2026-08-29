@@ -1,7 +1,7 @@
 import { resolveModelId } from "./models";
 import { planFromUtterance } from "./planner";
 import { AGENTS } from "./agents";
-import { AGENT_KNOWLEDGE } from "./knowledge";
+import { CHAT_SYSTEM } from "./knowledge";
 import { TOOLS } from "./tools";
 
 export type ChatCard = {
@@ -35,10 +35,34 @@ export type OrchestrateResponse = {
   title?: string;
 };
 
+export type StreamEvent =
+  | { type: "tools"; toolEvents: ToolEvent[] }
+  | { type: "token"; text: string }
+  | {
+      type: "done";
+      conversationId: string;
+      text: string;
+      toolEvents: ToolEvent[];
+      cards: ChatCard[];
+      title?: string;
+    }
+  | { type: "error"; error: string };
+
 export type EdgeInvokeFn = (
   name: string,
   body: Record<string, unknown>,
 ) => Promise<unknown>;
+
+export type EdgeStreamFn = (
+  name: string,
+  body: Record<string, unknown>,
+  onEvent: (event: StreamEvent) => void,
+) => Promise<unknown>;
+
+export type StreamHandlers = {
+  onTools?: (events: ToolEvent[]) => void;
+  onToken?: (delta: string) => void;
+};
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -118,39 +142,71 @@ function coerceOrchestrateResponse(
   return { conversationId, text, toolEvents, cards, title };
 }
 
+function buildOrchestrateBody(req: OrchestrateRequest): {
+  body: Record<string, unknown>;
+  planToolIds: string[];
+} {
+  const modelId = resolveModelId(req.modelId);
+  const plan = planFromUtterance(req.message, [...AGENTS], [...TOOLS]);
+  const specialists = plan.toolIds.length
+    ? plan.agentIds
+        .map((id) => AGENTS.find((agent) => agent.id === id))
+        .filter((agent): agent is (typeof AGENTS)[number] => Boolean(agent))
+        .slice(0, 2)
+        .map((agent) => ({
+          id: agent.id,
+          name: agent.name,
+          systemRole: agent.systemRole.slice(0, 220),
+        }))
+    : [];
+
+  return {
+    planToolIds: plan.toolIds,
+    body: {
+      conversationId: req.conversationId,
+      message: req.message,
+      modelId,
+      page: req.page,
+      tokenMint: req.tokenMint,
+      walletAddress: req.walletAddress,
+      knowledge: CHAT_SYSTEM,
+      specialists,
+      plan: {
+        agentIds: plan.agentIds,
+        toolIds: plan.toolIds,
+        intent: plan.intent,
+        notes: plan.notes,
+      },
+    },
+  };
+}
+
+function failResponse(
+  fallbackId: string,
+  planToolIds: string[],
+  detail: string,
+): OrchestrateResponse {
+  return {
+    conversationId: fallbackId,
+    text: `I couldn't reach the brain just then (${detail}). Say that again and I'll pick it up.`,
+    toolEvents: planToolIds.map((toolId, index) => ({
+      id: `err_${index}`,
+      toolId,
+      label: toolId,
+      status: "error" as const,
+      detail,
+    })),
+    cards: [],
+    title: "Orchestration Error",
+  };
+}
+
 export async function orchestrate(
   invoke: EdgeInvokeFn,
   req: OrchestrateRequest,
 ): Promise<OrchestrateResponse> {
-  const modelId = resolveModelId(req.modelId);
   const fallbackId = req.conversationId ?? "";
-  const plan = planFromUtterance(req.message, [...AGENTS], [...TOOLS]);
-
-  const specialists = plan.agentIds
-    .map((id) => AGENTS.find((agent) => agent.id === id))
-    .filter((agent): agent is (typeof AGENTS)[number] => Boolean(agent))
-    .map((agent) => ({
-      id: agent.id,
-      name: agent.name,
-      systemRole: agent.systemRole,
-    }));
-
-  const body: Record<string, unknown> = {
-    conversationId: req.conversationId,
-    message: req.message,
-    modelId,
-    page: req.page,
-    tokenMint: req.tokenMint,
-    walletAddress: req.walletAddress,
-    knowledge: AGENT_KNOWLEDGE,
-    specialists,
-    plan: {
-      agentIds: plan.agentIds,
-      toolIds: plan.toolIds,
-      intent: plan.intent,
-      notes: plan.notes,
-    },
-  };
+  const { body, planToolIds } = buildOrchestrateBody(req);
 
   try {
     const raw = await invoke("orbitx-ai-orchestrate", body);
@@ -158,19 +214,85 @@ export async function orchestrate(
   } catch (error) {
     const detail =
       error instanceof Error ? error.message : "Unknown orchestration error";
-
-    return {
-      conversationId: fallbackId,
-      text: `OrbitX could not reach the orchestrator (${detail}). No trade or write action was performed.`,
-      toolEvents: plan.toolIds.map((toolId, index) => ({
-        id: `err_${index}`,
-        toolId,
-        label: toolId,
-        status: "error" as const,
-        detail,
-      })),
-      cards: [],
-      title: "Orchestration Error",
-    };
+    return failResponse(fallbackId, planToolIds, detail);
   }
 }
+
+function asStreamEvent(value: unknown): StreamEvent | null {
+  if (!isRecord(value) || typeof value.type !== "string") {
+    return null;
+  }
+  if (value.type === "token" && typeof value.text === "string") {
+    return { type: "token", text: value.text };
+  }
+  if (value.type === "error" && typeof value.error === "string") {
+    return { type: "error", error: value.error };
+  }
+  if (value.type === "tools") {
+    const coerced = coerceOrchestrateResponse(
+      { conversationId: "", text: "", toolEvents: value.toolEvents, cards: [] },
+      "",
+    );
+    return { type: "tools", toolEvents: coerced.toolEvents };
+  }
+  if (value.type === "done") {
+    const coerced = coerceOrchestrateResponse(value, "");
+    return {
+      type: "done",
+      conversationId: coerced.conversationId,
+      text: coerced.text,
+      toolEvents: coerced.toolEvents,
+      cards: coerced.cards,
+      title: coerced.title,
+    };
+  }
+  return null;
+}
+
+export async function orchestrateLive(
+  invoke: EdgeInvokeFn,
+  stream: EdgeStreamFn | undefined,
+  req: OrchestrateRequest,
+  handlers: StreamHandlers = {},
+): Promise<OrchestrateResponse> {
+  const fallbackId = req.conversationId ?? "";
+  const { body, planToolIds } = buildOrchestrateBody(req);
+
+  if (stream) {
+    try {
+      let latest: OrchestrateResponse | null = null;
+      const raw = await stream("orbitx-ai-orchestrate", body, (event) => {
+        if (event.type === "tools") {
+          handlers.onTools?.(event.toolEvents);
+        } else if (event.type === "token") {
+          handlers.onToken?.(event.text);
+        } else if (event.type === "done") {
+          latest = {
+            conversationId: event.conversationId || fallbackId,
+            text: event.text,
+            toolEvents: event.toolEvents,
+            cards: event.cards,
+            title: event.title,
+          };
+        }
+      });
+      if (latest) {
+        return latest;
+      }
+      return coerceOrchestrateResponse(raw, fallbackId);
+    } catch {
+      // Fall through to a single JSON turn.
+    }
+  }
+
+  try {
+    const raw = await invoke("orbitx-ai-orchestrate", body);
+    return coerceOrchestrateResponse(raw, fallbackId);
+  } catch (error) {
+    const detail =
+      error instanceof Error ? error.message : "Unknown orchestration error";
+    return failResponse(fallbackId, planToolIds, detail);
+  }
+}
+
+export { asStreamEvent };

@@ -146,6 +146,95 @@ export async function invokeFunction(
   return data;
 }
 
+export async function invokeFunctionStream(
+  name: string,
+  body: Record<string, unknown>,
+  onEvent: (event: Record<string, unknown>) => void,
+): Promise<unknown> {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const token = sessionData.session?.access_token;
+  if (!token) {
+    throw new Error("Connect your wallet to use OrbitX.");
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 90_000);
+
+  try {
+    const response = await fetch(`${supabaseUrl}/functions/v1/${name}`, {
+      method: "POST",
+      headers: {
+        apikey: supabaseAnonKey,
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+        Accept: "text/event-stream, application/json",
+      },
+      body: JSON.stringify({ ...body, stream: true }),
+      signal: controller.signal,
+    });
+
+    const contentType = response.headers.get("content-type") ?? "";
+    if (!response.ok) {
+      const detail = await response.text();
+      throw new Error(detail.slice(0, 280) || `Edge function "${name}" failed`);
+    }
+
+    if (!contentType.includes("text/event-stream") || !response.body) {
+      return (await response.json()) as unknown;
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let lastDone: Record<string, unknown> | null = null;
+
+    const flushBlock = (block: string) => {
+      const lines = block.split("\n");
+      const dataLines = lines
+        .filter((line) => line.startsWith("data:"))
+        .map((line) => line.slice(5).trim());
+      if (dataLines.length === 0) {
+        return;
+      }
+      const payload = dataLines.join("\n");
+      if (payload === "[DONE]") {
+        return;
+      }
+      try {
+        const parsed = JSON.parse(payload) as unknown;
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          const rec = parsed as Record<string, unknown>;
+          onEvent(rec);
+          if (rec.type === "done") {
+            lastDone = rec;
+          }
+        }
+      } catch {
+        // Partial SSE frames are ignored until the next flush.
+      }
+    };
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+      buffer += decoder.decode(value, { stream: true });
+      const blocks = buffer.split("\n\n");
+      buffer = blocks.pop() ?? "";
+      for (const block of blocks) {
+        flushBlock(block);
+      }
+    }
+    if (buffer.trim()) {
+      flushBlock(buffer);
+    }
+    return lastDone;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export async function walletAuth(
   action: "nonce" | "verify",
   payload: Record<string, string>,
