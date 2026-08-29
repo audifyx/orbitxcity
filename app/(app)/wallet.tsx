@@ -101,13 +101,13 @@ export default function WalletScreen() {
       ]}
     >
       <Text style={styles.title}>Wallet</Text>
-      <Text style={styles.subtitle}>Command center for your connected wallet</Text>
+      <Text style={styles.subtitle}>Your OrbitX in-app wallet</Text>
 
       {!wallet ? (
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>No wallet connected</Text>
+          <Text style={styles.cardTitle}>No wallet yet</Text>
           <Text style={styles.cardBody}>
-            Connect Phantom to view balances, tokens, and PnL.
+            Sign in with email or phone and OrbitX creates this wallet for you.
           </Text>
         </View>
       ) : (
@@ -178,7 +178,7 @@ export default function WalletScreen() {
             style={styles.dangerButton}
             onPress={() => void disconnect()}
           >
-            <Text style={styles.dangerButtonText}>Disconnect wallet</Text>
+            <Text style={styles.dangerButtonText}>Log out</Text>
           </Pressable>
         </>
       )}

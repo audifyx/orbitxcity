@@ -428,7 +428,7 @@ export function ChatThread({
   const handleConfirmTx = useCallback(
     async (card: MessageCard) => {
       if (!wallet) {
-        setStorageError("Connect Phantom before signing a swap.");
+        setStorageError("Sign in before signing a swap.");
         return;
       }
       const quote = parseQuoteJson(card.data.quoteJson);

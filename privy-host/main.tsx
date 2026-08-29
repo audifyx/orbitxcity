@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { PrivyProvider, useConnectWallet, usePrivy } from "@privy-io/react-auth";
+import { PrivyProvider, usePrivy } from "@privy-io/react-auth";
 import {
-  toSolanaWalletConnectors,
+  useCreateWallet,
   useSignMessage,
   useWallets,
 } from "@privy-io/react-auth/solana";
@@ -15,22 +15,17 @@ const SUPABASE_URL = "https://ffjipnkhcebjvttliptb.supabase.co";
 const SUPABASE_ANON_KEY =
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZmamlwbmtoY2VianZ0dGxpcHRiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc1Mjc5NDgsImV4cCI6MjA5MzEwMzk0OH0.aXu8bbpVVwc8KOJf1-lHqO3cz_0GZD10_TE0GlKQ1BI";
 
-type WalletId = "phantom" | "jupiter";
-
 type HostParams = {
   appId: string;
   clientId: string;
-  walletId: WalletId;
   returnTo: string;
 };
 
 function readParams(): HostParams {
   const search = new URLSearchParams(window.location.search);
-  const wallet = search.get("wallet");
   return {
     appId: (search.get("appId") ?? "").trim(),
     clientId: (search.get("clientId") ?? "").trim(),
-    walletId: wallet === "jupiter" ? "jupiter" : "phantom",
     returnTo: (search.get("return") ?? "").trim(),
   };
 }
@@ -83,7 +78,7 @@ function toBase58Signature(result: { signature: Uint8Array } | Uint8Array): stri
   const bytes = result instanceof Uint8Array ? result : result.signature;
   const encoded = bs58.encode(bytes);
   if (!isSolanaSignature(encoded)) {
-    throw new Error("Wallet did not return a valid signature.");
+    throw new Error("OrbitX wallet did not return a valid signature.");
   }
   return encoded;
 }
@@ -112,7 +107,7 @@ function finishInOpenerOrReturn(
     return;
   }
   if (payload.type === "error") {
-    window.sessionStorage.setItem(ERROR_KEY, payload.message ?? "Wallet connection failed.");
+    window.sessionStorage.setItem(ERROR_KEY, payload.message ?? "Sign-in failed.");
     window.sessionStorage.removeItem(RESULT_KEY);
   } else if (payload.pubkey && payload.signature) {
     window.sessionStorage.setItem(
@@ -150,148 +145,68 @@ async function walletAuth(
   return data;
 }
 
-function walletNameMatches(name: string, walletId: WalletId): boolean {
-  const lower = name.toLowerCase();
-  if (walletId === "phantom") {
-    return lower.includes("phantom");
-  }
-  return lower.includes("jupiter") || lower.includes("jup");
-}
-
-type InjectedProvider = {
-  isPhantom?: boolean;
-  isJupiter?: boolean;
-  publicKey?: { toBase58?: () => string; toString(): string } | null;
-  connect(): Promise<{ publicKey?: { toBase58?: () => string; toString(): string } } | void>;
-  signMessage(
-    message: Uint8Array,
-    display?: "utf8" | "hex",
-  ): Promise<{ signature: Uint8Array | string } | Uint8Array>;
-};
-
-function asProvider(value: unknown): InjectedProvider | null {
-  if (!value || typeof value !== "object") {
-    return null;
-  }
-  const rec = value as Record<string, unknown>;
-  if (typeof rec.connect !== "function" || typeof rec.signMessage !== "function") {
-    return null;
-  }
-  return value as InjectedProvider;
-}
-
-function getInjectedProvider(walletId: WalletId): InjectedProvider | null {
-  const win = window as Window & {
-    phantom?: { solana?: unknown };
-    solana?: InjectedProvider;
-    jupiter?: { solana?: unknown } | InjectedProvider;
-    jup?: { solana?: unknown } | InjectedProvider;
-  };
-
-  if (walletId === "phantom") {
-    return (
-      asProvider(win.phantom?.solana) ??
-      (win.solana?.isPhantom ? asProvider(win.solana) : null)
-    );
-  }
-
-  return (
-    asProvider((win.jupiter as { solana?: unknown } | undefined)?.solana) ??
-    asProvider(win.jupiter) ??
-    asProvider((win.jup as { solana?: unknown } | undefined)?.solana) ??
-    asProvider(win.jup) ??
-    (win.solana?.isJupiter ? asProvider(win.solana) : null)
-  );
-}
-
-function pubkeyFromKey(key: { toBase58?: () => string; toString(): string }): string {
-  return (key.toBase58?.() ?? key.toString()).trim();
-}
-
-async function connectInjected(walletId: WalletId): Promise<{
-  pubkey: string;
-  provider: InjectedProvider;
-} | null> {
-  const deadline = Date.now() + 2500;
-  let provider = getInjectedProvider(walletId);
-  while (!provider && Date.now() < deadline) {
-    await new Promise((resolve) => window.setTimeout(resolve, 80));
-    provider = getInjectedProvider(walletId);
-  }
-  if (!provider) {
-    return null;
-  }
-
-  if (!provider.publicKey) {
-    await provider.connect();
-  }
-  const key = provider.publicKey;
-  if (!key) {
-    const response = await provider.connect();
-    const fromResponse =
-      response && typeof response === "object" && response.publicKey
-        ? pubkeyFromKey(response.publicKey)
-        : "";
-    if (isSolanaPubkey(fromResponse)) {
-      return { pubkey: fromResponse, provider };
-    }
-    return null;
-  }
-  const pubkey = pubkeyFromKey(key);
-  return isSolanaPubkey(pubkey) ? { pubkey, provider } : null;
-}
-
-async function signInjected(provider: InjectedProvider, message: string): Promise<string> {
-  const raw = await provider.signMessage(new TextEncoder().encode(message), "utf8");
-  return toBase58Signature(raw);
-}
-
 function friendlyHostError(error: unknown): string {
   const message =
     typeof error === "string"
       ? error
       : error instanceof Error
         ? error.message
-        : "Wallet connection failed.";
+        : "Sign-in failed.";
   const lower = message.toLowerCase();
-  if (
-    lower.includes("could not log in with wallet") ||
-    lower.includes("can't connect") ||
-    lower.includes("cannot connect") ||
-    lower.includes("could not connect") ||
-    lower.includes("siws") ||
-    lower.includes("invalid_data")
-  ) {
-    return "Wallet did not finish connect. Pick Phantom or Jupiter again and approve. This is not a transaction.";
-  }
   if (
     lower.includes("declined") ||
     lower.includes("rejected") ||
     lower.includes("cancelled") ||
     lower.includes("canceled")
   ) {
-    return "Wallet request was cancelled. Tap connect and approve again.";
+    return "Sign-in was cancelled. Use your email or phone and try again.";
+  }
+  if (lower.includes("invalid phone") || lower.includes("phone number")) {
+    return "Enter a valid phone number, including country code.";
+  }
+  if (lower.includes("invalid email") || lower.includes("email")) {
+    return "Enter a valid email address and try again.";
   }
   return message;
 }
 
+function isEmbeddedSolanaWallet(wallet: {
+  address: string;
+  walletClientType?: string;
+  standardWallet?: { name?: string };
+}): boolean {
+  const client = (wallet.walletClientType ?? "").toLowerCase();
+  const name = (wallet.standardWallet?.name ?? "").toLowerCase();
+  return (
+    client === "privy" ||
+    name.includes("privy") ||
+    name.includes("embedded")
+  );
+}
+
 function HostApp({ params }: { params: HostParams }) {
-  const { ready } = usePrivy();
+  const { ready, authenticated, login } = usePrivy();
   const { wallets, ready: walletsReady } = useWallets();
+  const { createWallet } = useCreateWallet();
   const { signMessage } = useSignMessage();
-  const [status, setStatus] = useState("Starting wallet connect…");
+  const [status, setStatus] = useState("Starting email or phone sign-in…");
   const [error, setError] = useState<string | null>(null);
-  const connectOpened = useRef(false);
+  const loginOpened = useRef(false);
   const finishing = useRef(false);
   const walletsRef = useRef(wallets);
   const signMessageRef = useRef(signMessage);
+  const createWalletRef = useRef(createWallet);
   walletsRef.current = wallets;
   signMessageRef.current = signMessage;
+  createWalletRef.current = createWallet;
 
-  const pickWallet = (): (typeof wallets)[number] | undefined =>
-    walletsRef.current.find((item) =>
-      walletNameMatches(item.standardWallet?.name ?? "", params.walletId),
-    ) ?? walletsRef.current.find((item) => isSolanaPubkey(item.address));
+  const pickEmbedded = () => {
+    const current = walletsRef.current;
+    return (
+      current.find((item) => isEmbeddedSolanaWallet(item) && isSolanaPubkey(item.address)) ??
+      current.find((item) => isSolanaPubkey(item.address))
+    );
+  };
 
   const finishOrbitxSession = async (): Promise<void> => {
     if (finishing.current) {
@@ -299,21 +214,32 @@ function HostApp({ params }: { params: HostParams }) {
     }
     finishing.current = true;
     setError(null);
-    setStatus("Connected. Approve the sign-in. This is not a transaction.");
+    setStatus("Creating your OrbitX wallet…");
 
     try {
-      const deadline = Date.now() + 90_000;
-      let wallet = pickWallet();
-      while (!wallet && Date.now() < deadline) {
-        await new Promise((resolve) => window.setTimeout(resolve, 80));
-        wallet = pickWallet();
+      const deadline = Date.now() + 45_000;
+      let wallet = pickEmbedded();
+      if (!wallet) {
+        try {
+          await createWalletRef.current();
+        } catch (createError) {
+          const text =
+            createError instanceof Error ? createError.message.toLowerCase() : "";
+          if (!text.includes("already")) {
+            throw createError;
+          }
+        }
       }
-
+      while (!wallet && Date.now() < deadline) {
+        await new Promise((resolve) => window.setTimeout(resolve, 120));
+        wallet = pickEmbedded();
+      }
       if (!wallet || !isSolanaPubkey(wallet.address)) {
-        throw new Error("Wallet did not connect. Pick Phantom or Jupiter and approve.");
+        throw new Error("Could not create your OrbitX wallet. Try email or phone again.");
       }
 
       const pubkey = wallet.address.trim();
+      setStatus("Approve the sign-in. This is not a transaction.");
       const nonceData = await walletAuth("nonce", { pubkey });
       const message = nonceData.message;
       if (typeof message !== "string") {
@@ -323,6 +249,12 @@ function HostApp({ params }: { params: HostParams }) {
         await signMessageRef.current({
           message: new TextEncoder().encode(message),
           wallet,
+          options: {
+            uiOptions: {
+              title: "Sign in to OrbitX",
+              description: "This signs you into OrbitX. It is not a transaction.",
+            },
+          },
         }),
       );
       finishInOpenerOrReturn({ type: "done", pubkey, signature: signed }, params.returnTo);
@@ -334,29 +266,11 @@ function HostApp({ params }: { params: HostParams }) {
     }
   };
 
-  const { connectWallet } = useConnectWallet({
-    onSuccess: () => {
-      void finishOrbitxSession();
-    },
-    onError: (connectError) => {
-      finishing.current = false;
-      setError(friendlyHostError(connectError));
-      setStatus("");
-    },
-  });
-
-  const openWallet = (): void => {
+  const openLogin = (): void => {
     setError(null);
-    setStatus(
-      params.walletId === "jupiter"
-        ? "Opening Jupiter… approve connect, then sign. This is not a transaction."
-        : "Opening Phantom… approve connect, then sign. This is not a transaction.",
-    );
-    connectWallet({
-      description: "Connect to OrbitX. This request will not send a transaction.",
-      walletList: [params.walletId],
-      walletChainType: "solana-only",
-      preSelectedWalletId: params.walletId,
+    setStatus("Enter your email or phone. OrbitX will create your wallet.");
+    login({
+      loginMethods: ["email", "sms"],
     });
   };
 
@@ -365,48 +279,25 @@ function HostApp({ params }: { params: HostParams }) {
   }, []);
 
   useEffect(() => {
-    if (!ready || !walletsReady || connectOpened.current) {
+    if (!ready) {
       return;
     }
-    connectOpened.current = true;
+    if (authenticated) {
+      void finishOrbitxSession();
+      return;
+    }
+    if (loginOpened.current) {
+      return;
+    }
+    loginOpened.current = true;
+    openLogin();
+  }, [authenticated, ready]);
 
-    void (async () => {
-      if (pickWallet()) {
-        await finishOrbitxSession();
-        return;
-      }
-
-      const injected = await connectInjected(params.walletId);
-      if (injected) {
-        finishing.current = true;
-        setError(null);
-        setStatus("Connected. Approve the sign-in. This is not a transaction.");
-        try {
-          const nonceData = await walletAuth("nonce", { pubkey: injected.pubkey });
-          const message = nonceData.message;
-          if (typeof message !== "string") {
-            throw new Error("wallet-auth nonce response is invalid.");
-          }
-          const signed = await signInjected(injected.provider, message);
-          finishInOpenerOrReturn(
-            {
-              type: "done",
-              pubkey: injected.pubkey,
-              signature: signed,
-            },
-            params.returnTo,
-          );
-        } catch (injectedError) {
-          finishing.current = false;
-          setError(friendlyHostError(injectedError));
-          setStatus("");
-        }
-        return;
-      }
-
-      openWallet();
-    })();
-  }, [params.walletId, ready, walletsReady]);
+  useEffect(() => {
+    if (authenticated && walletsReady && !finishing.current && pickEmbedded()) {
+      void finishOrbitxSession();
+    }
+  }, [authenticated, wallets, walletsReady]);
 
   return (
     <div
@@ -427,45 +318,12 @@ function HostApp({ params }: { params: HostParams }) {
       <div style={{ color: "rgba(176, 198, 232, 0.72)", lineHeight: 1.5, maxWidth: 360 }}>
         {error ??
           status ??
-          (params.returnTo
-            ? "Connect your wallet and sign a message. You will return to the OrbitX app. This is not a transaction."
-            : "Connect your wallet and sign a message. This is not a transaction.")}
+          "Use your email or phone. OrbitX creates an in-app wallet for this account."}
       </div>
       {ready && !finishing.current ? (
         <button
           type="button"
-          onClick={() => {
-            void (async () => {
-              const injected = await connectInjected(params.walletId);
-              if (!injected) {
-                openWallet();
-                return;
-              }
-              finishing.current = true;
-              setError(null);
-              setStatus("Connected. Approve the sign-in. This is not a transaction.");
-              try {
-                const nonceData = await walletAuth("nonce", { pubkey: injected.pubkey });
-                const message = nonceData.message;
-                if (typeof message !== "string") {
-                  throw new Error("wallet-auth nonce response is invalid.");
-                }
-                const signed = await signInjected(injected.provider, message);
-                finishInOpenerOrReturn(
-                  {
-                    type: "done",
-                    pubkey: injected.pubkey,
-                    signature: signed,
-                  },
-                  params.returnTo,
-                );
-              } catch (injectedError) {
-                finishing.current = false;
-                setError(friendlyHostError(injectedError));
-                setStatus("");
-              }
-            })();
-          }}
+          onClick={openLogin}
           style={{
             minHeight: 48,
             minWidth: 220,
@@ -478,7 +336,7 @@ function HostApp({ params }: { params: HostParams }) {
             cursor: "pointer",
           }}
         >
-          {params.walletId === "jupiter" ? "Connect Jupiter" : "Connect Phantom"}
+          Continue with email or phone
         </button>
       ) : null}
     </div>
@@ -504,23 +362,12 @@ function Root() {
           theme: "dark",
           accentColor: "#7EB6FF",
           walletChainType: "solana-only",
-          walletList:
-            params.walletId === "jupiter"
-              ? ["jupiter", "phantom", "detected_solana_wallets"]
-              : ["phantom", "jupiter", "detected_solana_wallets"],
-          showWalletLoginFirst: true,
+          showWalletLoginFirst: false,
         },
-        loginMethods: ["wallet"],
+        loginMethods: ["email", "sms"],
         embeddedWallets: {
           ethereum: { createOnLogin: "off" },
-          solana: { createOnLogin: "off" },
-        },
-        externalWallets: {
-          solana: {
-            connectors: toSolanaWalletConnectors({
-              shouldAutoConnect: false,
-            }),
-          },
+          solana: { createOnLogin: "all-users" },
         },
       }}
     >
@@ -531,7 +378,7 @@ function Root() {
 
 const root = document.getElementById("root");
 if (!root) {
-  throw new Error("OrbitX wallet host is missing #root.");
+  throw new Error("OrbitX sign-in host is missing #root.");
 }
 
 createRoot(root).render(<Root />);

@@ -17,7 +17,6 @@ import {
   parseAuthCallback,
   privyHostUrl,
 } from "../src/lib/hostedAuth";
-import { isWalletInjected, type WalletId } from "../src/lib/wallets";
 import { colors } from "../src/theme";
 
 function firstParam(value: string | string[] | undefined): string {
@@ -33,18 +32,15 @@ export default function AuthScreen() {
   const params = useLocalSearchParams<{
     pubkey?: string | string[];
     signature?: string | string[];
-    wallet?: string | string[];
     return?: string | string[];
   }>();
-  const { requestWalletSignature, signInWithSignature, session, connecting, error } =
-    useAuth();
+  const { signInWithSignature, session, connecting, error } = useAuth();
   const [localError, setLocalError] = useState<string | null>(null);
   const [status, setStatus] = useState("Preparing OrbitX sign-in…");
   const started = useRef(false);
 
   const pubkey = firstParam(params.pubkey);
   const signature = firstParam(params.signature);
-  const walletHint = firstParam(params.wallet);
   const returnTo = firstParam(params.return);
   const callback = parseAuthCallback(
     `https://orbitx.local/auth?pubkey=${encodeURIComponent(pubkey)}&signature=${encodeURIComponent(signature)}`,
@@ -59,21 +55,25 @@ export default function AuthScreen() {
 
   useEffect(() => {
     if (session) {
+      if (Platform.OS === "web" && returnTo && isSafeAppReturn(returnTo) && callback) {
+        window.location.replace(appendAuthResult(returnTo, callback));
+        return;
+      }
       router.replace("/");
     }
-  }, [router, session]);
+  }, [callback, returnTo, router, session]);
 
   useEffect(() => {
     if (!callback) {
       return;
     }
-    setStatus("Connecting your wallet to OrbitX…");
+    setStatus("Connecting your OrbitX wallet…");
     if (Platform.OS !== "web" || started.current) {
       return;
     }
     started.current = true;
     void finishInApp(callback.pubkey, callback.signature).catch((err) => {
-      setLocalError(err instanceof Error ? err.message : "Wallet sign-in failed.");
+      setLocalError(err instanceof Error ? err.message : "Sign-in failed.");
       setStatus("");
     });
   }, [callback, finishInApp]);
@@ -82,46 +82,13 @@ export default function AuthScreen() {
     if (callback || started.current || Platform.OS !== "web") {
       return;
     }
-    const hinted: WalletId | null =
-      walletHint === "jupiter" || walletHint === "phantom" ? walletHint : null;
-    if (!hinted) {
-      setStatus("Choose Phantom or Jupiter, then sign a message to log in.");
-      return;
-    }
-
     started.current = true;
     const nativeReturn = returnTo && isSafeAppReturn(returnTo) ? returnTo : "";
-
-    void (async () => {
-      try {
-        if (isWalletInjected(hinted)) {
-          setStatus("Approve the sign-in in your wallet. This is not a transaction.");
-          const linked = await requestWalletSignature(hinted);
-          if (nativeReturn) {
-            window.location.replace(appendAuthResult(nativeReturn, linked));
-            return;
-          }
-          await finishInApp(linked.pubkey, linked.signature);
-          router.replace("/");
-          return;
-        }
-
-        setStatus(
-          hinted === "jupiter"
-            ? "Opening Privy… pick Jupiter, then sign. You will return to the app."
-            : "Opening Privy… pick Phantom, then sign. You will return to the app.",
-        );
-        window.location.assign(privyHostUrl(hinted, nativeReturn || undefined));
-      } catch (err) {
-        setLocalError(err instanceof Error ? err.message : "Wallet sign-in failed.");
-        setStatus("");
-        started.current = false;
-      }
-    })();
-  }, [callback, finishInApp, requestWalletSignature, returnTo, router, walletHint]);
+    setStatus("Opening email or phone sign-in. OrbitX will create your wallet.");
+    window.location.assign(privyHostUrl(nativeReturn || undefined));
+  }, [callback, returnTo]);
 
   const displayError = localError ?? error;
-  const showPicker = Platform.OS === "web" && !callback && !connecting;
 
   return (
     <View
@@ -139,7 +106,7 @@ export default function AuthScreen() {
       ) : (
         <Text style={styles.message}>
           {status ||
-            "Connect your wallet and sign a message. This connects the account to the app. It is not a transaction."}
+            "Use your email or phone. OrbitX creates an in-app wallet for this account."}
         </Text>
       )}
 
@@ -147,32 +114,9 @@ export default function AuthScreen() {
         <ActivityIndicator color={colors.signal} size="large" />
       ) : null}
 
-      {showPicker ? (
-        <View style={styles.actions}>
-          <Pressable
-            style={({ pressed }) => [styles.button, pressed && styles.pressed]}
-            onPress={() => {
-              started.current = false;
-              router.setParams({ wallet: "phantom" });
-            }}
-          >
-            <Text style={styles.buttonText}>Continue with Phantom</Text>
-          </Pressable>
-          <Pressable
-            style={({ pressed }) => [styles.button, pressed && styles.pressed]}
-            onPress={() => {
-              started.current = false;
-              router.setParams({ wallet: "jupiter" });
-            }}
-          >
-            <Text style={styles.buttonText}>Continue with Jupiter</Text>
-          </Pressable>
-        </View>
-      ) : null}
-
       {displayError ? (
         <Pressable onPress={() => router.replace("/connect")}>
-          <Text style={styles.back}>Back to connect</Text>
+          <Text style={styles.back}>Back to sign in</Text>
         </Pressable>
       ) : null}
     </View>
@@ -207,27 +151,6 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     textAlign: "center",
     maxWidth: 360,
-  },
-  actions: {
-    width: "100%",
-    maxWidth: 360,
-    gap: 10,
-    marginTop: 8,
-  },
-  button: {
-    minHeight: 52,
-    borderRadius: 14,
-    backgroundColor: colors.signal,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  pressed: {
-    opacity: 0.88,
-  },
-  buttonText: {
-    color: colors.void,
-    fontFamily: "Inter_500Medium",
-    fontSize: 16,
   },
   back: {
     color: colors.mute,

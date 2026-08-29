@@ -6,7 +6,7 @@ This repository contains the OrbitX mobile app (Expo SDK 54) connected to the ex
 
 ## Product
 
-Wallet-first Sign-In with Solana (Phantom). No email/password primary flow.
+Sign in with email or phone through Privy. Privy creates an in-app Solana wallet for that account. Privy is not used to connect Phantom or Jupiter.
 
 The home screen is the product: a ChatGPT-style intelligence chat. The Brain plans tool calls against existing OrbitX Edge Functions (OG Scan, Jupiter quotes, wallet intel, alerts, and more). Trades are quote → preview → wallet signature only. The model is never the authorization layer.
 
@@ -21,7 +21,7 @@ Use Expo Go on a phone, or:
 
 - iOS: `npx expo start --ios`
 - Android: `npx expo start --android`
-- Web: `npx expo start --web` (Phantom browser extension for connect)
+- Web: `npx expo start --web` (email or phone via the isolated Privy host)
 
 Copy `.env.example` to `.env` if you want to override the public Supabase URL/anon key. Never put a service-role key in the client.
 
@@ -35,7 +35,7 @@ Set these **public** variables on the Vercel project (Production + Preview):
 - `EXPO_PUBLIC_SUPABASE_ANON_KEY`
 - `EXPO_PUBLIC_SOLANA_RPC_URL` (optional)
 - `EXPO_PUBLIC_APP_URL` (`https://orbitxcity.vercel.app`)
-- `EXPO_PUBLIC_PRIVY_APP_ID` or `PRIVY_APP_ID` (public Privy App ID)
+- `EXPO_PUBLIC_PRIVY_APP_ID` or `PRIVY_APP_ID` (public Privy App ID for email/phone login)
 - `EXPO_PUBLIC_PRIVY_CLIENT_ID` or `PRIVY_CLIENT_ID` (optional)
 
 Never put `PRIVY_APP_SECRET` in `EXPO_PUBLIC_*` or the Expo client.

@@ -15,7 +15,6 @@ import * as SecureStore from "expo-secure-store";
 import { parseAuthCallback } from "./hostedAuth";
 import {
   clearPhantomSecureStore,
-  startNativeConnect,
   startNativeSign,
   handleNativeConnectRedirect,
   handleNativeSignRedirect,
@@ -23,15 +22,13 @@ import {
 } from "./phantom";
 import { supabase, walletAuth, warmWalletAuth } from "./supabase";
 import { connectWithPrivy, consumePrivyHostResult, isPrivyConfigured } from "./privyConnect";
-import { isInsideWalletBrowser, isMobileDevice, openHostedAuth } from "./walletOpen";
+import { openHostedAuth } from "./walletOpen";
 import {
   connectBrowserWallet,
   isSolanaPubkey,
   isSolanaSignature,
-  isWalletInjected,
   prepareWalletStandard,
   signBrowserWallet,
-  waitForWallet,
   type WalletId,
 } from "./wallets";
 
@@ -121,26 +118,12 @@ function publicAuthError(error: unknown, fallback: string): string {
     return "Can't reach OrbitX sign-in. Check your connection and try again.";
   }
   if (
-    lower.includes("invalid account") ||
-    (lower.includes("cannot read properties of undefined") &&
-      lower.includes("publickey")) ||
-    lower.includes("reading 'publickey'")
-  ) {
-    return "Wallet could not sign with that account. Pick the wallet again and approve the request.";
-  }
-  if (
     lower.includes("declined") ||
     lower.includes("rejected") ||
     lower.includes("cancelled") ||
     lower.includes("canceled")
   ) {
-    return "Wallet request was cancelled.";
-  }
-  if (lower.includes("wallet not found") || lower.includes("no wallet found")) {
-    return "Install Phantom or Jupiter, then try Connect Wallet again.";
-  }
-  if (lower.includes("not installed") || lower.includes("jupiter_siws_required")) {
-    return "Opening your wallet. Approve the connection, then sign. This is not a transaction.";
+    return "Sign-in was cancelled. Use your email or phone and try again.";
   }
   if (
     lower.includes("could not log in with wallet") ||
@@ -148,7 +131,7 @@ function publicAuthError(error: unknown, fallback: string): string {
     lower.includes("cannot connect") ||
     lower.includes("could not connect")
   ) {
-    return "Wallet did not finish connect. Pick Phantom or Jupiter again and approve. This is not a transaction.";
+    return "Sign-in did not finish. Use your email or phone. OrbitX creates your wallet.";
   }
   return message;
 }
@@ -391,57 +374,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const connect = useCallback(
     async (
-      walletId: WalletId = "phantom",
-      options?: { injectedOnly?: boolean; hostedOnly?: boolean },
+      _walletId?: WalletId,
+      _options?: { injectedOnly?: boolean; hostedOnly?: boolean },
     ) => {
       setConnecting(true);
       setError(null);
 
       try {
-        const insideWallet = isInsideWalletBrowser(walletId);
-        await waitForWallet(
-          walletId,
-          options?.injectedOnly || insideWallet ? 5000 : 3500,
-        );
-
-        if (isWalletInjected(walletId) || options?.injectedOnly || insideWallet) {
-          const linked = await connectBrowserWallet(walletId);
-          setPendingPubkey(linked.pubkey);
-          setWallet(linked.pubkey);
-          const nonceData = parseNonceResponse(
-            await walletAuth("nonce", { pubkey: linked.pubkey }),
-          );
-          const signature = await signBrowserWallet(walletId, nonceData.message);
-          if (!isSolanaSignature(signature)) {
-            throw new Error("Wallet did not return a valid signature.");
-          }
-          await finishVerification(linked.pubkey, signature);
-          return { pubkey: linked.pubkey, signature };
-        }
-
         if (Platform.OS !== "web") {
-          if (walletId === "phantom" && !options?.hostedOnly) {
-            try {
-              await startNativeConnect();
-              return;
-            } catch {
-              // Phantom UL failed — fall through to the hosted Privy page.
-            }
-          }
-          await openHostedAuth(walletId);
+          await openHostedAuth();
           return;
         }
 
         if (isPrivyConfigured()) {
-          const linked = await connectWithPrivy(walletId);
-          setPendingPubkey(linked.pubkey);
-          setWallet(linked.pubkey);
-          await finishVerification(linked.pubkey, linked.signature);
-          return linked;
-        }
-
-        if (isMobileDevice()) {
-          await openHostedAuth(walletId);
+          await connectWithPrivy();
           return;
         }
 
@@ -449,7 +395,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           "OrbitX is missing the Privy App ID on this build. Set PRIVY_APP_ID or EXPO_PUBLIC_PRIVY_APP_ID on Vercel.",
         );
       } catch (connectError) {
-        const message = publicAuthError(connectError, "Wallet connection failed.");
+        const message = publicAuthError(connectError, "Sign-in failed.");
         if (!message) {
           return;
         }
@@ -459,7 +405,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setConnecting(false);
       }
     },
-    [finishVerification],
+    [],
   );
 
   const consumedAuthUrl = useRef<string | null>(null);

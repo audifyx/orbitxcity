@@ -1,19 +1,17 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
-  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   View,
 } from "react-native";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Circle, Line } from "react-native-svg";
 
 import { useAuth } from "../../src/lib/auth";
-import { type WalletId } from "../../src/lib/wallets";
 import { colors } from "../../src/theme";
 
 function OrbitMark({ size = 56 }: { size?: number }) {
@@ -50,84 +48,35 @@ function OrbitMark({ size = 56 }: { size?: number }) {
   );
 }
 
-const WALLETS: { id: WalletId; label: string; hint: string }[] = [
-  { id: "jupiter", label: "Jupiter", hint: "Opens the OrbitX sign-in page — approve, then return here" },
-  { id: "phantom", label: "Phantom", hint: "Approve in Phantom, then sign. You return to the app." },
-];
-
 export default function ConnectScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const params = useLocalSearchParams<{ wallet?: string | string[] }>();
   const { connect, connecting, error, clearError, session } = useAuth();
 
-  const [pickerOpen, setPickerOpen] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
-  const autoStarted = useRef(false);
 
-  const handleConnect = useCallback(
-    async (walletId: WalletId, hostedOnly = false) => {
-      setLocalError(null);
-      clearError();
-      setPickerOpen(false);
-      setStatus(
-        hostedOnly || walletId === "jupiter"
-          ? "Opening the OrbitX sign-in page. Approve your wallet, then you will return here."
-          : "Opening Phantom… approve connect, then sign. You will return to the app.",
-      );
-      try {
-        const result = await connect(
-          walletId,
-          hostedOnly ? { hostedOnly: true } : undefined,
-        );
-        if (result) {
-          router.replace("/");
-        }
-      } catch (err) {
-        const message =
-          err instanceof Error ? err.message : "Wallet connection failed.";
-        setLocalError(message);
-        setStatus(null);
+  const handleSignIn = useCallback(async () => {
+    setLocalError(null);
+    clearError();
+    setStatus("Opening email or phone sign-in. OrbitX will create your wallet.");
+    try {
+      const result = await connect();
+      if (result) {
+        router.replace("/");
       }
-    },
-    [clearError, connect, router],
-  );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Sign-in failed.";
+      setLocalError(message);
+      setStatus(null);
+    }
+  }, [clearError, connect, router]);
 
   useEffect(() => {
     if (session) {
       router.replace("/");
     }
   }, [router, session]);
-
-  useEffect(() => {
-    const raw = params.wallet;
-    const hinted = Array.isArray(raw) ? raw[0] : raw;
-    if (autoStarted.current) {
-      return;
-    }
-    if (hinted === "jupiter" || hinted === "phantom") {
-      autoStarted.current = true;
-      void (async () => {
-        setLocalError(null);
-        clearError();
-        setStatus(
-          hinted === "jupiter"
-            ? "Jupiter is open. Approve connect, then sign."
-            : "Phantom is open. Approve connect, then sign.",
-        );
-        try {
-          await connect(hinted, { injectedOnly: true });
-          router.replace("/");
-        } catch (err) {
-          const message =
-            err instanceof Error ? err.message : "Wallet connection failed.";
-          setLocalError(message);
-          setStatus(null);
-        }
-      })();
-    }
-  }, [clearError, connect, params.wallet, router]);
 
   const displayError = localError ?? error;
 
@@ -142,10 +91,10 @@ export default function ConnectScreen() {
     >
       <View style={styles.content}>
         <OrbitMark />
-        <Text style={styles.title}>Connect wallet</Text>
+        <Text style={styles.title}>Sign in to OrbitX</Text>
         <Text style={styles.subtitle}>
-          Tap connect and pick Jupiter or Phantom. Sign a message to connect
-          this account to OrbitX. That sign-in is not a transaction.
+          Use your email or phone. Privy creates your in-app wallet and account.
+          You stay signed in until you log out.
         </Text>
 
         {displayError ? (
@@ -164,68 +113,20 @@ export default function ConnectScreen() {
             pressed && styles.primaryButtonPressed,
             connecting && styles.primaryButtonDisabled,
           ]}
-          onPress={() => {
-            setLocalError(null);
-            clearError();
-            setPickerOpen(true);
-          }}
+          onPress={() => void handleSignIn()}
           disabled={connecting}
           accessibilityRole="button"
-          accessibilityLabel="Connect wallet"
+          accessibilityLabel="Continue with email or phone"
         >
           {connecting ? (
             <ActivityIndicator color={colors.frost} />
           ) : (
-            <Text style={styles.primaryButtonText}>Connect Wallet</Text>
+            <Text style={styles.primaryButtonText}>
+              Continue with email or phone
+            </Text>
           )}
         </Pressable>
       </View>
-
-      <Modal
-        visible={pickerOpen}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setPickerOpen(false)}
-      >
-        <Pressable style={styles.sheetBackdrop} onPress={() => setPickerOpen(false)}>
-          <Pressable
-            style={[styles.sheet, { paddingBottom: insets.bottom + 20 }]}
-            onPress={(event) => event.stopPropagation()}
-          >
-            <Text style={styles.sheetTitle}>Choose a wallet</Text>
-            {WALLETS.map((wallet) => (
-              <Pressable
-                key={wallet.id}
-                style={({ pressed }) => [
-                  styles.walletRow,
-                  pressed && styles.primaryButtonPressed,
-                ]}
-                onPress={() => void handleConnect(wallet.id)}
-                disabled={connecting}
-              >
-                <Text style={styles.walletName}>{wallet.label}</Text>
-                <Text style={styles.walletHint}>{wallet.hint}</Text>
-              </Pressable>
-            ))}
-            <Pressable
-              style={({ pressed }) => [
-                styles.walletRow,
-                pressed && styles.primaryButtonPressed,
-              ]}
-              onPress={() => void handleConnect("phantom", true)}
-              disabled={connecting}
-            >
-              <Text style={styles.walletName}>Sign-in page</Text>
-              <Text style={styles.walletHint}>
-                Opens a Privy sign-in link, then returns to this app
-              </Text>
-            </Pressable>
-            <Pressable onPress={() => setPickerOpen(false)}>
-              <Text style={styles.back}>Cancel</Text>
-            </Pressable>
-          </Pressable>
-        </Pressable>
-      </Modal>
     </ScrollView>
   );
 }
@@ -304,53 +205,5 @@ const styles = StyleSheet.create({
     color: colors.void,
     fontFamily: "Inter_500Medium",
     fontSize: 16,
-  },
-  sheetBackdrop: {
-    flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.72)",
-    justifyContent: "flex-end",
-  },
-  sheet: {
-    backgroundColor: colors.surface,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    paddingHorizontal: 20,
-    paddingTop: 20,
-    gap: 10,
-    borderWidth: 1,
-    borderColor: colors.hairline,
-  },
-  sheetTitle: {
-    color: colors.frost,
-    fontFamily: "SpaceGrotesk_600SemiBold",
-    fontSize: 18,
-    textAlign: "center",
-    marginBottom: 6,
-  },
-  walletRow: {
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: colors.hairline,
-    backgroundColor: colors.composer,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    gap: 4,
-  },
-  walletName: {
-    color: colors.frost,
-    fontFamily: "Inter_500Medium",
-    fontSize: 16,
-  },
-  walletHint: {
-    color: colors.mute,
-    fontFamily: "Inter_400Regular",
-    fontSize: 13,
-  },
-  back: {
-    color: colors.mute,
-    fontFamily: "Inter_400Regular",
-    fontSize: 13,
-    textAlign: "center",
-    paddingVertical: 8,
   },
 });

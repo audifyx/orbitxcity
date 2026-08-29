@@ -1,6 +1,6 @@
 import { isSafeAppReturn, privyHostUrl } from "./hostedAuth";
 import { privyAppId } from "./env";
-import { isSolanaPubkey, isSolanaSignature, type WalletId } from "./wallets";
+import { isSolanaPubkey, isSolanaSignature } from "./wallets";
 
 const RESULT_KEY = "orbitx-privy-result";
 const ERROR_KEY = "orbitx-privy-error";
@@ -35,7 +35,7 @@ export function consumePrivyHostResult(): HostDone | null {
     !isSolanaPubkey(parsed.pubkey) ||
     !isSolanaSignature(parsed.signature)
   ) {
-    throw new Error("Wallet did not finish sign-in. Try Connect Wallet again.");
+    throw new Error("Sign-in did not finish. Use your email or phone again.");
   }
 
   return { pubkey: parsed.pubkey, signature: parsed.signature };
@@ -48,7 +48,7 @@ function currentReturnParam(): string {
   return new URLSearchParams(window.location.search).get("return") ?? "";
 }
 
-export async function connectWithPrivy(walletId: WalletId): Promise<HostDone> {
+export async function connectWithPrivy(): Promise<HostDone> {
   if (!isPrivyConfigured()) {
     throw new Error(
       "OrbitX is missing the Privy App ID on this build. Set PRIVY_APP_ID or EXPO_PUBLIC_PRIVY_APP_ID on Vercel.",
@@ -57,13 +57,10 @@ export async function connectWithPrivy(walletId: WalletId): Promise<HostDone> {
 
   const returnTo = currentReturnParam();
   const url = privyHostUrl(
-    walletId,
     returnTo && isSafeAppReturn(returnTo) ? returnTo : undefined,
   );
 
-  // Same tab only. Wallet extensions cannot connect from a popup, which is
-  // what produced Privy's "Can't connect" error.
   window.location.assign(url);
   await new Promise<HostDone>(() => undefined);
-  throw new Error("Opening wallet connect…");
+  throw new Error("Opening email or phone sign-in…");
 }

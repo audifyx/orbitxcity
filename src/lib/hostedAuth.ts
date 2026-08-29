@@ -4,8 +4,6 @@ import bs58 from "bs58";
 
 import { privyAppId, privyClientId, publicAppUrl } from "./env";
 
-export type HostedWalletId = "phantom" | "jupiter";
-
 function isSolanaPubkey(value: string): boolean {
   try {
     return bs58.decode(value.trim()).length === 32;
@@ -129,12 +127,8 @@ export function appendAuthResult(
   return url.toString();
 }
 
-export function hostedAuthPageUrl(
-  walletId: HostedWalletId,
-  returnTo: string,
-): string {
+export function hostedAuthPageUrl(returnTo: string): string {
   const url = new URL("/auth", `${appOrigin()}/`);
-  url.searchParams.set("wallet", walletId);
   url.searchParams.set("return", returnTo);
   url.searchParams.set("appId", privyAppId);
   if (privyClientId) {
@@ -143,13 +137,9 @@ export function hostedAuthPageUrl(
   return url.toString();
 }
 
-export function privyHostUrl(
-  walletId: HostedWalletId,
-  returnTo?: string,
-): string {
+export function privyHostUrl(returnTo?: string): string {
   const url = new URL("/privy-host.html", `${appOrigin()}/`);
   url.searchParams.set("appId", privyAppId);
-  url.searchParams.set("wallet", walletId);
   if (privyClientId) {
     url.searchParams.set("clientId", privyClientId);
   }
