@@ -10,10 +10,16 @@ function firstEnv(...names) {
   return "";
 }
 
+const existingExtra =
+  appJson.expo && typeof appJson.expo.extra === "object" && appJson.expo.extra
+    ? appJson.expo.extra
+    : {};
+
 module.exports = {
   expo: {
     ...appJson.expo,
     extra: {
+      ...existingExtra,
       privyAppId: firstEnv(
         "EXPO_PUBLIC_PRIVY_APP_ID",
         "PRIVY_APP_ID",

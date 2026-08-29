@@ -9,17 +9,35 @@
       "distribution": "internal",
       "android": {
         "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_SUPABASE_URL": "https://ffjipnkhcebjvttliptb.supabase.co",
+        "EXPO_PUBLIC_SOLANA_RPC_URL": "https://api.mainnet-beta.solana.com",
+        "EXPO_PUBLIC_APP_URL": "https://orbitxcity.vercel.app",
+        "EXPO_PUBLIC_PRIVY_APP_ID": "cmtdqdoj0043z0dlabgpr7l6g"
       }
     },
     "preview": {
       "distribution": "internal",
       "android": {
         "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_SUPABASE_URL": "https://ffjipnkhcebjvttliptb.supabase.co",
+        "EXPO_PUBLIC_SOLANA_RPC_URL": "https://api.mainnet-beta.solana.com",
+        "EXPO_PUBLIC_APP_URL": "https://orbitxcity.vercel.app",
+        "EXPO_PUBLIC_PRIVY_APP_ID": "cmtdqdoj0043z0dlabgpr7l6g"
       }
     },
     "production": {
       "android": {
         "buildType": "app-bundle"
+      },
+      "env": {
+        "EXPO_PUBLIC_SUPABASE_URL": "https://ffjipnkhcebjvttliptb.supabase.co",
+        "EXPO_PUBLIC_SOLANA_RPC_URL": "https://api.mainnet-beta.solana.com",
+        "EXPO_PUBLIC_APP_URL": "https://orbitxcity.vercel.app",
+        "EXPO_PUBLIC_PRIVY_APP_ID": "cmtdqdoj0043z0dlabgpr7l6g"
       }
     }
   }
