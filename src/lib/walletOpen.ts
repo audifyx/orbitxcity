@@ -94,8 +94,8 @@ function jupiterBrowseUrls(target: string): string[] {
   const hostPath = target.replace(/^https?:\/\//, "");
   const urls: string[] = [];
 
-  // Jupiter has no browse universal link. Open OrbitX in Chrome so Mobile
-  // Wallet Adapter can launch Jupiter. Never open jup.ag/ul/browse.
+  // Jupiter has no browse universal link. Open OrbitX in Chrome so Privy
+  // can launch Jupiter. Never open jup.ag/ul/browse.
   if (Platform.OS === "android") {
     urls.push(
       `intent://${hostPath}#Intent;scheme=https;package=com.android.chrome;end`,
@@ -120,7 +120,7 @@ export async function openWalletInAppBrowser(walletId: WalletId): Promise<void> 
 
   throw new Error(
     walletId === "jupiter"
-      ? "Could not reach Jupiter. Install Jupiter Mobile and tap Connect again so Mobile Wallet Adapter can open it."
+      ? "Could not reach Jupiter. Install Jupiter Mobile and tap Connect again."
       : "Could not open Phantom. Install Phantom and try again.",
   );
 }

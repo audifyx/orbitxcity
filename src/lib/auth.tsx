@@ -17,23 +17,11 @@ import {
   WALLET_PUBKEY_KEY,
 } from "./phantom";
 import { supabase, walletAuth, warmWalletAuth } from "./supabase";
+import { connectWithPrivy, isPrivyConfigured } from "./privyConnect";
+import { isMobileDevice, openWalletInAppBrowser } from "./walletOpen";
 import {
-  connectAndSignWithMwa,
-  isMwaUnavailableError,
-  isNativeMwaSupported,
-} from "./mwaConnect";
-import { registerWebMwa } from "./registerMwa";
-import {
-  isInsideWalletBrowser,
-  isMobileDevice,
-  openWalletInAppBrowser,
-} from "./walletOpen";
-import {
-  connectBrowserWallet,
   isSolanaPubkey,
   isSolanaSignature,
-  signBrowserWallet,
-  waitForWallet,
   type WalletId,
 } from "./wallets";
 
@@ -182,7 +170,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    registerWebMwa();
     void warmWalletAuth();
   }, []);
 
@@ -291,61 +278,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setError(null);
 
       try {
-        registerWebMwa();
-        const insideWallet = isInsideWalletBrowser(walletId);
-        const injected = await waitForWallet(walletId, insideWallet ? 8000 : 2500);
-
-        if (injected) {
-          const { pubkey } = await connectBrowserWallet(walletId);
-          setPendingPubkey(pubkey);
-          setWallet(pubkey);
+        if (isPrivyConfigured()) {
+          const linked = await connectWithPrivy(walletId);
+          setPendingPubkey(linked.pubkey);
+          setWallet(linked.pubkey);
 
           const nonceData = parseNonceResponse(
-            await walletAuth("nonce", { pubkey }),
+            await walletAuth("nonce", { pubkey: linked.pubkey }),
           );
-          const signature = await signBrowserWallet(walletId, nonceData.message);
-          await finishVerification(pubkey, signature);
+          const signature = await linked.signMessage(nonceData.message);
+          await finishVerification(linked.pubkey, signature);
           return;
         }
 
         if (options?.injectedOnly) {
           throw new Error(
-            "Wallet is open but not ready. Approve connect, then sign. This is not a transaction.",
+            "Wallet is open but OrbitX is still starting. Approve connect, then sign. This is not a transaction.",
           );
         }
 
-        if (insideWallet) {
-          throw new Error(
-            "Approve the connect request in your wallet, then sign. This is not a transaction.",
-          );
+        if (isMobileDevice()) {
+          await openWalletInAppBrowser(walletId);
+          return;
         }
 
-        if (isNativeMwaSupported()) {
-          try {
-            const signed = await connectAndSignWithMwa(async (pubkey) => {
-              setPendingPubkey(pubkey);
-              setWallet(pubkey);
-              const nonceData = parseNonceResponse(
-                await walletAuth("nonce", { pubkey }),
-              );
-              return nonceData.message;
-            });
-            await finishVerification(signed.pubkey, signed.signature);
-            return;
-          } catch (mwaError) {
-            if (!isMwaUnavailableError(mwaError)) {
-              throw mwaError;
-            }
-          }
-        }
-
-        if (!isMobileDevice()) {
-          throw new Error(
-            "Open OrbitX on your phone, or use the Phantom or Jupiter extension in this browser.",
-          );
-        }
-
-        await openWalletInAppBrowser(walletId);
+        throw new Error(
+          "OrbitX is missing the Privy App ID on this build. Set PRIVY_APP_ID or EXPO_PUBLIC_PRIVY_APP_ID on Vercel.",
+        );
       } catch (connectError) {
         const message = publicAuthError(connectError, "Wallet connection failed.");
         if (!message) {

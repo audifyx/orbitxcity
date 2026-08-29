@@ -458,14 +458,9 @@ export function isWalletInjected(id: WalletId): boolean {
   if (getInjectedById(id)) {
     return true;
   }
-  if (
-    discoverStandardWallets().some(
-      (wallet) => walletNameMatches(wallet.name, id) && !isMwaWalletName(wallet.name),
-    )
-  ) {
-    return true;
-  }
-  return isMwaStandardAvailable();
+  return discoverStandardWallets().some(
+    (wallet) => walletNameMatches(wallet.name, id) && !isMwaWalletName(wallet.name),
+  );
 }
 
 export async function waitForWallet(id: WalletId, timeoutMs = 2500): Promise<boolean> {

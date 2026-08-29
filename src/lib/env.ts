@@ -1,7 +1,18 @@
+import Constants from "expo-constants";
+
 const FALLBACK_SUPABASE_URL =
   "https://ffjipnkhcebjvttliptb.supabase.co";
 const FALLBACK_SUPABASE_ANON_KEY =
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZmamlwbmtoY2VianZ0dGxpcHRiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc1Mjc5NDgsImV4cCI6MjA5MzEwMzk0OH0.aXu8bbpVVwc8KOJf1-lHqO3cz_0GZD10_TE0GlKQ1BI";
+
+function extraString(key: string): string {
+  const extra = Constants.expoConfig?.extra;
+  if (!extra || typeof extra !== "object") {
+    return "";
+  }
+  const value = (extra as Record<string, unknown>)[key];
+  return typeof value === "string" ? value.trim() : "";
+}
 
 function requireEnv(
   value: string | undefined,
@@ -40,3 +51,15 @@ export const publicAppUrl = requireEnv(
   "EXPO_PUBLIC_APP_URL",
   "https://orbitxcity.vercel.app",
 );
+
+export const privyAppId = (
+  process.env.EXPO_PUBLIC_PRIVY_APP_ID?.trim() ||
+  process.env.PRIVY_APP_ID?.trim() ||
+  extraString("privyAppId")
+).trim();
+
+export const privyClientId = (
+  process.env.EXPO_PUBLIC_PRIVY_CLIENT_ID?.trim() ||
+  process.env.PRIVY_CLIENT_ID?.trim() ||
+  extraString("privyClientId")
+).trim();

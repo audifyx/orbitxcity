@@ -51,8 +51,8 @@ function OrbitMark({ size = 56 }: { size?: number }) {
 }
 
 const WALLETS: { id: WalletId; label: string; hint: string }[] = [
-  { id: "jupiter", label: "Jupiter", hint: "Opens Jupiter via Mobile Wallet Adapter" },
-  { id: "phantom", label: "Phantom", hint: "Opens Phantom via Mobile Wallet Adapter" },
+  { id: "jupiter", label: "Jupiter", hint: "Opens Jupiter — approve, then sign" },
+  { id: "phantom", label: "Phantom", hint: "Opens Phantom — approve, then sign" },
 ];
 
 export default function ConnectScreen() {
@@ -72,8 +72,8 @@ export default function ConnectScreen() {
       setPickerOpen(false);
       setStatus(
         walletId === "jupiter"
-          ? "Opening Jupiter through Mobile Wallet Adapter… approve, then sign."
-          : "Opening Phantom through Mobile Wallet Adapter… approve, then sign.",
+          ? "Opening Jupiter… approve connect, then sign. This is not a transaction."
+          : "Opening Phantom… approve connect, then sign. This is not a transaction.",
       );
       try {
         await connect(walletId);
@@ -100,8 +100,8 @@ export default function ConnectScreen() {
         clearError();
         setStatus(
           hinted === "jupiter"
-            ? "Jupiter is open. Approve Mobile Wallet Adapter, then sign."
-            : "Phantom is open. Approve Mobile Wallet Adapter, then sign.",
+            ? "Jupiter is open. Approve connect, then sign."
+            : "Phantom is open. Approve connect, then sign.",
         );
         try {
           await connect(hinted, { injectedOnly: true });
@@ -130,9 +130,8 @@ export default function ConnectScreen() {
         <OrbitMark />
         <Text style={styles.title}>Connect wallet</Text>
         <Text style={styles.subtitle}>
-          Tap connect and pick Jupiter or Phantom. OrbitX uses Mobile Wallet
-          Adapter to open the wallet — approve connect, then sign. That
-          sign-in is not a transaction.
+          Tap connect and pick Jupiter or Phantom. Approve the wallet request,
+          then sign in. That sign-in is not a transaction.
         </Text>
 
         {displayError ? (

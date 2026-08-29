@@ -35,6 +35,10 @@ Set these **public** variables on the Vercel project (Production + Preview):
 - `EXPO_PUBLIC_SUPABASE_ANON_KEY`
 - `EXPO_PUBLIC_SOLANA_RPC_URL` (optional)
 - `EXPO_PUBLIC_APP_URL` (`https://orbitxcity.vercel.app`)
+- `EXPO_PUBLIC_PRIVY_APP_ID` or `PRIVY_APP_ID` (public Privy App ID)
+- `EXPO_PUBLIC_PRIVY_CLIENT_ID` or `PRIVY_CLIENT_ID` (optional)
+
+Never put `PRIVY_APP_SECRET` in `EXPO_PUBLIC_*` or the Expo client.
 
 LLM keys (`NVIDIA_API_KEY`, `GROQ_API_KEY`, `GEMINI_API_KEY`, `OPENROUTER_API_KEY`) and the Supabase service role belong on the **existing Soltools Edge Functions**, not in the Vercel client bundle.
 

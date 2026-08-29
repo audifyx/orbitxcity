@@ -16,6 +16,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { AuthProvider, useAuth } from "../src/lib/auth";
+import { OrbitxPrivyProvider } from "../src/lib/privyProvider";
 import { SplashScreen } from "../src/screens/SplashScreen";
 import { colors } from "../src/theme";
 
@@ -140,28 +141,30 @@ function RootLayoutInner() {
   return (
     <GestureHandlerRootView style={styles.flex}>
       <SafeAreaProvider>
-        <AuthProvider>
-          <AuthGate>
-            <View style={styles.flex}>
-              <StatusBar style="light" hidden={showSplash} />
-              <Stack
-                screenOptions={{
-                  headerShown: false,
-                  contentStyle: { backgroundColor: colors.void },
-                  animation: "fade",
-                }}
-              >
-                <Stack.Screen name="(app)" />
-                <Stack.Screen name="(auth)" />
-                <Stack.Screen name="onconnect" />
-                <Stack.Screen name="onsign" />
-              </Stack>
-              {showSplash ? (
-                <SplashScreen onComplete={() => setShowSplash(false)} />
-              ) : null}
-            </View>
-          </AuthGate>
-        </AuthProvider>
+        <OrbitxPrivyProvider>
+          <AuthProvider>
+            <AuthGate>
+              <View style={styles.flex}>
+                <StatusBar style="light" hidden={showSplash} />
+                <Stack
+                  screenOptions={{
+                    headerShown: false,
+                    contentStyle: { backgroundColor: colors.void },
+                    animation: "fade",
+                  }}
+                >
+                  <Stack.Screen name="(app)" />
+                  <Stack.Screen name="(auth)" />
+                  <Stack.Screen name="onconnect" />
+                  <Stack.Screen name="onsign" />
+                </Stack>
+                {showSplash ? (
+                  <SplashScreen onComplete={() => setShowSplash(false)} />
+                ) : null}
+              </View>
+            </AuthGate>
+          </AuthProvider>
+        </OrbitxPrivyProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );
