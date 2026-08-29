@@ -51,8 +51,8 @@ function OrbitMark({ size = 56 }: { size?: number }) {
 }
 
 const WALLETS: { id: WalletId; label: string; hint: string }[] = [
-  { id: "jupiter", label: "Jupiter", hint: "Opens Jupiter and loads OrbitX" },
-  { id: "phantom", label: "Phantom", hint: "Opens Phantom and loads OrbitX" },
+  { id: "jupiter", label: "Jupiter", hint: "Mobile Wallet Adapter, then sign" },
+  { id: "phantom", label: "Phantom", hint: "Mobile Wallet Adapter, then sign" },
 ];
 
 export default function ConnectScreen() {
@@ -72,8 +72,8 @@ export default function ConnectScreen() {
       setPickerOpen(false);
       setStatus(
         walletId === "jupiter"
-          ? "Opening Jupiter… OrbitX loads in the wallet. Approve, then sign."
-          : "Opening Phantom… OrbitX loads in the wallet. Approve, then sign.",
+          ? "Opening Jupiter through Mobile Wallet Adapter… approve, then sign."
+          : "Opening Phantom through Mobile Wallet Adapter… approve, then sign.",
       );
       try {
         await connect(walletId);
@@ -100,8 +100,8 @@ export default function ConnectScreen() {
         clearError();
         setStatus(
           hinted === "jupiter"
-            ? "Jupiter is open. Approve connect, then sign."
-            : "Phantom is open. Approve connect, then sign.",
+            ? "Jupiter is open. Approve Mobile Wallet Adapter, then sign."
+            : "Phantom is open. Approve Mobile Wallet Adapter, then sign.",
         );
         try {
           await connect(hinted, { injectedOnly: true });
@@ -130,8 +130,9 @@ export default function ConnectScreen() {
         <OrbitMark />
         <Text style={styles.title}>Connect wallet</Text>
         <Text style={styles.subtitle}>
-          Tap connect, pick Jupiter or Phantom. The wallet opens OrbitX, you
-          approve, then sign. That sign-in is not a transaction.
+          Tap connect and pick a wallet. On Android this uses Mobile Wallet
+          Adapter — approve connect, then sign. That sign-in is not a
+          transaction.
         </Text>
 
         {displayError ? (
