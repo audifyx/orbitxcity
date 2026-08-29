@@ -21,6 +21,14 @@ const PHANTOM_UL_SIGN_MESSAGE = "https://phantom.app/ul/v1/signMessage";
 const APP_URL = publicAppUrl;
 const CLUSTER = "mainnet-beta";
 
+function redirectLink(path: string): string {
+  if (Platform.OS === "web") {
+    const base = APP_URL.replace(/\/$/, "");
+    return `${base}${path.startsWith("/") ? path : `/${path}`}`;
+  }
+  return Linking.createURL(path);
+}
+
 interface PhantomPublicKey {
   toString(): string;
   toBase58(): string;
@@ -183,7 +191,7 @@ export async function startNativeConnect(): Promise<void> {
     dapp_encryption_public_key: bs58.encode(dappKeyPair.publicKey),
     cluster: CLUSTER,
     app_url: APP_URL,
-    redirect_link: Linking.createURL("/onconnect"),
+    redirect_link: redirectLink("/onconnect"),
   });
 
   await Linking.openURL(`${PHANTOM_UL_CONNECT}?${params.toString()}`);
@@ -259,7 +267,7 @@ export async function startNativeSign(message: string): Promise<void> {
   const params = new URLSearchParams({
     dapp_encryption_public_key: bs58.encode(dappKeyPair.publicKey),
     nonce: bs58.encode(nonce),
-    redirect_link: Linking.createURL("/onsign"),
+    redirect_link: redirectLink("/onsign"),
     payload: bs58.encode(encryptedPayload),
   });
 

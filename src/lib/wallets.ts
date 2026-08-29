@@ -2,6 +2,8 @@ import { Platform } from "react-native";
 import * as Linking from "expo-linking";
 import bs58 from "bs58";
 
+import { publicAppUrl } from "./env";
+
 export type WalletId = "jupiter" | "phantom";
 
 export const WALLET_LABELS: Record<WalletId, string> = {
@@ -43,6 +45,10 @@ const JUPITER_OPEN_CANDIDATES = [
   "jup://",
   "https://jup.ag",
 ] as const;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 function getWindow(): JupiterWindow | null {
   if (Platform.OS !== "web" || typeof window === "undefined") {
@@ -276,6 +282,18 @@ export function isWalletInjected(id: WalletId): boolean {
   return discoverStandardWallets().some((wallet) => walletNameMatches(wallet.name, id));
 }
 
+export async function waitForWallet(id: WalletId, timeoutMs = 800): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  ensureStandardListeners();
+  while (Date.now() < deadline) {
+    if (isWalletInjected(id)) {
+      return true;
+    }
+    await sleep(80);
+  }
+  return isWalletInjected(id);
+}
+
 export async function connectBrowserWallet(id: WalletId): Promise<{ pubkey: string }> {
   const injected = getInjectedById(id);
   if (injected) {
@@ -308,7 +326,15 @@ export async function signBrowserWallet(id: WalletId, message: string): Promise<
 }
 
 export async function openJupiterMobile(): Promise<void> {
-  for (const url of JUPITER_OPEN_CANDIDATES) {
+  const app = `${publicAppUrl.replace(/\/$/, "")}/connect?wallet=jupiter`;
+  const encoded = encodeURIComponent(app);
+  const candidates = [
+    `jupiter://browse?url=${encoded}`,
+    `jup://browse?url=${encoded}`,
+    ...JUPITER_OPEN_CANDIDATES,
+  ];
+
+  for (const url of candidates) {
     try {
       const canOpen = await Linking.canOpenURL(url);
       if (canOpen) {
@@ -319,9 +345,10 @@ export async function openJupiterMobile(): Promise<void> {
       // try the next candidate
     }
   }
-  await Linking.openURL("https://jup.ag");
+  await Linking.openURL(app);
 }
 
 export function walletNeedsManualSiws(id: WalletId): boolean {
-  return id === "jupiter";
+  void id;
+  return false;
 }

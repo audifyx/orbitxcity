@@ -1,23 +1,19 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Modal,
   Pressable,
   ScrollView,
-  Share,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from "react-native";
+import { useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Circle, Line } from "react-native-svg";
 
 import { useAuth } from "../../src/lib/auth";
-import {
-  openJupiterMobile,
-  walletNeedsManualSiws,
-  type WalletId,
-} from "../../src/lib/wallets";
+import { type WalletId } from "../../src/lib/wallets";
 import { colors } from "../../src/theme";
 
 function OrbitMark({ size = 56 }: { size?: number }) {
@@ -54,68 +50,54 @@ function OrbitMark({ size = 56 }: { size?: number }) {
   );
 }
 
+const WALLETS: { id: WalletId; label: string; hint: string }[] = [
+  { id: "jupiter", label: "Jupiter", hint: "Opens Jupiter to connect and sign" },
+  { id: "phantom", label: "Phantom", hint: "Opens Phantom to connect and sign" },
+];
+
 export default function ConnectScreen() {
   const insets = useSafeAreaInsets();
-  const {
-    connect,
-    connecting,
-    error,
-    requestSignInMessage,
-    signInWithSignature,
-    clearError,
-  } = useAuth();
+  const params = useLocalSearchParams<{ wallet?: string | string[] }>();
+  const { connect, connecting, error, clearError } = useAuth();
 
-  const [jupiterStep, setJupiterStep] = useState(false);
-  const [pubkey, setPubkey] = useState("");
-  const [message, setMessage] = useState("");
-  const [signature, setSignature] = useState("");
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
+  const [status, setStatus] = useState<string | null>(null);
+  const autoStarted = useRef(false);
 
   const handleConnect = useCallback(
     async (walletId: WalletId) => {
       setLocalError(null);
       clearError();
-      if (walletNeedsManualSiws(walletId)) {
-        setJupiterStep(true);
-        return;
-      }
+      setPickerOpen(false);
+      setStatus(
+        walletId === "jupiter"
+          ? "Opening Jupiter… approve connect, then sign."
+          : "Opening Phantom… approve connect, then sign.",
+      );
       try {
         await connect(walletId);
       } catch (err) {
         const message =
           err instanceof Error ? err.message : "Wallet connection failed.";
-        if (!message || /invalid account|not installed|jupiter_siws_required/i.test(message)) {
-          if (walletId === "jupiter") {
-            setJupiterStep(true);
-          }
-          return;
-        }
         setLocalError(message);
+        setStatus(null);
       }
     },
     [clearError, connect],
   );
 
-  const handleRequestMessage = useCallback(async () => {
-    setLocalError(null);
-    try {
-      const next = await requestSignInMessage(pubkey);
-      setMessage(next);
-    } catch (err) {
-      setLocalError(
-        err instanceof Error ? err.message : "Could not request a sign-in nonce.",
-      );
+  useEffect(() => {
+    const raw = params.wallet;
+    const hinted = Array.isArray(raw) ? raw[0] : raw;
+    if (autoStarted.current) {
+      return;
     }
-  }, [pubkey, requestSignInMessage]);
-
-  const handleVerify = useCallback(async () => {
-    setLocalError(null);
-    try {
-      await signInWithSignature(pubkey, signature);
-    } catch (err) {
-      setLocalError(err instanceof Error ? err.message : "Sign-in failed.");
+    if (hinted === "jupiter" || hinted === "phantom") {
+      autoStarted.current = true;
+      void handleConnect(hinted);
     }
-  }, [pubkey, signature, signInWithSignature]);
+  }, [handleConnect, params.wallet]);
 
   const displayError = localError ?? error;
 
@@ -130,9 +112,10 @@ export default function ConnectScreen() {
     >
       <View style={styles.content}>
         <OrbitMark />
-        <Text style={styles.title}>Connect your Solana wallet</Text>
+        <Text style={styles.title}>Connect wallet</Text>
         <Text style={styles.subtitle}>
-          Wallet is your account. Jupiter or Phantom. No email. No password.
+          Tap connect, pick Jupiter or Phantom, approve in the wallet, then sign.
+          That sign-in is not a transaction.
         </Text>
 
         {displayError ? (
@@ -141,121 +124,65 @@ export default function ConnectScreen() {
           </View>
         ) : null}
 
-        {jupiterStep ? (
-          <View style={styles.siws}>
-            <Text style={styles.siwsTitle}>Sign in with Jupiter</Text>
-            <Text style={styles.siwsBody}>
-              No Jupiter extension needed. Paste your Jupiter address, sign the
-              OrbitX nonce in the Jupiter app, then paste the signature. This is
-              not a transaction and does not cost fees.
-            </Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Jupiter wallet address"
-              placeholderTextColor={colors.mute}
-              autoCapitalize="none"
-              autoCorrect={false}
-              value={pubkey}
-              onChangeText={setPubkey}
-            />
-            <Pressable
-              style={({ pressed }) => [
-                styles.secondaryButton,
-                pressed && styles.primaryButtonPressed,
-              ]}
-              onPress={() => void handleRequestMessage()}
-              disabled={connecting}
-            >
-              <Text style={styles.secondaryButtonText}>Request sign-in message</Text>
-            </Pressable>
-            {message ? (
-              <>
-                <Text selectable style={styles.messageBox}>
-                  {message}
-                </Text>
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.secondaryButton,
-                    pressed && styles.primaryButtonPressed,
-                  ]}
-                  onPress={() => void Share.share({ message })}
-                >
-                  <Text style={styles.secondaryButtonText}>Share / copy message</Text>
-                </Pressable>
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.primaryButton,
-                    pressed && styles.primaryButtonPressed,
-                  ]}
-                  onPress={() => void openJupiterMobile()}
-                >
-                  <Text style={styles.primaryButtonText}>Open Jupiter</Text>
-                </Pressable>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Paste base58 signature"
-                  placeholderTextColor={colors.mute}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  value={signature}
-                  onChangeText={setSignature}
-                />
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.primaryButton,
-                    pressed && styles.primaryButtonPressed,
-                    connecting && styles.primaryButtonDisabled,
-                  ]}
-                  onPress={() => void handleVerify()}
-                  disabled={connecting}
-                >
-                  {connecting ? (
-                    <ActivityIndicator color={colors.frost} />
-                  ) : (
-                    <Text style={styles.primaryButtonText}>Verify and log in</Text>
-                  )}
-                </Pressable>
-              </>
-            ) : null}
-            <Pressable onPress={() => setJupiterStep(false)}>
-              <Text style={styles.back}>Back to wallets</Text>
-            </Pressable>
-          </View>
-        ) : (
-          <>
-            <Pressable
-              style={({ pressed }) => [
-                styles.primaryButton,
-                pressed && styles.primaryButtonPressed,
-                connecting && styles.primaryButtonDisabled,
-              ]}
-              onPress={() => void handleConnect("jupiter")}
-              disabled={connecting}
-              accessibilityRole="button"
-              accessibilityLabel="Connect Jupiter wallet"
-            >
-              {connecting ? (
-                <ActivityIndicator color={colors.frost} />
-              ) : (
-                <Text style={styles.primaryButtonText}>Connect Jupiter</Text>
-              )}
-            </Pressable>
-            <Pressable
-              style={({ pressed }) => [
-                styles.secondaryButton,
-                pressed && styles.primaryButtonPressed,
-                connecting && styles.primaryButtonDisabled,
-              ]}
-              onPress={() => void handleConnect("phantom")}
-              disabled={connecting}
-              accessibilityRole="button"
-              accessibilityLabel="Connect Phantom wallet"
-            >
-              <Text style={styles.secondaryButtonText}>Connect Phantom</Text>
-            </Pressable>
-          </>
-        )}
+        {status && !displayError ? (
+          <Text style={styles.status}>{status}</Text>
+        ) : null}
+
+        <Pressable
+          style={({ pressed }) => [
+            styles.primaryButton,
+            pressed && styles.primaryButtonPressed,
+            connecting && styles.primaryButtonDisabled,
+          ]}
+          onPress={() => {
+            setLocalError(null);
+            clearError();
+            setPickerOpen(true);
+          }}
+          disabled={connecting}
+          accessibilityRole="button"
+          accessibilityLabel="Connect wallet"
+        >
+          {connecting ? (
+            <ActivityIndicator color={colors.frost} />
+          ) : (
+            <Text style={styles.primaryButtonText}>Connect Wallet</Text>
+          )}
+        </Pressable>
       </View>
+
+      <Modal
+        visible={pickerOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPickerOpen(false)}
+      >
+        <Pressable style={styles.sheetBackdrop} onPress={() => setPickerOpen(false)}>
+          <Pressable
+            style={[styles.sheet, { paddingBottom: insets.bottom + 20 }]}
+            onPress={(event) => event.stopPropagation()}
+          >
+            <Text style={styles.sheetTitle}>Choose a wallet</Text>
+            {WALLETS.map((wallet) => (
+              <Pressable
+                key={wallet.id}
+                style={({ pressed }) => [
+                  styles.walletRow,
+                  pressed && styles.primaryButtonPressed,
+                ]}
+                onPress={() => void handleConnect(wallet.id)}
+                disabled={connecting}
+              >
+                <Text style={styles.walletName}>{wallet.label}</Text>
+                <Text style={styles.walletHint}>{wallet.hint}</Text>
+              </Pressable>
+            ))}
+            <Pressable onPress={() => setPickerOpen(false)}>
+              <Text style={styles.back}>Cancel</Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </ScrollView>
   );
 }
@@ -293,6 +220,13 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     textAlign: "center",
   },
+  status: {
+    color: colors.ice,
+    fontFamily: "Inter_400Regular",
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: "center",
+  },
   errorBox: {
     width: "100%",
     padding: 14,
@@ -308,62 +242,11 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     textAlign: "center",
   },
-  siws: {
-    width: "100%",
-    gap: 12,
-  },
-  siwsTitle: {
-    color: colors.frost,
-    fontFamily: "SpaceGrotesk_600SemiBold",
-    fontSize: 18,
-    textAlign: "center",
-  },
-  siwsBody: {
-    color: colors.mute,
-    fontFamily: "Inter_400Regular",
-    fontSize: 13,
-    lineHeight: 19,
-    textAlign: "center",
-  },
-  input: {
-    width: "100%",
-    minHeight: 48,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.hairline,
-    backgroundColor: colors.surface,
-    color: colors.frost,
-    fontFamily: "Inter_400Regular",
-    fontSize: 14,
-    paddingHorizontal: 14,
-  },
-  messageBox: {
-    width: "100%",
-    color: colors.ice,
-    fontFamily: "Inter_400Regular",
-    fontSize: 12,
-    lineHeight: 18,
-    padding: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.hairline,
-  },
   primaryButton: {
     width: "100%",
     minHeight: 52,
     borderRadius: 14,
     backgroundColor: colors.signal,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 24,
-  },
-  secondaryButton: {
-    width: "100%",
-    minHeight: 52,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: colors.hairline,
-    backgroundColor: colors.surface,
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 24,
@@ -379,10 +262,46 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_500Medium",
     fontSize: 16,
   },
-  secondaryButtonText: {
+  sheetBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.72)",
+    justifyContent: "flex-end",
+  },
+  sheet: {
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    gap: 10,
+    borderWidth: 1,
+    borderColor: colors.hairline,
+  },
+  sheetTitle: {
+    color: colors.frost,
+    fontFamily: "SpaceGrotesk_600SemiBold",
+    fontSize: 18,
+    textAlign: "center",
+    marginBottom: 6,
+  },
+  walletRow: {
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.hairline,
+    backgroundColor: colors.composer,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    gap: 4,
+  },
+  walletName: {
     color: colors.frost,
     fontFamily: "Inter_500Medium",
     fontSize: 16,
+  },
+  walletHint: {
+    color: colors.mute,
+    fontFamily: "Inter_400Regular",
+    fontSize: 13,
   },
   back: {
     color: colors.mute,
