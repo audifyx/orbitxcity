@@ -51,8 +51,8 @@ function OrbitMark({ size = 56 }: { size?: number }) {
 }
 
 const WALLETS: { id: WalletId; label: string; hint: string }[] = [
-  { id: "jupiter", label: "Jupiter", hint: "Opens Jupiter to connect and sign" },
-  { id: "phantom", label: "Phantom", hint: "Opens Phantom to connect and sign" },
+  { id: "jupiter", label: "Jupiter", hint: "Opens Jupiter and loads OrbitX" },
+  { id: "phantom", label: "Phantom", hint: "Opens Phantom and loads OrbitX" },
 ];
 
 export default function ConnectScreen() {
@@ -72,8 +72,8 @@ export default function ConnectScreen() {
       setPickerOpen(false);
       setStatus(
         walletId === "jupiter"
-          ? "Opening Jupiter… approve connect, then sign."
-          : "Opening Phantom… approve connect, then sign.",
+          ? "Opening Jupiter… OrbitX loads in the wallet. Approve, then sign."
+          : "Opening Phantom… OrbitX loads in the wallet. Approve, then sign.",
       );
       try {
         await connect(walletId);
@@ -95,9 +95,25 @@ export default function ConnectScreen() {
     }
     if (hinted === "jupiter" || hinted === "phantom") {
       autoStarted.current = true;
-      void handleConnect(hinted);
+      void (async () => {
+        setLocalError(null);
+        clearError();
+        setStatus(
+          hinted === "jupiter"
+            ? "Jupiter is open. Approve connect, then sign."
+            : "Phantom is open. Approve connect, then sign.",
+        );
+        try {
+          await connect(hinted, { injectedOnly: true });
+        } catch (err) {
+          const message =
+            err instanceof Error ? err.message : "Wallet connection failed.";
+          setLocalError(message);
+          setStatus(null);
+        }
+      })();
     }
-  }, [handleConnect, params.wallet]);
+  }, [clearError, connect, params.wallet]);
 
   const displayError = localError ?? error;
 
@@ -114,8 +130,8 @@ export default function ConnectScreen() {
         <OrbitMark />
         <Text style={styles.title}>Connect wallet</Text>
         <Text style={styles.subtitle}>
-          Tap connect, pick Jupiter or Phantom, approve in the wallet, then sign.
-          That sign-in is not a transaction.
+          Tap connect, pick Jupiter or Phantom. The wallet opens OrbitX, you
+          approve, then sign. That sign-in is not a transaction.
         </Text>
 
         {displayError ? (
