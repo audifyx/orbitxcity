@@ -58,6 +58,33 @@ interface AuthContextValue {
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
+const WALLET_STORAGE_KEY = "orbitx-wallet";
+
+function persistWallet(pubkey: string | null): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+  try {
+    if (pubkey) {
+      window.localStorage.setItem(WALLET_STORAGE_KEY, pubkey);
+    } else {
+      window.localStorage.removeItem(WALLET_STORAGE_KEY);
+    }
+  } catch {
+    // Private mode / quota — session tokens still persist via Supabase storage.
+  }
+}
+
+function readPersistedWallet(): string | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  try {
+    return window.localStorage.getItem(WALLET_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
 
 function publicAuthError(error: unknown, fallback: string): string {
   const message = error instanceof Error ? error.message : fallback;
@@ -175,9 +202,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     try {
       const resolvedWallet = await resolveWalletForUser(nextSession.user.id);
-      setWallet(resolvedWallet);
+      const nextWallet = resolvedWallet ?? readPersistedWallet();
+      setWallet(nextWallet);
+      persistWallet(nextWallet);
       setError(null);
     } catch (resolveError) {
+      const fallback = readPersistedWallet();
+      if (fallback) {
+        setWallet(fallback);
+        setError(null);
+        return;
+      }
       setError(publicAuthError(resolveError, "Failed to resolve wallet for session."));
     }
   }, []);
@@ -188,7 +223,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         await walletAuth("verify", { pubkey, signature }),
       );
 
-      const { error: setSessionError } = await supabase.auth.setSession({
+      const { data, error: setSessionError } = await supabase.auth.setSession({
         access_token: verifyData.access_token,
         refresh_token: verifyData.refresh_token,
       });
@@ -197,9 +232,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         throw new Error(setSessionError.message);
       }
 
+      const nextSession =
+        data.session ?? (await supabase.auth.getSession()).data.session;
+
       setPendingPubkey(null);
+      persistWallet(pubkey);
+      setWallet(pubkey);
+      if (nextSession) {
+        await applySession(nextSession);
+        setWallet(pubkey);
+        persistWallet(pubkey);
+      }
     },
-    [],
+    [applySession],
   );
 
   useEffect(() => {
@@ -216,20 +261,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     }, 8000);
 
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      if (!mounted) {
+        return;
+      }
+      void applySession(nextSession);
+    });
+
     void (async () => {
       try {
         const hosted = consumePrivyHostResult();
         if (hosted) {
           await finishVerification(hosted.pubkey, hosted.signature);
-          setWallet(hosted.pubkey);
-          setLoading(false);
-          return;
         }
       } catch (hostedError) {
-        if (!mounted) {
-          return;
+        if (mounted) {
+          setError(publicAuthError(hostedError, "Wallet sign-in failed."));
         }
-        setError(publicAuthError(hostedError, "Wallet sign-in failed."));
+      }
+
+      if (!mounted) {
+        return;
       }
 
       const { data, error: sessionError } = await supabase.auth.getSession();
@@ -244,14 +298,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       await applySession(data.session);
+      if (data.session) {
+        const stored = readPersistedWallet();
+        if (stored) {
+          setWallet(stored);
+        }
+      }
       setLoading(false);
     })();
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
-      void applySession(nextSession);
-    });
 
     return () => {
       mounted = false;
@@ -418,6 +472,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const disconnect = useCallback(async () => {
     setError(null);
     setPendingPubkey(null);
+    persistWallet(null);
 
     const { error: signOutError } = await supabase.auth.signOut();
     if (signOutError) {

@@ -8,7 +8,7 @@ import {
   Text,
   View,
 } from "react-native";
-import { useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Circle, Line } from "react-native-svg";
 
@@ -57,8 +57,9 @@ const WALLETS: { id: WalletId; label: string; hint: string }[] = [
 
 export default function ConnectScreen() {
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const params = useLocalSearchParams<{ wallet?: string | string[] }>();
-  const { connect, connecting, error, clearError } = useAuth();
+  const { connect, connecting, error, clearError, session } = useAuth();
 
   const [pickerOpen, setPickerOpen] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
@@ -77,6 +78,7 @@ export default function ConnectScreen() {
       );
       try {
         await connect(walletId);
+        router.replace("/");
       } catch (err) {
         const message =
           err instanceof Error ? err.message : "Wallet connection failed.";
@@ -84,8 +86,14 @@ export default function ConnectScreen() {
         setStatus(null);
       }
     },
-    [clearError, connect],
+    [clearError, connect, router],
   );
+
+  useEffect(() => {
+    if (session) {
+      router.replace("/");
+    }
+  }, [router, session]);
 
   useEffect(() => {
     const raw = params.wallet;
@@ -105,6 +113,7 @@ export default function ConnectScreen() {
         );
         try {
           await connect(hinted, { injectedOnly: true });
+          router.replace("/");
         } catch (err) {
           const message =
             err instanceof Error ? err.message : "Wallet connection failed.";
@@ -113,7 +122,7 @@ export default function ConnectScreen() {
         }
       })();
     }
-  }, [clearError, connect, params.wallet]);
+  }, [clearError, connect, params.wallet, router]);
 
   const displayError = localError ?? error;
 

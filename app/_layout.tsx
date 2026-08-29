@@ -68,21 +68,21 @@ function AuthGate({ children }: { children: ReactNode }) {
   const router = useRouter();
 
   useEffect(() => {
-    if (loading) {
-      return;
-    }
-
     const root = segments[0];
     const isAuthGroup = root === "(auth)";
     const isCallback = root === "onconnect" || root === "onsign";
 
-    if (!session && !isAuthGroup && !isCallback) {
-      router.replace("/connect");
+    if (session && (isAuthGroup || pathname === "/connect")) {
+      router.replace("/");
       return;
     }
 
-    if (session && (isAuthGroup || pathname === "/connect")) {
-      router.replace("/");
+    if (loading) {
+      return;
+    }
+
+    if (!session && !isAuthGroup && !isCallback) {
+      router.replace("/connect");
     }
   }, [loading, session, segments, pathname, router]);
 

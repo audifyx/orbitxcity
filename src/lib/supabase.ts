@@ -1,6 +1,7 @@
 import { Buffer } from "buffer";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { createClient } from "@supabase/supabase-js";
+import { Platform } from "react-native";
 import { supabaseAnonKey, supabaseUrl } from "./env";
 
 if (typeof globalThis.Buffer === "undefined") {
@@ -94,12 +95,33 @@ const functionHeaders = {
   "Content-Type": "application/json",
 };
 
+const webAuthStorage = {
+  getItem: (key: string) => {
+    if (typeof window === "undefined") {
+      return null;
+    }
+    return window.localStorage.getItem(key);
+  },
+  setItem: (key: string, value: string) => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    window.localStorage.setItem(key, value);
+  },
+  removeItem: (key: string) => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    window.localStorage.removeItem(key);
+  },
+};
+
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   global: {
     fetch: fetchWithRetry,
   },
   auth: {
-    storage: AsyncStorage,
+    storage: Platform.OS === "web" ? webAuthStorage : AsyncStorage,
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: false,
