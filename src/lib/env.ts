@@ -54,7 +54,8 @@ export const publicAppUrl = requireEnv(
 
 export const privyAppId = (
   process.env.EXPO_PUBLIC_PRIVY_APP_ID?.trim() ||
-  extraString("privyAppId")
+  extraString("privyAppId") ||
+  "cmtdqdoj0043z0dlabgpr7l6g"
 ).trim();
 
 export const privyClientId = (

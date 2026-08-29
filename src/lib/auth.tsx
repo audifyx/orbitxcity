@@ -18,10 +18,15 @@ import {
 } from "./phantom";
 import { supabase, walletAuth, warmWalletAuth } from "./supabase";
 import { connectWithPrivy, consumePrivyHostResult, isPrivyConfigured } from "./privyConnect";
-import { isMobileDevice, openWalletInAppBrowser } from "./walletOpen";
+import { isInsideWalletBrowser, isMobileDevice, openWalletInAppBrowser } from "./walletOpen";
 import {
+  connectBrowserWallet,
   isSolanaPubkey,
   isSolanaSignature,
+  isWalletInjected,
+  prepareWalletStandard,
+  signBrowserWallet,
+  waitForWallet,
   type WalletId,
 } from "./wallets";
 
@@ -190,6 +195,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   useEffect(() => {
+    prepareWalletStandard();
     void warmWalletAuth();
   }, []);
 
@@ -293,18 +299,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setError(null);
 
       try {
+        const insideWallet = isInsideWalletBrowser(walletId);
+        if (options?.injectedOnly || insideWallet) {
+          await waitForWallet(walletId, 5000);
+        }
+
+        if (isWalletInjected(walletId) || options?.injectedOnly || insideWallet) {
+          const linked = await connectBrowserWallet(walletId);
+          setPendingPubkey(linked.pubkey);
+          setWallet(linked.pubkey);
+          const nonceData = parseNonceResponse(
+            await walletAuth("nonce", { pubkey: linked.pubkey }),
+          );
+          const signature = await signBrowserWallet(walletId, nonceData.message);
+          if (!isSolanaSignature(signature)) {
+            throw new Error("Wallet did not return a valid signature.");
+          }
+          await finishVerification(linked.pubkey, signature);
+          return;
+        }
+
         if (isPrivyConfigured()) {
           const linked = await connectWithPrivy(walletId);
           setPendingPubkey(linked.pubkey);
           setWallet(linked.pubkey);
           await finishVerification(linked.pubkey, linked.signature);
           return;
-        }
-
-        if (options?.injectedOnly) {
-          throw new Error(
-            "Wallet is open but OrbitX is still starting. Approve connect, then sign. This is not a transaction.",
-          );
         }
 
         if (isMobileDevice()) {

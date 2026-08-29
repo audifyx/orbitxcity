@@ -118,10 +118,13 @@ export async function connectWithPrivy(walletId: WalletId): Promise<HostDone> {
   }
 
   const url = hostUrl(walletId);
-  const popup = window.open(url, "orbitx-privy", "popup,width=420,height=740");
-  if (popup) {
-    popup.focus();
-    return waitForPopupResult(popup);
+  const mobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+  if (!mobile) {
+    const popup = window.open(url, "orbitx-privy", "popup,width=420,height=740");
+    if (popup) {
+      popup.focus();
+      return waitForPopupResult(popup);
+    }
   }
 
   window.location.assign(url);
