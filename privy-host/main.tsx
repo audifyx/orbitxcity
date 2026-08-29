@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { PrivyProvider, useConnectWallet, usePrivy } from "@privy-io/react-auth";
+import { PrivyProvider, useLogin, usePrivy } from "@privy-io/react-auth";
 import {
   toSolanaWalletConnectors,
   useSignMessage,
@@ -119,85 +119,109 @@ function walletNameMatches(name: string, walletId: WalletId): boolean {
 }
 
 function HostApp({ params }: { params: HostParams }) {
-  const { ready } = usePrivy();
-  const { connectWallet } = useConnectWallet();
+  const { ready, authenticated } = usePrivy();
   const { wallets, ready: walletsReady } = useWallets();
   const { signMessage } = useSignMessage();
-  const [status, setStatus] = useState("Starting wallet connect…");
+  const [status, setStatus] = useState("Starting Privy…");
   const [error, setError] = useState<string | null>(null);
-  const started = useRef(false);
+  const loginOpened = useRef(false);
+  const finishing = useRef(false);
   const walletsRef = useRef(wallets);
+  const signMessageRef = useRef(signMessage);
   walletsRef.current = wallets;
+  signMessageRef.current = signMessage;
+
+  const finishOrbitxSession = async (): Promise<void> => {
+    if (finishing.current) {
+      return;
+    }
+    finishing.current = true;
+    setStatus("Connected. Approve the sign-in. This is not a transaction.");
+
+    try {
+      const deadline = Date.now() + 90_000;
+      let wallet =
+        walletsRef.current.find((item) =>
+          walletNameMatches(item.standardWallet?.name ?? "", params.walletId),
+        ) ?? walletsRef.current.find((item) => isSolanaPubkey(item.address));
+
+      while (!wallet && Date.now() < deadline) {
+        await new Promise((resolve) => window.setTimeout(resolve, 80));
+        wallet =
+          walletsRef.current.find((item) =>
+            walletNameMatches(item.standardWallet?.name ?? "", params.walletId),
+          ) ?? walletsRef.current.find((item) => isSolanaPubkey(item.address));
+      }
+
+      if (!wallet || !isSolanaPubkey(wallet.address)) {
+        throw new Error("Wallet did not connect. Pick Phantom or Jupiter and approve.");
+      }
+
+      const pubkey = wallet.address.trim();
+      const nonceData = await walletAuth("nonce", { pubkey });
+      const message = nonceData.message;
+      if (typeof message !== "string") {
+        throw new Error("wallet-auth nonce response is invalid.");
+      }
+      const signed = toBase58Signature(
+        await signMessageRef.current({
+          message: new TextEncoder().encode(message),
+          wallet,
+        }),
+      );
+      finishInOpenerOrReturn({ type: "done", pubkey, signature: signed });
+    } catch (finishError) {
+      const message =
+        finishError instanceof Error ? finishError.message : "Wallet connection failed.";
+      setError(message);
+      setStatus("");
+      finishInOpenerOrReturn({ type: "error", message });
+    }
+  };
+
+  const { login } = useLogin({
+    onComplete: () => {
+      void finishOrbitxSession();
+    },
+    onError: (loginError) => {
+      const message =
+        typeof loginError === "string"
+          ? loginError
+          : loginError instanceof Error
+            ? loginError.message
+            : "Wallet login was cancelled.";
+      setError(message);
+      setStatus("");
+      finishing.current = false;
+    },
+  });
 
   useEffect(() => {
     postToOpener({ type: "ready" });
   }, []);
 
   useEffect(() => {
-    if (!ready || !walletsReady || started.current) {
+    if (!ready || !walletsReady) {
       return;
     }
-    started.current = true;
-
-    const pickWallet = () =>
-      walletsRef.current.find((wallet) =>
-        walletNameMatches(wallet.standardWallet?.name ?? "", params.walletId),
-      ) ?? walletsRef.current.find((wallet) => isSolanaPubkey(wallet.address));
-
-    void (async () => {
-      try {
-        let wallet = pickWallet();
-        if (!wallet) {
-          setStatus(
-            params.walletId === "jupiter"
-              ? "Opening Jupiter… approve connect, then sign. This is not a transaction."
-              : "Opening Phantom… approve connect, then sign. This is not a transaction.",
-          );
-          await connectWallet({
-            description: "Connect to OrbitX. This request will not send a transaction.",
-            walletList: [params.walletId],
-            walletChainType: "solana-only",
-          });
-        }
-
-        const deadline = Date.now() + 90_000;
-        while (!wallet && Date.now() < deadline) {
-          wallet = pickWallet();
-          if (!wallet) {
-            await new Promise((resolve) => window.setTimeout(resolve, 80));
-          }
-        }
-
-        if (!wallet || !isSolanaPubkey(wallet.address)) {
-          throw new Error("Wallet did not connect. Pick Phantom or Jupiter and approve.");
-        }
-
-        const pubkey = wallet.address.trim();
-        setStatus("Connected. Approve the sign-in. This is not a transaction.");
-
-        const nonceData = await walletAuth("nonce", { pubkey });
-        const message = nonceData.message;
-        if (typeof message !== "string") {
-          throw new Error("wallet-auth nonce response is invalid.");
-        }
-        const signed = toBase58Signature(
-          await signMessage({
-            message: new TextEncoder().encode(message),
-            wallet,
-          }),
-        );
-        finishInOpenerOrReturn({ type: "done", pubkey, signature: signed });
-      } catch (connectError) {
-        const message =
-          connectError instanceof Error
-            ? connectError.message
-            : "Wallet connection failed.";
-        setError(message);
-        setStatus("");
-        finishInOpenerOrReturn({ type: "error", message });
-      }
-    })();
-  }, [connectWallet, params.walletId, ready, signMessage, walletsReady]);
+    if (authenticated) {
+      void finishOrbitxSession();
+      return;
+    }
+    if (loginOpened.current) {
+      return;
+    }
+    loginOpened.current = true;
+    setStatus(
+      params.walletId === "jupiter"
+        ? "Opening Jupiter in Privy… approve connect, then sign. This is not a transaction."
+        : "Opening Phantom in Privy… approve connect, then sign. This is not a transaction.",
+    );
+    login({
+      loginMethods: ["wallet"],
+      walletChainType: "solana-only",
+    });
+  }, [authenticated, login, params.walletId, ready, walletsReady]);
 
   return (
     <div
@@ -210,7 +234,7 @@ function HostApp({ params }: { params: HostParams }) {
         alignItems: "center",
         justifyContent: "center",
         padding: 28,
-        gap: 12,
+        gap: 16,
         textAlign: "center",
       }}
     >
@@ -218,6 +242,31 @@ function HostApp({ params }: { params: HostParams }) {
       <div style={{ color: "rgba(176, 198, 232, 0.72)", lineHeight: 1.5, maxWidth: 360 }}>
         {error ?? status}
       </div>
+      {ready && !authenticated && !finishing.current ? (
+        <button
+          type="button"
+          onClick={() => {
+            setError(null);
+            login({
+              loginMethods: ["wallet"],
+              walletChainType: "solana-only",
+            });
+          }}
+          style={{
+            minHeight: 48,
+            minWidth: 220,
+            border: 0,
+            borderRadius: 14,
+            background: "#7EB6FF",
+            color: "#000",
+            fontSize: 16,
+            fontWeight: 500,
+            cursor: "pointer",
+          }}
+        >
+          {params.walletId === "jupiter" ? "Log in with Jupiter" : "Log in with Phantom"}
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -241,13 +290,22 @@ function Root() {
           theme: "dark",
           accentColor: "#7EB6FF",
           walletChainType: "solana-only",
-          walletList: ["phantom", "jupiter"],
+          walletList:
+            params.walletId === "jupiter"
+              ? ["jupiter", "phantom"]
+              : ["phantom", "jupiter"],
           showWalletLoginFirst: true,
         },
         loginMethods: ["wallet"],
+        embeddedWallets: {
+          ethereum: { createOnLogin: "off" },
+          solana: { createOnLogin: "off" },
+        },
         externalWallets: {
           solana: {
-            connectors: toSolanaWalletConnectors(),
+            connectors: toSolanaWalletConnectors({
+              shouldAutoConnect: false,
+            }),
           },
         },
       }}
