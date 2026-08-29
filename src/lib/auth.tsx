@@ -93,6 +93,9 @@ function publicAuthError(error: unknown, fallback: string): string {
   if (lower.includes("not installed") || lower.includes("jupiter_siws_required")) {
     return "Opening your wallet. Approve the connection, then sign. This is not a transaction.";
   }
+  if (lower.includes("could not log in with wallet")) {
+    return "Wallet did not finish connect. Pick Phantom or Jupiter again and approve. This is not a transaction.";
+  }
   return message;
 }
 
@@ -316,6 +319,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             throw new Error("Wallet did not return a valid signature.");
           }
           await finishVerification(linked.pubkey, signature);
+          return;
+        }
+
+        if (isMobileDevice() && walletId === "phantom" && !isWalletInjected(walletId)) {
+          await openWalletInAppBrowser(walletId);
           return;
         }
 
