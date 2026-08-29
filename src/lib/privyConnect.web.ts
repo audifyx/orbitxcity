@@ -102,7 +102,7 @@ async function waitForWallet(
 export async function connectWithPrivy(
   walletId: WalletId,
 ): Promise<{ pubkey: string; signMessage: (message: string) => Promise<string> }> {
-  const current = await waitForRuntime(15000);
+  const current = await waitForRuntime(30000);
   let wallet = pickWallet(current.wallets, walletId);
 
   if (!wallet) {

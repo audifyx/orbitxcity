@@ -1,85 +1,60 @@
-import { useEffect, type ReactNode } from "react";
-import { PrivyProvider, useConnectWallet, usePrivy } from "@privy-io/react-auth";
-import {
-  toSolanaWalletConnectors,
-  useSignMessage,
-  useWallets,
-} from "@privy-io/react-auth/solana";
+import { Component, useEffect, useState, type ErrorInfo, type ReactNode } from "react";
 
-import { privyAppId, privyClientId } from "./env";
-import { registerPrivyRuntime } from "./privyConnect.web";
+import { privyAppId } from "./env";
 
-function PrivyConnectBridge() {
-  const { ready } = usePrivy();
-  const { connectWallet } = useConnectWallet();
-  const { wallets, ready: walletsReady } = useWallets();
-  const { signMessage } = useSignMessage();
+type PrivyTreeComponent = (props: { children: ReactNode }) => ReactNode;
 
-  useEffect(() => {
-    registerPrivyRuntime({
-      ready: ready && walletsReady,
-      connectWallet: (opts) => {
-        void connectWallet({
-          description: opts.description,
-          walletList: opts.walletList,
-          walletChainType: "solana-only",
-        });
-      },
-      wallets: wallets.map((wallet) => ({
-        address: wallet.address,
-        standardWallet: wallet.standardWallet
-          ? { name: wallet.standardWallet.name }
-          : undefined,
-      })),
-      signMessage: async ({ message, wallet }) => {
-        const match =
-          wallets.find((item) => item.address === wallet.address) ?? wallets[0];
-        if (!match) {
-          throw new Error("Connect a wallet first.");
-        }
-        return signMessage({ message, wallet: match });
-      },
-    });
+class PrivyErrorBoundary extends Component<
+  { children: ReactNode; fallback: ReactNode },
+  { failed: boolean }
+> {
+  state = { failed: false };
 
-    return () => {
-      registerPrivyRuntime(null);
-    };
-  }, [connectWallet, ready, signMessage, wallets, walletsReady]);
+  static getDerivedStateFromError(): { failed: boolean } {
+    return { failed: true };
+  }
 
-  return null;
+  componentDidCatch(error: Error, info: ErrorInfo): void {
+    console.error("Privy failed to start", error, info.componentStack);
+  }
+
+  render(): ReactNode {
+    if (this.state.failed) {
+      return this.props.fallback;
+    }
+    return this.props.children;
+  }
 }
 
 export function OrbitxPrivyProvider({ children }: { children: ReactNode }) {
-  if (!privyAppId) {
+  const [Tree, setTree] = useState<PrivyTreeComponent | null>(null);
+
+  useEffect(() => {
+    if (!privyAppId) {
+      return;
+    }
+    let cancelled = false;
+    void import("./privyTree.web")
+      .then((mod) => {
+        if (!cancelled) {
+          setTree(() => mod.PrivyTree);
+        }
+      })
+      .catch((error: unknown) => {
+        console.error("Privy failed to load", error);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (!Tree) {
     return <>{children}</>;
   }
 
   return (
-    <PrivyProvider
-      appId={privyAppId}
-      clientId={privyClientId || undefined}
-      config={{
-        appearance: {
-          theme: "dark",
-          accentColor: "#7EB6FF",
-          walletChainType: "solana-only",
-          walletList: ["phantom", "jupiter"],
-          showWalletLoginFirst: true,
-        },
-        loginMethods: ["wallet"],
-        embeddedWallets: {
-          ethereum: { createOnLogin: "off" },
-          solana: { createOnLogin: "off" },
-        },
-        externalWallets: {
-          solana: {
-            connectors: toSolanaWalletConnectors(),
-          },
-        },
-      }}
-    >
-      <PrivyConnectBridge />
-      {children}
-    </PrivyProvider>
+    <PrivyErrorBoundary fallback={children}>
+      <Tree>{children}</Tree>
+    </PrivyErrorBoundary>
   );
 }

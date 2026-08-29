@@ -141,8 +141,8 @@ function RootLayoutInner() {
   return (
     <GestureHandlerRootView style={styles.flex}>
       <SafeAreaProvider>
-        <OrbitxPrivyProvider>
-          <AuthProvider>
+        <AuthProvider>
+          <OrbitxPrivyProvider>
             <AuthGate>
               <View style={styles.flex}>
                 <StatusBar style="light" hidden={showSplash} />
@@ -163,8 +163,8 @@ function RootLayoutInner() {
                 ) : null}
               </View>
             </AuthGate>
-          </AuthProvider>
-        </OrbitxPrivyProvider>
+          </OrbitxPrivyProvider>
+        </AuthProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );
