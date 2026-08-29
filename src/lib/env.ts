@@ -29,11 +29,6 @@ export const supabaseAnonKey = requireEnv(
   FALLBACK_SUPABASE_ANON_KEY,
 );
 
-export const supabaseProjectRef =
-  new URL(supabaseUrl).hostname.split(".")[0] ?? "ffjipnkhcebjvttliptb";
-
-export const supabaseProjectName = "Soltools";
-
 export const solanaRpcUrl = requireEnv(
   process.env.EXPO_PUBLIC_SOLANA_RPC_URL,
   "EXPO_PUBLIC_SOLANA_RPC_URL",

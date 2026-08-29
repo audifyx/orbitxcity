@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import {
   ActivityIndicator,
   Platform,
@@ -14,12 +14,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Circle, Line } from "react-native-svg";
 
 import { useAuth } from "../../src/lib/auth";
-import {
-  supabaseProjectName,
-  supabaseProjectRef,
-  supabaseUrl,
-} from "../../src/lib/env";
-import { pingWalletAuth } from "../../src/lib/supabase";
 import { openJupiterMobile, type WalletId } from "../../src/lib/wallets";
 import { colors } from "../../src/theme";
 
@@ -67,27 +61,11 @@ export default function ConnectScreen() {
     signInWithSignature,
   } = useAuth();
 
-  const [backendOk, setBackendOk] = useState<boolean | null>(null);
-  const [backendError, setBackendError] = useState<string | null>(null);
   const [jupiterStep, setJupiterStep] = useState(false);
   const [pubkey, setPubkey] = useState("");
   const [message, setMessage] = useState("");
   const [signature, setSignature] = useState("");
   const [localError, setLocalError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let mounted = true;
-    void pingWalletAuth().then((result) => {
-      if (!mounted) {
-        return;
-      }
-      setBackendOk(result.ok);
-      setBackendError(result.error ?? null);
-    });
-    return () => {
-      mounted = false;
-    };
-  }, []);
 
   const handleConnect = useCallback(
     async (walletId: WalletId) => {
@@ -143,21 +121,6 @@ export default function ConnectScreen() {
         <Text style={styles.subtitle}>
           Wallet is your account. Jupiter or Phantom. No email. No password.
         </Text>
-
-        <View style={styles.backendBox}>
-          <Text style={styles.backendLabel}>
-            {backendOk === null
-              ? "Checking Soltools…"
-              : backendOk
-                ? `Connected to ${supabaseProjectName}`
-                : "Soltools backend unreachable"}
-          </Text>
-          <Text style={styles.backendMeta}>{supabaseProjectRef}</Text>
-          <Text style={styles.backendMeta}>{supabaseUrl}</Text>
-          {backendError ? (
-            <Text style={styles.backendWarn}>{backendError}</Text>
-          ) : null}
-        </View>
 
         {displayError ? (
           <View style={styles.errorBox}>
@@ -314,32 +277,6 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_400Regular",
     fontSize: 15,
     lineHeight: 22,
-    textAlign: "center",
-  },
-  backendBox: {
-    width: "100%",
-    padding: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.hairline,
-    gap: 4,
-  },
-  backendLabel: {
-    color: colors.ice,
-    fontFamily: "Inter_500Medium",
-    fontSize: 13,
-    textAlign: "center",
-  },
-  backendMeta: {
-    color: colors.mute,
-    fontFamily: "Inter_400Regular",
-    fontSize: 11,
-    textAlign: "center",
-  },
-  backendWarn: {
-    color: colors.warning,
-    fontFamily: "Inter_400Regular",
-    fontSize: 12,
     textAlign: "center",
   },
   errorBox: {
