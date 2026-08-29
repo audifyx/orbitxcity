@@ -324,7 +324,7 @@ Deno.serve(async (req) => {
     const userClient = createClient(SUPABASE_URL, ANON, {
       global: { headers: { Authorization: authHeader } },
     });
-    const { data: userData, error: userError } = await userClient.auth.getUser();
+    const { data: userData, error: userError } = await userClient.auth.getUser(jwt);
     const user = userData.user;
     if (userError || !user) return json({ error: "Unauthorized" }, 401);
 
