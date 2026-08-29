@@ -277,5 +277,11 @@ export async function openJupiterMobile(): Promise<void> {
 }
 
 export function walletNeedsManualSiws(id: WalletId): boolean {
-  return id === "jupiter" && Platform.OS !== "web";
+  if (id !== "jupiter") {
+    return false;
+  }
+  if (Platform.OS !== "web") {
+    return true;
+  }
+  return !isWalletInjected("jupiter");
 }

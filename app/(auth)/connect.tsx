@@ -132,8 +132,8 @@ export default function ConnectScreen() {
           <View style={styles.siws}>
             <Text style={styles.siwsTitle}>Sign in with Jupiter</Text>
             <Text style={styles.siwsBody}>
-              Jupiter Mobile does not expose a one-tap dApp connect in Expo Go.
-              Sign the OrbitX nonce in Jupiter — this is not a transaction.
+              Sign the OrbitX nonce in Jupiter. This is not a transaction and
+              does not cost fees.
             </Text>
             <TextInput
               style={styles.input}

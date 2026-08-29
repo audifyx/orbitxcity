@@ -18,7 +18,7 @@ import {
   handleNativeSignRedirect,
   WALLET_PUBKEY_KEY,
 } from "./phantom";
-import { supabase, walletAuth } from "./supabase";
+import { supabase, walletAuth, warmWalletAuth } from "./supabase";
 import {
   connectBrowserWallet,
   isSolanaPubkey,
@@ -56,6 +56,21 @@ interface AuthContextValue {
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
+
+function publicAuthError(error: unknown, fallback: string): string {
+  const message = error instanceof Error ? error.message : fallback;
+  const lower = message.toLowerCase();
+  if (
+    lower.includes("failed to fetch") ||
+    lower.includes("network request failed") ||
+    lower.includes("timed out") ||
+    lower.includes("timeout") ||
+    lower.includes("aborted")
+  ) {
+    return "Can't reach OrbitX sign-in. Check your connection and try again.";
+  }
+  return message;
+}
 
 function parseNonceResponse(data: Record<string, unknown>): WalletAuthNonceResponse {
   const nonce = data.nonce;
@@ -131,16 +146,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setWallet(resolvedWallet);
       setError(null);
     } catch (resolveError) {
-      const message =
-        resolveError instanceof Error
-          ? resolveError.message
-          : "Failed to resolve wallet for session.";
-      setError(message);
+      setError(publicAuthError(resolveError, "Failed to resolve wallet for session."));
     }
   }, []);
 
   useEffect(() => {
+    void warmWalletAuth();
+  }, []);
+
+  useEffect(() => {
     let mounted = true;
+
+    const failsafe = setTimeout(() => {
+      if (mounted) {
+        setLoading(false);
+      }
+    }, 8000);
 
     void (async () => {
       const { data, error: sessionError } = await supabase.auth.getSession();
@@ -149,7 +170,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       if (sessionError) {
-        setError(sessionError.message);
+        setError(publicAuthError(sessionError, "Session restore failed."));
         setLoading(false);
         return;
       }
@@ -166,6 +187,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     return () => {
       mounted = false;
+      clearTimeout(failsafe);
       subscription.unsubscribe();
     };
   }, [applySession]);
@@ -221,12 +243,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
         await finishVerification(trimmedPubkey, trimmedSignature);
       } catch (verifyError) {
-        const message =
-          verifyError instanceof Error
-            ? verifyError.message
-            : "Wallet sign-in failed.";
+        const message = publicAuthError(verifyError, "Wallet sign-in failed.");
         setError(message);
-        throw verifyError;
+        throw new Error(message);
       } finally {
         setConnecting(false);
       }
@@ -267,12 +286,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         await startNativeConnect();
       } catch (connectError) {
-        const message =
-          connectError instanceof Error
-            ? connectError.message
-            : "Wallet connection failed.";
+        const message = publicAuthError(connectError, "Wallet connection failed.");
         setError(message);
-        throw connectError;
+        throw new Error(message);
       } finally {
         if (Platform.OS === "web" || walletNeedsManualSiws(walletId)) {
           setConnecting(false);
@@ -296,13 +312,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       );
       await startNativeSign(nonceData.message);
     } catch (nativeConnectError) {
-      const message =
-        nativeConnectError instanceof Error
-          ? nativeConnectError.message
-          : "Phantom connect failed.";
+      const message = publicAuthError(nativeConnectError, "Phantom connect failed.");
       setError(message);
       setConnecting(false);
-      throw nativeConnectError;
+      throw new Error(message);
     }
   }, []);
 
@@ -323,12 +336,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         await finishVerification(pubkey, signature);
       } catch (nativeSignError) {
-        const message =
-          nativeSignError instanceof Error
-            ? nativeSignError.message
-            : "Phantom sign-in failed.";
+        const message = publicAuthError(nativeSignError, "Phantom sign-in failed.");
         setError(message);
-        throw nativeSignError;
+        throw new Error(message);
       } finally {
         setConnecting(false);
       }
