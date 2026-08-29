@@ -65,6 +65,7 @@ export {
   extractToolMentions,
   mentionSuggestions,
   planFromUtterance,
+  rewriteLegacyToolPrompt,
 } from "./planner";
 
 export {

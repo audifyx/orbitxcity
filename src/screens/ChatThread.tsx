@@ -19,6 +19,7 @@ import {
   asStreamEvent,
   orchestrateLive,
   planFromUtterance,
+  rewriteLegacyToolPrompt,
   type OrbitXModelId,
 } from "../brain";
 import type { ToolCategory as BrainToolCategory } from "../brain/types";
@@ -267,7 +268,7 @@ export function ChatThread({
   );
 
   const handleSend = useCallback(async () => {
-    const text = draft.trim();
+    const text = rewriteLegacyToolPrompt(draft.trim(), [...TOOLS]);
     if (!text || sending) {
       return;
     }

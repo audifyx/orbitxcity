@@ -3,13 +3,33 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const ANON = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
-const NVIDIA_API_KEY = Deno.env.get("NVIDIA_API_KEY") || "";
+const NVIDIA_API_KEYS = [
+  Deno.env.get("NVIDIA_API_KEY") || "",
+  Deno.env.get("NVIDIA_KEY_1") || "",
+  Deno.env.get("NVIDIA_KEY_2") || "",
+  Deno.env.get("NVIDIA_KEY_3") || "",
+].filter((key) => key.trim().length > 0);
 const NVIDIA_BASE_URL = Deno.env.get("NVIDIA_BASE_URL") || "https://integrate.api.nvidia.com/v1";
-const NVIDIA_MODEL = Deno.env.get("NVIDIA_MODEL") || "meta/llama-3.3-70b-instruct";
+const NVIDIA_MODELS = [
+  Deno.env.get("NVIDIA_CHAT_MODEL") || "",
+  Deno.env.get("NVIDIA_MODEL") || "",
+  "minimaxai/minimax-m3",
+  "meta/llama-4-maverick-17b-128e-instruct",
+  "meta/llama-3.3-70b-instruct",
+  "meta/llama-3.1-70b-instruct",
+].filter((id, index, all) => id && all.indexOf(id) === index);
 const GROQ_API_KEY = Deno.env.get("GROQ_API_KEY") || "";
 const GROQ_MODEL = Deno.env.get("GROQ_MODEL") || "llama-3.3-70b-versatile";
+const XAI_API_KEY = Deno.env.get("XAI_API_KEY") || Deno.env.get("GROK_API_KEY") || "";
+const XAI_MODEL = Deno.env.get("XAI_MODEL") || Deno.env.get("GROK_MODEL") || "grok-2-latest";
 const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY") || "";
-const GEMINI_MODEL = Deno.env.get("GEMINI_MODEL") || "gemini-2.0-flash";
+const GEMINI_MODELS = [
+  Deno.env.get("GEMINI_MODEL") || "",
+  "gemini-2.5-flash",
+  "gemini-2.0-flash",
+  "gemini-1.5-flash",
+  "gemini-1.5-flash-latest",
+].filter((id, index, all) => id && all.indexOf(id) === index);
 const OPENROUTER_API_KEY = Deno.env.get("OPENROUTER_API_KEY") || "";
 const OPENROUTER_MODEL = Deno.env.get("OPENROUTER_MODEL") || "meta-llama/llama-3.3-70b-instruct:free";
 
@@ -105,6 +125,7 @@ async function callOpenAiCompat(
   messages: Msg[],
 ): Promise<string> {
   if (!key) throw new Error(`no ${provider} key`);
+  if (!model) throw new Error(`no ${provider} model`);
   const r = await tfetch(
     `${base}/chat/completions`,
     {
@@ -191,12 +212,12 @@ async function* streamOpenAiCompat(
   if (!saw) throw new Error(`${provider} empty stream`);
 }
 
-async function callGemini(messages: Msg[]): Promise<string> {
+async function callGemini(messages: Msg[], model: string): Promise<string> {
   if (!GEMINI_API_KEY) throw new Error("no gemini key");
   const sys = messages.find((m) => m.role === "system")?.content ?? "";
   const rest = messages.filter((m) => m.role !== "system");
   const r = await tfetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -222,27 +243,40 @@ async function callGemini(messages: Msg[]): Promise<string> {
 }
 
 async function synthesize(messages: Msg[]): Promise<string> {
-  const attempts = [
-    () =>
-      callOpenAiCompat(NVIDIA_BASE_URL, NVIDIA_API_KEY, NVIDIA_MODEL, "nvidia", messages),
-    () =>
-      callOpenAiCompat(
-        "https://api.groq.com/openai/v1",
-        GROQ_API_KEY,
-        GROQ_MODEL,
-        "groq",
-        messages,
-      ),
-    () => callGemini(messages),
-    () =>
-      callOpenAiCompat(
-        "https://openrouter.ai/api/v1",
-        OPENROUTER_API_KEY,
-        OPENROUTER_MODEL,
-        "openrouter",
-        messages,
-      ),
-  ];
+  const attempts: Array<() => Promise<string>> = [];
+  for (const model of NVIDIA_MODELS) {
+    for (const key of NVIDIA_API_KEYS) {
+      attempts.push(() =>
+        callOpenAiCompat(NVIDIA_BASE_URL, key, model, `nvidia:${model}`, messages),
+      );
+    }
+  }
+  if (XAI_API_KEY) {
+    attempts.push(() =>
+      callOpenAiCompat("https://api.x.ai/v1", XAI_API_KEY, XAI_MODEL, "grok", messages),
+    );
+  }
+  attempts.push(() =>
+    callOpenAiCompat(
+      "https://api.groq.com/openai/v1",
+      GROQ_API_KEY,
+      GROQ_MODEL,
+      "groq",
+      messages,
+    ),
+  );
+  for (const model of GEMINI_MODELS) {
+    attempts.push(() => callGemini(messages, model));
+  }
+  attempts.push(() =>
+    callOpenAiCompat(
+      "https://openrouter.ai/api/v1",
+      OPENROUTER_API_KEY,
+      OPENROUTER_MODEL,
+      "openrouter",
+      messages,
+    ),
+  );
   const errors: string[] = [];
   for (const fn of attempts) {
     try {
@@ -266,17 +300,41 @@ function parseSolAmount(text: string): number | null {
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
+function slugName(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+}
+
+function resolveKnownTool(raw: string): string | undefined {
+  const dashed = slugName(raw);
+  return (
+    KNOWN_TOOLS.find((tool) => tool === dashed) ??
+    KNOWN_TOOLS.find((tool) => tool.startsWith(dashed) && dashed.length >= 4)
+  );
+}
+
 function extractMentions(message: string): string[] {
   const found: string[] = [];
+  const add = (id?: string) => {
+    if (id && !found.includes(id)) found.push(id);
+  };
   const mentionRe = /@([a-z0-9][a-z0-9-]{0,40})/gi;
   let match: RegExpExecArray | null = mentionRe.exec(message);
   while (match) {
-    const raw = match[1].toLowerCase();
-    const id =
-      KNOWN_TOOLS.find((tool) => tool === raw) ??
-      KNOWN_TOOLS.find((tool) => tool.startsWith(raw));
-    if (id && !found.includes(id)) found.push(id);
+    add(resolveKnownTool(match[1]));
     match = mentionRe.exec(message);
+  }
+  const useRe = /use\s+([a-z0-9][a-z0-9\s/-]{1,48}?)(?:\s*:|\s+fetch|\s+run|\s+for\b|$)/gi;
+  let useMatch: RegExpExecArray | null = useRe.exec(message);
+  while (useMatch) {
+    add(resolveKnownTool(useMatch[1]));
+    useMatch = useRe.exec(message);
+  }
+  const lower = message.toLowerCase();
+  if (lower.includes("use token data") || lower.includes("fetch on-chain and market metadata")) {
+    add("token-data");
+  }
+  if (lower.includes("use og token scan") || lower.includes("@og-scan-token")) {
+    add("og-scan-token");
   }
   return found;
 }
@@ -284,13 +342,7 @@ function extractMentions(message: string): string[] {
 function wantsTools(message: string, mentions: string[]): boolean {
   if (mentions.length > 0) return true;
   if (ASK_FOR_TOOLS.test(message)) return true;
-  const addresses = extractAddresses(message);
-  if (addresses.length === 0) return false;
-  const stripped = message
-    .replace(BASE58_RE, "")
-    .replace(/@[\w-]+/g, "")
-    .trim();
-  return stripped.length < 24;
+  return extractAddresses(message).length > 0;
 }
 
 function planTools(message: string, intentHint?: string): string[] {
@@ -441,13 +493,54 @@ function firstUsefulString(value: unknown): string | null {
   return null;
 }
 
+function flattenFacts(value: unknown, prefix = ""): string[] {
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    const text = String(value).trim();
+    if (!text || text === "[truncated]" || text.startsWith("{")) return [];
+    return [`${prefix}${text}`];
+  }
+  if (!isRecord(value)) return [];
+  const facts: string[] = [];
+  const prefer = [
+    "symbol",
+    "name",
+    "price",
+    "priceUsd",
+    "marketCap",
+    "mcap",
+    "liquidity",
+    "volume",
+    "volume24h",
+    "verdict",
+    "risk",
+    "holders",
+    "supply",
+    "mint",
+  ];
+  for (const key of prefer) {
+    if (value[key] != null && value[key] !== "") {
+      facts.push(`${key}: ${String(value[key])}`);
+    }
+  }
+  if (facts.length === 0) {
+    for (const [key, item] of Object.entries(value).slice(0, 8)) {
+      facts.push(...flattenFacts(item, facts.length === 0 ? `${key} ` : ""));
+    }
+  }
+  return facts.slice(0, 8);
+}
+
 function speakFromResults(
   message: string,
   toolEvents: ToolEvent[],
   results: unknown[],
 ): string {
+  const mint = extractAddresses(message)[0];
   if (toolEvents.length === 0) {
-    return "I'm here. Ask me anything, or type @ and a tool when you want me to look something up — @og-scan-token, @jupiter-quote, @news-fetcher.";
+    if (mint) {
+      return `That's ${mint.slice(0, 4)}…${mint.slice(-4)} — official $ORBITX if it matches 13H4…sPX9. I didn't get a live book on it that turn. Send @token-data or @og-scan-token with the CA and I'll read the chain out loud.`;
+    }
+    return "Got you. I can talk, or I can look something up — @token-data, @og-scan-token, @jupiter-quote, @news-fetcher. What do you want first?";
   }
   const bits: string[] = [];
   for (let i = 0; i < results.length; i += 1) {
@@ -459,11 +552,18 @@ function speakFromResults(
       continue;
     }
     const useful = firstUsefulString(result);
-    if (useful) bits.push(useful);
+    if (useful) {
+      bits.push(useful);
+      continue;
+    }
+    const facts = flattenFacts(result);
+    if (facts.length > 0) {
+      bits.push(`From ${event.label}: ${facts.join(" · ")}.`);
+    }
   }
   if (bits.length === 0) {
     const names = toolEvents.map((event) => event.label).join(", ");
-    return `I pulled ${names} for that. Want me to walk the interesting part, or should I @ another tool?`;
+    return `I pulled ${names}${mint ? ` on ${mint.slice(0, 4)}…${mint.slice(-4)}` : ""}. The payload is thin — want me to hit @og-scan-token next?`;
   }
   return bits.slice(0, 3).join(" ");
 }
@@ -476,12 +576,19 @@ async function speakViaAnalyzer(
   const result = await callFn(
     "ai-analyzer",
     {
-      query: `You are OrbitX. Speak in first person like a chat, 2–6 sentences. User said: ${message}\n\nContext:\n${toolContext}`,
-      subject: message.slice(0, 160),
-      mint: extractAddresses(message)[0],
+      action: "chat",
+      messages: [
+        {
+          role: "user",
+          content: `Speak in first person like a live chat, 2–6 short sentences. User said: ${message}\n\nLive context:\n${toolContext || "(no tools this turn)"}`,
+        },
+      ],
     },
     jwt,
   );
+  if (isRecord(result) && typeof result.error === "string") {
+    throw new Error(result.error);
+  }
   const text = firstUsefulString(result);
   if (!text) throw new Error("analyzer empty");
   return text;
@@ -819,14 +926,18 @@ Deno.serve(async (req) => {
             let text = "";
             try {
               const streamers = [
-                () =>
-                  streamOpenAiCompat(
-                    NVIDIA_BASE_URL,
-                    NVIDIA_API_KEY,
-                    NVIDIA_MODEL,
-                    "nvidia",
-                    speakMessages,
+                ...NVIDIA_MODELS.flatMap((model) =>
+                  NVIDIA_API_KEYS.map(
+                    (key) => () =>
+                      streamOpenAiCompat(
+                        NVIDIA_BASE_URL,
+                        key,
+                        model,
+                        `nvidia:${model}`,
+                        speakMessages,
+                      ),
                   ),
+                ),
                 () =>
                   streamOpenAiCompat(
                     "https://api.groq.com/openai/v1",

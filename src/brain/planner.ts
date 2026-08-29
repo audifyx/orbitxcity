@@ -289,7 +289,26 @@ function pickTools(
 }
 
 const ASK_FOR_TOOLS =
-  /\b(scan|analyze|analyse|quote|swap|inspect|look\s?up|lookup|deep[- ]?dive|fetch news|research this|run (the )?tool|use @)\b/i;
+  /\b(scan|analyze|analyse|quote|swap|inspect|look\s?up|lookup|deep[- ]?dive|fetch news|research this|run (the )?tool|use @|use [a-z]|metadata|on-chain)\b/i;
+
+function slugName(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+}
+
+function matchTool(raw: string, tools: ToolDefinition[]): ToolDefinition | undefined {
+  const needle = raw.toLowerCase().trim();
+  const dashed = slugName(needle);
+  return (
+    tools.find((item) => item.id === needle || item.id === dashed) ??
+    tools.find((item) => slugName(item.name) === dashed) ??
+    tools.find(
+      (item) =>
+        item.id.startsWith(dashed) ||
+        slugName(item.name).startsWith(dashed) ||
+        item.name.toLowerCase() === needle,
+    )
+  );
+}
 
 export function extractToolMentions(
   text: string,
@@ -299,21 +318,52 @@ export function extractToolMentions(
   const mentionRe = /@([a-z0-9][a-z0-9-]{0,40})/gi;
   let match: RegExpExecArray | null = mentionRe.exec(text);
   while (match) {
-    const raw = match[1].toLowerCase();
-    const tool =
-      tools.find((item) => item.id === raw) ??
-      tools.find((item) => item.name.toLowerCase().replace(/\s+/g, "-") === raw) ??
-      tools.find(
-        (item) =>
-          item.id.startsWith(raw) ||
-          item.name.toLowerCase().replace(/\s+/g, "-").startsWith(raw),
-      );
+    const tool = matchTool(match[1], tools);
     if (tool) {
       found.set(tool.id, tool);
     }
     match = mentionRe.exec(text);
   }
+
+  const useRe = /use\s+([a-z0-9][a-z0-9\s/-]{1,48}?)(?:\s*:|\s+fetch|\s+run|\s+for\b|$)/gi;
+  let useMatch: RegExpExecArray | null = useRe.exec(text);
+  while (useMatch) {
+    const tool = matchTool(useMatch[1], tools);
+    if (tool) {
+      found.set(tool.id, tool);
+    }
+    useMatch = useRe.exec(text);
+  }
+
+  const lower = text.toLowerCase();
+  for (const tool of tools) {
+    if (lower.includes(`use ${tool.name.toLowerCase()}`)) {
+      found.set(tool.id, tool);
+    }
+    if (tool.description.length > 24 && lower.includes(tool.description.toLowerCase())) {
+      found.set(tool.id, tool);
+    }
+  }
+
   return [...found.values()];
+}
+
+export function rewriteLegacyToolPrompt(
+  text: string,
+  tools: ToolDefinition[],
+): string {
+  let next = text;
+  for (const tool of tools) {
+    const legacy = `Use ${tool.name}: ${tool.description}`;
+    if (next.includes(legacy)) {
+      next = next.split(legacy).join(`@${tool.id}`);
+    }
+    const prefix = new RegExp(`Use\\s+${tool.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*:`, "gi");
+    if (prefix.test(next) && !next.includes(`@${tool.id}`)) {
+      next = next.replace(prefix, `@${tool.id}`);
+    }
+  }
+  return next.replace(/\s+/g, " ").trim();
 }
 
 export function mentionSuggestions(
@@ -345,11 +395,7 @@ function wantsLiveTools(
   if (addresses.length === 0) {
     return false;
   }
-  const stripped = text
-    .replace(new RegExp(BASE58_RE.source, "g"), "")
-    .replace(/@[\w-]+/g, "")
-    .trim();
-  return stripped.length < 24;
+  return true;
 }
 
 export function planFromUtterance(
