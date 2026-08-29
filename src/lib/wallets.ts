@@ -202,7 +202,7 @@ async function connectStandard(id: WalletId): Promise<{ pubkey: string; wallet: 
   if (!wallet) {
     throw new Error(
       id === "jupiter"
-        ? "Jupiter Wallet is not installed in this browser."
+        ? "JUPITER_SIWS_REQUIRED"
         : "Phantom is not installed in this browser.",
     );
   }
@@ -323,11 +323,5 @@ export async function openJupiterMobile(): Promise<void> {
 }
 
 export function walletNeedsManualSiws(id: WalletId): boolean {
-  if (id !== "jupiter") {
-    return false;
-  }
-  if (Platform.OS !== "web") {
-    return true;
-  }
-  return !isWalletInjected("jupiter");
+  return id === "jupiter";
 }

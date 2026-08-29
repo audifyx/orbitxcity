@@ -62,6 +62,7 @@ export default function ConnectScreen() {
     error,
     requestSignInMessage,
     signInWithSignature,
+    clearError,
   } = useAuth();
 
   const [jupiterStep, setJupiterStep] = useState(false);
@@ -73,6 +74,7 @@ export default function ConnectScreen() {
   const handleConnect = useCallback(
     async (walletId: WalletId) => {
       setLocalError(null);
+      clearError();
       if (walletNeedsManualSiws(walletId)) {
         setJupiterStep(true);
         return;
@@ -82,14 +84,16 @@ export default function ConnectScreen() {
       } catch (err) {
         const message =
           err instanceof Error ? err.message : "Wallet connection failed.";
-        if (walletId === "jupiter" && /invalid account|not installed/i.test(message)) {
-          setJupiterStep(true);
+        if (!message || /invalid account|not installed|jupiter_siws_required/i.test(message)) {
+          if (walletId === "jupiter") {
+            setJupiterStep(true);
+          }
           return;
         }
         setLocalError(message);
       }
     },
-    [connect],
+    [clearError, connect],
   );
 
   const handleRequestMessage = useCallback(async () => {
@@ -141,8 +145,9 @@ export default function ConnectScreen() {
           <View style={styles.siws}>
             <Text style={styles.siwsTitle}>Sign in with Jupiter</Text>
             <Text style={styles.siwsBody}>
-              Sign the OrbitX nonce in Jupiter. This is not a transaction and
-              does not cost fees.
+              No Jupiter extension needed. Paste your Jupiter address, sign the
+              OrbitX nonce in the Jupiter app, then paste the signature. This is
+              not a transaction and does not cost fees.
             </Text>
             <TextInput
               style={styles.input}
