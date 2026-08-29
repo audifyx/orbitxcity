@@ -1,7 +1,6 @@
 import { useCallback, useState } from "react";
 import {
   ActivityIndicator,
-  Platform,
   Pressable,
   ScrollView,
   Share,
@@ -14,7 +13,11 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Circle, Line } from "react-native-svg";
 
 import { useAuth } from "../../src/lib/auth";
-import { openJupiterMobile, type WalletId } from "../../src/lib/wallets";
+import {
+  openJupiterMobile,
+  walletNeedsManualSiws,
+  type WalletId,
+} from "../../src/lib/wallets";
 import { colors } from "../../src/theme";
 
 function OrbitMark({ size = 56 }: { size?: number }) {
@@ -70,14 +73,20 @@ export default function ConnectScreen() {
   const handleConnect = useCallback(
     async (walletId: WalletId) => {
       setLocalError(null);
-      if (walletId === "jupiter" && Platform.OS !== "web") {
+      if (walletNeedsManualSiws(walletId)) {
         setJupiterStep(true);
         return;
       }
       try {
         await connect(walletId);
       } catch (err) {
-        setLocalError(err instanceof Error ? err.message : "Wallet connection failed.");
+        const message =
+          err instanceof Error ? err.message : "Wallet connection failed.";
+        if (walletId === "jupiter" && /invalid account|not installed/i.test(message)) {
+          setJupiterStep(true);
+          return;
+        }
+        setLocalError(message);
       }
     },
     [connect],

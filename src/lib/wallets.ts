@@ -141,26 +141,54 @@ function walletNameMatches(name: string, id: WalletId): boolean {
   return lower.includes("phantom");
 }
 
-function discoverStandardWallets(): StandardWallet[] {
+const standardWallets = new Map<string, StandardWallet>();
+
+function rememberStandardWallet(wallet: StandardWallet): void {
+  if (wallet && typeof wallet.name === "string") {
+    standardWallets.set(wallet.name, wallet);
+  }
+}
+
+function ensureStandardListeners(): void {
   const win = getWindow();
   if (!win) {
-    return [];
+    return;
   }
+  const flagged = win as JupiterWindow & { __orbitxWalletStandard?: boolean };
+  if (flagged.__orbitxWalletStandard) {
+    return;
+  }
+  flagged.__orbitxWalletStandard = true;
 
-  const found: StandardWallet[] = [];
-  const register = (wallet: StandardWallet) => {
-    if (wallet && typeof wallet.name === "string") {
-      found.push(wallet);
+  win.addEventListener("wallet-standard:register-wallet", ((event: Event) => {
+    const detail = (event as CustomEvent<(api: { register: (wallet: StandardWallet) => void }) => void>)
+      .detail;
+    if (typeof detail === "function") {
+      detail({ register: rememberStandardWallet });
     }
-  };
+  }) as EventListener);
 
   win.dispatchEvent(
     new CustomEvent("wallet-standard:app-ready", {
-      detail: { register },
+      detail: { register: rememberStandardWallet },
     }),
   );
+}
 
-  return found;
+function discoverStandardWallets(): StandardWallet[] {
+  ensureStandardListeners();
+  return [...standardWallets.values()];
+}
+
+function liveAccount(wallet: StandardWallet, address?: string): StandardAccount {
+  const match = address
+    ? wallet.accounts.find((item) => item.address === address)
+    : undefined;
+  const account = match ?? wallet.accounts[0];
+  if (!account?.address) {
+    throw new Error(`${wallet.name} did not return an account.`);
+  }
+  return account;
 }
 
 function getStandardFeature<T>(wallet: StandardWallet, name: string): T | null {
@@ -188,10 +216,8 @@ async function connectStandard(id: WalletId): Promise<{ pubkey: string; wallet: 
   }
 
   const result = await connectFeature.connect();
-  const account = result.accounts?.[0] ?? wallet.accounts[0];
-  if (!account?.address) {
-    throw new Error(`${wallet.name} did not return an account.`);
-  }
+  const address = result.accounts?.[0]?.address ?? wallet.accounts[0]?.address;
+  const account = liveAccount(wallet, address);
 
   return { pubkey: account.address, wallet, account };
 }
@@ -211,14 +237,34 @@ async function signStandard(
     throw new Error(`${wallet.name} does not support message signing.`);
   }
 
-  const signed = await signFeature.signMessage([
-    { account, message: new TextEncoder().encode(message) },
-  ]);
-  const signature = signed[0]?.signature;
-  if (!signature) {
-    throw new Error(`${wallet.name} did not return a signature.`);
+  const bytes = new TextEncoder().encode(message);
+  const preferred = liveAccount(wallet, account.address);
+  const candidates = [
+    preferred,
+    ...wallet.accounts.filter((item) => item !== preferred),
+  ];
+
+  let lastError: Error | null = null;
+  for (const candidate of candidates) {
+    try {
+      const signed = await signFeature.signMessage([
+        { account: candidate, message: bytes },
+      ]);
+      const signature = signed[0]?.signature;
+      if (!signature) {
+        throw new Error(`${wallet.name} did not return a signature.`);
+      }
+      return bs58.encode(signature);
+    } catch (error) {
+      const text = error instanceof Error ? error.message : String(error);
+      lastError = error instanceof Error ? error : new Error(text);
+      if (!/invalid account/i.test(text)) {
+        throw lastError;
+      }
+    }
   }
-  return bs58.encode(signature);
+
+  throw lastError ?? new Error(`${wallet.name} did not return a signature.`);
 }
 
 let standardSession: { id: WalletId; wallet: StandardWallet; account: StandardAccount } | null = null;

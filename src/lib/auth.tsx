@@ -69,6 +69,9 @@ function publicAuthError(error: unknown, fallback: string): string {
   ) {
     return "Can't reach OrbitX sign-in. Check your connection and try again.";
   }
+  if (lower.includes("invalid account")) {
+    return "Wallet could not sign with that account. Use sign-in with Jupiter or reconnect Phantom.";
+  }
   return message;
 }
 
@@ -265,11 +268,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         if (Platform.OS === "web") {
           if (!isWalletInjected(walletId)) {
-            throw new Error(
-              walletId === "jupiter"
-                ? "Jupiter Wallet is not installed. Install the Jupiter extension and try again."
-                : "Phantom is not installed. Install Phantom and try again.",
-            );
+            if (walletId === "phantom") {
+              await startNativeConnect();
+              return;
+            }
+            return;
           }
 
           const { pubkey } = await connectBrowserWallet(walletId);
