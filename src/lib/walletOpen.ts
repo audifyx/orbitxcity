@@ -105,19 +105,16 @@ function jupiterBrowseUrls(target: string): string[] {
   const hostPath = target.replace(/^https?:\/\//, "");
   const urls: string[] = [];
 
+  // Jupiter has no public https://jup.ag/ul/browse page. That URL is a dead
+  // website. Open the Jupiter app, or let Mobile Wallet Adapter do it.
   if (Platform.OS === "android") {
     urls.push(
       `intent://${hostPath}#Intent;scheme=https;package=${JUPITER_ANDROID_PACKAGE};end`,
     );
   }
 
-  // Official public browse UL is not documented. Try the patterns Jupiter
-  // and other Solana wallets have used, but never a bare jupiter:// home.
-  urls.push(`https://jup.ag/ul/browse/${encoded}`);
-  urls.push(`https://jup.ag/browse?url=${encoded}`);
-  urls.push(`jupiter://ul/browse?url=${encoded}`);
   urls.push(`jupiter://dapp?url=${encoded}`);
-  urls.push(`jup://ul/browse?url=${encoded}`);
+  urls.push(`jup://dapp?url=${encoded}`);
   return urls;
 }
 
@@ -134,7 +131,7 @@ export async function openWalletInAppBrowser(walletId: WalletId): Promise<void> 
 
   throw new Error(
     walletId === "jupiter"
-      ? "Could not open Jupiter. Open Jupiter, tap the globe, and go to orbitxcity.vercel.app."
+      ? "Could not reach Jupiter. Install Jupiter Mobile and tap Connect again so Mobile Wallet Adapter can open it."
       : "Could not open Phantom. Install Phantom and try again.",
   );
 }

@@ -443,13 +443,25 @@ async function signStandard(
 
 let standardSession: { id: WalletId; wallet: StandardWallet; account: StandardAccount } | null = null;
 
+export function isMwaStandardAvailable(): boolean {
+  if (isInsideWalletBrowser()) {
+    return false;
+  }
+  return discoverStandardWallets().some((wallet) => isMwaWalletName(wallet.name));
+}
+
 export function isWalletInjected(id: WalletId): boolean {
   if (getInjectedById(id)) {
     return true;
   }
-  return discoverStandardWallets().some(
-    (wallet) => walletNameMatches(wallet.name, id) && !isMwaWalletName(wallet.name),
-  );
+  if (
+    discoverStandardWallets().some(
+      (wallet) => walletNameMatches(wallet.name, id) && !isMwaWalletName(wallet.name),
+    )
+  ) {
+    return true;
+  }
+  return isMwaStandardAvailable();
 }
 
 export async function waitForWallet(id: WalletId, timeoutMs = 2500): Promise<boolean> {

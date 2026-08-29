@@ -291,6 +291,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setError(null);
 
       try {
+        registerWebMwa();
         const insideWallet = isInsideWalletBrowser(walletId);
         const injected = await waitForWallet(walletId, insideWallet ? 8000 : 2500);
 
