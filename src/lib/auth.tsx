@@ -23,9 +23,9 @@ import {
   connectBrowserWallet,
   isSolanaPubkey,
   isSolanaSignature,
-  isWalletInjected,
+  openJupiterMobile,
   signBrowserWallet,
-  walletNeedsManualSiws,
+  waitForWallet,
   type WalletId,
 } from "./wallets";
 
@@ -71,10 +71,10 @@ function publicAuthError(error: unknown, fallback: string): string {
     return "Can't reach OrbitX sign-in. Check your connection and try again.";
   }
   if (lower.includes("invalid account")) {
-    return "Wallet could not sign with that account. Use sign-in with Jupiter or reconnect Phantom.";
+    return "Wallet could not sign with that account. Pick the wallet again and approve the request.";
   }
   if (lower.includes("not installed") || lower.includes("jupiter_siws_required")) {
-    return "";
+    return "Opening your wallet. Approve the connection, then sign. This is not a transaction.";
   }
   return message;
 }
@@ -266,19 +266,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setError(null);
 
       try {
-        if (walletNeedsManualSiws(walletId)) {
-          return;
-        }
+        const injected = await waitForWallet(walletId);
 
-        if (Platform.OS === "web") {
-          if (!isWalletInjected(walletId)) {
-            if (walletId === "phantom") {
-              await startNativeConnect();
-              return;
-            }
-            return;
-          }
-
+        if (injected) {
           const { pubkey } = await connectBrowserWallet(walletId);
           setPendingPubkey(pubkey);
           setWallet(pubkey);
@@ -291,6 +281,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return;
         }
 
+        if (walletId === "jupiter") {
+          await openJupiterMobile();
+          throw new Error(
+            "Jupiter is opening. Approve the connection and sign the login message.",
+          );
+        }
+
         await startNativeConnect();
       } catch (connectError) {
         const message = publicAuthError(connectError, "Wallet connection failed.");
@@ -300,7 +297,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setError(message);
         throw new Error(message);
       } finally {
-        if (Platform.OS === "web" || walletNeedsManualSiws(walletId)) {
+        if (Platform.OS === "web" || walletId === "jupiter") {
           setConnecting(false);
         }
       }
