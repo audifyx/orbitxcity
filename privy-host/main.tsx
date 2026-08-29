@@ -118,6 +118,94 @@ function walletNameMatches(name: string, walletId: WalletId): boolean {
   return lower.includes("jupiter") || lower.includes("jup");
 }
 
+type InjectedProvider = {
+  isPhantom?: boolean;
+  isJupiter?: boolean;
+  publicKey?: { toBase58?: () => string; toString(): string } | null;
+  connect(): Promise<{ publicKey?: { toBase58?: () => string; toString(): string } } | void>;
+  signMessage(
+    message: Uint8Array,
+    display?: "utf8" | "hex",
+  ): Promise<{ signature: Uint8Array | string } | Uint8Array>;
+};
+
+function asProvider(value: unknown): InjectedProvider | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const rec = value as Record<string, unknown>;
+  if (typeof rec.connect !== "function" || typeof rec.signMessage !== "function") {
+    return null;
+  }
+  return value as InjectedProvider;
+}
+
+function getInjectedProvider(walletId: WalletId): InjectedProvider | null {
+  const win = window as Window & {
+    phantom?: { solana?: unknown };
+    solana?: InjectedProvider;
+    jupiter?: { solana?: unknown } | InjectedProvider;
+    jup?: { solana?: unknown } | InjectedProvider;
+  };
+
+  if (walletId === "phantom") {
+    return (
+      asProvider(win.phantom?.solana) ??
+      (win.solana?.isPhantom ? asProvider(win.solana) : null)
+    );
+  }
+
+  return (
+    asProvider((win.jupiter as { solana?: unknown } | undefined)?.solana) ??
+    asProvider(win.jupiter) ??
+    asProvider((win.jup as { solana?: unknown } | undefined)?.solana) ??
+    asProvider(win.jup) ??
+    (win.solana?.isJupiter ? asProvider(win.solana) : null)
+  );
+}
+
+function pubkeyFromKey(key: { toBase58?: () => string; toString(): string }): string {
+  return (key.toBase58?.() ?? key.toString()).trim();
+}
+
+async function connectInjected(walletId: WalletId): Promise<{
+  pubkey: string;
+  provider: InjectedProvider;
+} | null> {
+  const deadline = Date.now() + 2500;
+  let provider = getInjectedProvider(walletId);
+  while (!provider && Date.now() < deadline) {
+    await new Promise((resolve) => window.setTimeout(resolve, 80));
+    provider = getInjectedProvider(walletId);
+  }
+  if (!provider) {
+    return null;
+  }
+
+  if (!provider.publicKey) {
+    await provider.connect();
+  }
+  const key = provider.publicKey;
+  if (!key) {
+    const response = await provider.connect();
+    const fromResponse =
+      response && typeof response === "object" && response.publicKey
+        ? pubkeyFromKey(response.publicKey)
+        : "";
+    if (isSolanaPubkey(fromResponse)) {
+      return { pubkey: fromResponse, provider };
+    }
+    return null;
+  }
+  const pubkey = pubkeyFromKey(key);
+  return isSolanaPubkey(pubkey) ? { pubkey, provider } : null;
+}
+
+async function signInjected(provider: InjectedProvider, message: string): Promise<string> {
+  const raw = await provider.signMessage(new TextEncoder().encode(message), "utf8");
+  return toBase58Signature(raw);
+}
+
 function friendlyHostError(error: unknown): string {
   const message =
     typeof error === "string"
@@ -128,6 +216,9 @@ function friendlyHostError(error: unknown): string {
   const lower = message.toLowerCase();
   if (
     lower.includes("could not log in with wallet") ||
+    lower.includes("can't connect") ||
+    lower.includes("cannot connect") ||
+    lower.includes("could not connect") ||
     lower.includes("siws") ||
     lower.includes("invalid_data")
   ) {
@@ -238,11 +329,40 @@ function HostApp({ params }: { params: HostParams }) {
       return;
     }
     connectOpened.current = true;
-    if (pickWallet()) {
-      void finishOrbitxSession();
-      return;
-    }
-    openWallet();
+
+    void (async () => {
+      if (pickWallet()) {
+        await finishOrbitxSession();
+        return;
+      }
+
+      const injected = await connectInjected(params.walletId);
+      if (injected) {
+        finishing.current = true;
+        setError(null);
+        setStatus("Connected. Approve the sign-in. This is not a transaction.");
+        try {
+          const nonceData = await walletAuth("nonce", { pubkey: injected.pubkey });
+          const message = nonceData.message;
+          if (typeof message !== "string") {
+            throw new Error("wallet-auth nonce response is invalid.");
+          }
+          const signed = await signInjected(injected.provider, message);
+          finishInOpenerOrReturn({
+            type: "done",
+            pubkey: injected.pubkey,
+            signature: signed,
+          });
+        } catch (injectedError) {
+          finishing.current = false;
+          setError(friendlyHostError(injectedError));
+          setStatus("");
+        }
+        return;
+      }
+
+      openWallet();
+    })();
   }, [params.walletId, ready, walletsReady]);
 
   return (
@@ -267,7 +387,35 @@ function HostApp({ params }: { params: HostParams }) {
       {ready && !finishing.current ? (
         <button
           type="button"
-          onClick={openWallet}
+          onClick={() => {
+            void (async () => {
+              const injected = await connectInjected(params.walletId);
+              if (!injected) {
+                openWallet();
+                return;
+              }
+              finishing.current = true;
+              setError(null);
+              setStatus("Connected. Approve the sign-in. This is not a transaction.");
+              try {
+                const nonceData = await walletAuth("nonce", { pubkey: injected.pubkey });
+                const message = nonceData.message;
+                if (typeof message !== "string") {
+                  throw new Error("wallet-auth nonce response is invalid.");
+                }
+                const signed = await signInjected(injected.provider, message);
+                finishInOpenerOrReturn({
+                  type: "done",
+                  pubkey: injected.pubkey,
+                  signature: signed,
+                });
+              } catch (injectedError) {
+                finishing.current = false;
+                setError(friendlyHostError(injectedError));
+                setStatus("");
+              }
+            })();
+          }}
           style={{
             minHeight: 48,
             minWidth: 220,

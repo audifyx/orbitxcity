@@ -93,7 +93,12 @@ function publicAuthError(error: unknown, fallback: string): string {
   if (lower.includes("not installed") || lower.includes("jupiter_siws_required")) {
     return "Opening your wallet. Approve the connection, then sign. This is not a transaction.";
   }
-  if (lower.includes("could not log in with wallet")) {
+  if (
+    lower.includes("could not log in with wallet") ||
+    lower.includes("can't connect") ||
+    lower.includes("cannot connect") ||
+    lower.includes("could not connect")
+  ) {
     return "Wallet did not finish connect. Pick Phantom or Jupiter again and approve. This is not a transaction.";
   }
   return message;
@@ -303,9 +308,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       try {
         const insideWallet = isInsideWalletBrowser(walletId);
-        if (options?.injectedOnly || insideWallet) {
-          await waitForWallet(walletId, 5000);
-        }
+        await waitForWallet(
+          walletId,
+          options?.injectedOnly || insideWallet ? 5000 : 3500,
+        );
 
         if (isWalletInjected(walletId) || options?.injectedOnly || insideWallet) {
           const linked = await connectBrowserWallet(walletId);
@@ -322,7 +328,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return;
         }
 
-        if (isMobileDevice() && walletId === "phantom" && !isWalletInjected(walletId)) {
+        if (isMobileDevice() && walletId === "phantom") {
           await openWalletInAppBrowser(walletId);
           return;
         }
