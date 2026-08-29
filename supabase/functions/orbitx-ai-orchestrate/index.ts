@@ -38,7 +38,25 @@ const BASE58_RE = /[1-9A-HJ-NP-Za-km-z]{32,44}/g;
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const ASK_FOR_TOOLS =
-  /\b(scan|analyze|analyse|quote|swap|inspect|look\s?up|lookup|deep[- ]?dive|fetch news|research this|run (the )?tool|use @)\b/i;
+  /\b(scan|analyze|analyse|quote|swap|inspect|look\s?up|lookup|deep[- ]?dive|fetch news|research this|run (the )?tool|use @|use [a-z]|metadata|on-chain|tell me about|full report|info on|launch a|mint (an? )?nft|create (a |an )?(coin|token|nft))\b/i;
+const CREATE_LAUNCH_VERBS =
+  /\b(launch (a |the )?(coin|token|memecoin)|create (a |the )?(coin|token|memecoin)|mint (a |the )?(coin|token)|pump\.?fun create)\b/i;
+const MINT_NFT_VERBS =
+  /\b(mint (an? |the )?nft|create (an? |the )?nft|nft mint)\b/i;
+const TELL_ABOUT =
+  /\b(tell me about|what(?:'s| is)|full report|deep ?dive|breakdown|info(?:rmation)? (on|about)|look(?:ing)? (this )?up|report on)\b/i;
+const FULL_TOKEN_REPORT = [
+  "og-scan-token",
+  "token-data",
+  "token-safety",
+  "og-holders",
+  "jupiter-price",
+  "birdseye-analytics",
+  "ogdex-intel-v2",
+  "ogdex-xray",
+  "ogdex-firstbuyer",
+  "enhanced-intelligence",
+];
 const KNOWN_TOOLS = [
   "token-data",
   "token-safety",
@@ -64,6 +82,8 @@ const KNOWN_TOOLS = [
   "news-fetcher",
   "migration-watch",
   "pumpfun-migrations",
+  "launch-coin",
+  "nft-mint",
 ];
 
 const cors = {
@@ -95,7 +115,7 @@ type ChatCard = {
 
 const CHAT_SYSTEM = `You are OrbitX, a live chat partner who also has on-chain Solana tools.
 
-Talk like a sharp human in a chat — first person, react to what they just said, ask a follow-up when it helps. Keep it moving. 2–6 short sentences unless they asked for a deep dive. Never write a status report.
+Talk like a sharp human in a chat — first person, react to what they just said. Casual chat: 2–6 short sentences. Mint / “tell me about” / full report: write a complete advanced briefing with sections (identity, market, safety, holders, forensics, links). Never write a status report about tool counts.
 
 Iron laws:
 1. Never fabricate prices, holders, liquidity, or tx results.
@@ -137,8 +157,8 @@ async function callOpenAiCompat(
       body: JSON.stringify({
         model,
         messages,
-        temperature: 0.7,
-        max_tokens: 900,
+        temperature: 0.5,
+        max_tokens: 1800,
       }),
     },
     22000,
@@ -169,8 +189,8 @@ async function* streamOpenAiCompat(
       body: JSON.stringify({
         model,
         messages,
-        temperature: 0.7,
-        max_tokens: 900,
+        temperature: 0.5,
+        max_tokens: 1800,
         stream: true,
       }),
     },
@@ -227,7 +247,7 @@ async function callGemini(messages: Msg[], model: string): Promise<string> {
           role: m.role === "assistant" ? "model" : "user",
           parts: [{ text: m.content }],
         })),
-        generationConfig: { temperature: 0.7, maxOutputTokens: 900 },
+        generationConfig: { temperature: 0.5, maxOutputTokens: 1800 },
       }),
     },
     22000,
@@ -336,6 +356,12 @@ function extractMentions(message: string): string[] {
   if (lower.includes("use og token scan") || lower.includes("@og-scan-token")) {
     add("og-scan-token");
   }
+  if (lower.includes("use launch coin") || lower.includes("launch a coin")) {
+    add("launch-coin");
+  }
+  if (lower.includes("use mint nft") || MINT_NFT_VERBS.test(message)) {
+    add("nft-mint");
+  }
   return found;
 }
 
@@ -343,6 +369,14 @@ function wantsTools(message: string, mentions: string[]): boolean {
   if (mentions.length > 0) return true;
   if (ASK_FOR_TOOLS.test(message)) return true;
   return extractAddresses(message).length > 0;
+}
+
+function wantsFullReport(message: string): boolean {
+  return extractAddresses(message).length > 0 && (
+    TELL_ABOUT.test(message) ||
+    /\b(scan|analyze|analyse|report|token|ca\b|mint)\b/i.test(message) ||
+    extractAddresses(message).length > 0
+  );
 }
 
 function planTools(message: string, intentHint?: string): string[] {
@@ -354,23 +388,31 @@ function planTools(message: string, intentHint?: string): string[] {
   const alert = /\b(alert|watch|notify)\b/.test(lower);
   const trending = /\b(trend|trending|momentum|movers|screen|gems)\b/.test(lower);
   const news = /\b(news|headline|narrative|kols?)\b/.test(lower);
-  const forensic = /\b(x-?ray|first\s?buyer|sniper|bundle|forensic)\b/.test(lower);
-  const launch = /\b(launch|pump\.?fun|migrat)/.test(lower);
 
+  if (CREATE_LAUNCH_VERBS.test(message) || intentHint === "launch" && CREATE_LAUNCH_VERBS.test(message)) {
+    return ["launch-coin"];
+  }
+  if (MINT_NFT_VERBS.test(message)) {
+    return ["nft-mint"];
+  }
   if (trade) tools.push("jupiter-quote", "jupiter-price");
-  if (wallet) tools.push("og-wallet", "pnl-scan");
+  if (wallet) tools.push("og-wallet", "pnl-scan", "wallet-manager");
   if (alert) tools.push("alerts");
   if (trending) tools.push("token-data", "birdseye-analytics");
   if (news) tools.push("news-fetcher");
-  if (launch) tools.push("pumpfun-migrations", "migration-watch");
-  if (addresses.length > 0 || /\b(token|scan|analyze|ca\b|mint)\b/.test(lower)) {
-    tools.push("og-scan-token", "token-safety");
-    if (forensic) tools.push("ogdex-xray", "ogdex-firstbuyer");
+  if (/\b(launch|pump\.?fun|migrat)/.test(lower) && !CREATE_LAUNCH_VERBS.test(message)) {
+    tools.push("pumpfun-migrations", "migration-watch", "token-data");
   }
-  if (intentHint === "analyze_wallet") tools.push("og-wallet", "pnl-scan");
+  if (addresses.length > 0 || /\b(token|scan|analyze|ca\b|mint|tell me about)\b/.test(lower)) {
+    tools.push(...FULL_TOKEN_REPORT);
+  }
+  if (intentHint === "analyze_token") tools.push(...FULL_TOKEN_REPORT);
+  if (intentHint === "analyze_wallet") tools.push("og-wallet", "pnl-scan", "wallet-manager");
   if (intentHint === "screen") tools.push("token-data", "birdseye-analytics");
   if (intentHint === "news") tools.push("news-fetcher");
-  return Array.from(new Set(tools)).slice(0, 4);
+  if (intentHint === "launch") tools.push("pumpfun-migrations", "migration-watch");
+  if (intentHint === "nft") tools.push("nft-mint");
+  return Array.from(new Set(tools)).slice(0, 10);
 }
 
 async function callFn(
@@ -468,6 +510,153 @@ function cardsFromTool(toolId: string, result: unknown): ChatCard[] {
   return [];
 }
 
+function fmtUsd(n: unknown): string | null {
+  const v = typeof n === "number" ? n : Number(n);
+  if (!Number.isFinite(v)) return null;
+  if (Math.abs(v) >= 1e9) return `$${(v / 1e9).toFixed(2)}B`;
+  if (Math.abs(v) >= 1e6) return `$${(v / 1e6).toFixed(2)}M`;
+  if (Math.abs(v) >= 1e3) return `$${(v / 1e3).toFixed(1)}K`;
+  return `$${v.toFixed(v < 1 ? 6 : 2)}`;
+}
+
+function pickStr(...values: unknown[]): string | null {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim() && value !== "[truncated]") {
+      return value.trim();
+    }
+  }
+  return null;
+}
+
+function pickNum(...values: unknown[]): number | null {
+  for (const value of values) {
+    const n = typeof value === "number" ? value : Number(value);
+    if (Number.isFinite(n)) return n;
+  }
+  return null;
+}
+
+function byTool(
+  toolEvents: ToolEvent[],
+  results: unknown[],
+  id: string,
+): unknown {
+  const index = toolEvents.findIndex((event) => event.toolId === id);
+  return index >= 0 ? results[index] : undefined;
+}
+
+function parseCreateDraft(text: string): {
+  name: string | null;
+  symbol: string | null;
+  supply: string | null;
+  description: string | null;
+} {
+  const named = text.match(
+    /(?:named|called|name[:\s]+)\s*["']?([A-Za-z0-9][A-Za-z0-9 ._-]{1,39})["']?/i,
+  );
+  const ticker = text.match(/(?:ticker|symbol|\$)\s*[:\s]*([A-Za-z0-9]{2,12})/i);
+  const supply = text.match(/(\d[\d,]{2,18})\s*(?:supply|tokens)?/i);
+  const desc = text.match(/(?:desc(?:ription)?|about)[:\s]+(.{8,160})/i);
+  return {
+    name: named?.[1]?.trim() ?? null,
+    symbol: ticker?.[1]?.toUpperCase() ?? null,
+    supply: supply?.[1]?.replace(/,/g, "") ?? null,
+    description: desc?.[1]?.trim() ?? null,
+  };
+}
+
+function payloadForTool(
+  toolId: string,
+  message: string,
+  addresses: string[],
+  walletAddress?: string,
+): Record<string, unknown> {
+  const mint = addresses[0];
+  const wallet = walletAddress ?? mint;
+  if (toolId === "og-scan-token") {
+    return { query: mint ?? message.slice(0, 80), source: "orbitx-ai" };
+  }
+  if (toolId === "token-data") {
+    return mint
+      ? { action: "get_metadata", token_address: mint }
+      : { action: "trending" };
+  }
+  if (toolId === "token-safety") {
+    return { mint: mint ?? message };
+  }
+  if (toolId === "og-holders") {
+    return { mint, limit: 20 };
+  }
+  if (toolId === "og-wallet") {
+    return { address: wallet, wallet };
+  }
+  if (toolId === "pnl-scan") {
+    return { wallet, mint };
+  }
+  if (toolId === "jupiter-quote") {
+    const sol = parseSolAmount(message) ?? 0.1;
+    return {
+      inputMint: SOL_MINT,
+      outputMint: mint ?? SOL_MINT,
+      amount: Math.round(sol * 1_000_000_000),
+      slippageBps: 50,
+    };
+  }
+  if (toolId === "jupiter-price") {
+    return { ids: addresses.length > 0 ? addresses : [SOL_MINT] };
+  }
+  if (toolId === "jupiter-tokens") {
+    return { query: mint ?? message.slice(0, 80) };
+  }
+  if (toolId === "alerts") {
+    return { action: "parse", nl_request: message, mint };
+  }
+  if (
+    toolId === "ogdex-xray" ||
+    toolId === "ogdex-intel-v2" ||
+    toolId === "ogdex-intel" ||
+    toolId === "ogdex-firstbuyer"
+  ) {
+    return { mint: mint ?? message };
+  }
+  if (toolId === "wallet-manager") {
+    return { action: "get_balance", wallet_address: wallet };
+  }
+  if (toolId === "solana-tracker") {
+    return { wallet_address: wallet };
+  }
+  if (toolId === "news-fetcher") {
+    return {};
+  }
+  if (toolId === "unified-intelligence" || toolId === "enhanced-intelligence") {
+    return {
+      messages: [{ role: "user", content: message }],
+      context: mint ? `Analyze mint ${mint}` : message.slice(0, 160),
+    };
+  }
+  if (toolId === "ai-analyzer") {
+    return {
+      action: "chat",
+      messages: [{ role: "user", content: message }],
+    };
+  }
+  if (toolId === "birdseye-analytics") {
+    return mint
+      ? { address: mint }
+      : { address: SOL_MINT };
+  }
+  if (toolId === "pumpfun-migrations") {
+    return { limit: 20 };
+  }
+  if (toolId === "migration-watch") {
+    return { action: "list" };
+  }
+  if (toolId === "oxw-token-scan") {
+    return { mint: mint ?? message };
+  }
+  return { query: message, mint, wallet };
+}
+
 function firstUsefulString(value: unknown): string | null {
   if (typeof value === "string") {
     const trimmed = value.trim();
@@ -530,18 +719,237 @@ function flattenFacts(value: unknown, prefix = ""): string[] {
   return facts.slice(0, 8);
 }
 
+function buildAdvancedReport(
+  message: string,
+  toolEvents: ToolEvent[],
+  results: unknown[],
+): string | null {
+  const mint = extractAddresses(message)[0];
+  const scan = byTool(toolEvents, results, "og-scan-token");
+  const meta = byTool(toolEvents, results, "token-data");
+  const safety = byTool(toolEvents, results, "token-safety");
+  const holders = byTool(toolEvents, results, "og-holders");
+  const price = byTool(toolEvents, results, "jupiter-price");
+  const birds = byTool(toolEvents, results, "birdseye-analytics");
+  const intel = byTool(toolEvents, results, "ogdex-intel-v2");
+  const xray = byTool(toolEvents, results, "ogdex-xray");
+  const first = byTool(toolEvents, results, "ogdex-firstbuyer");
+  const enhanced = byTool(toolEvents, results, "enhanced-intelligence");
+
+  const scanRec = isRecord(scan) ? scan : {};
+  const token = isRecord(scanRec.token) ? scanRec.token : {};
+  const metaRec = isRecord(meta) && isRecord(meta.token) ? meta.token : isRecord(meta) ? meta : {};
+  const safetyRec = isRecord(safety) ? safety : {};
+  const birdsRec = isRecord(birds) && isRecord(birds.data) ? birds.data : isRecord(birds) ? birds : {};
+  const holdersRec = isRecord(holders) ? holders : {};
+  const intelRec = isRecord(intel) ? intel : {};
+  const priceMap = isRecord(price) && isRecord(price.data) ? price.data : isRecord(price) ? price : {};
+  const mintPrice = mint && isRecord(priceMap[mint]) ? priceMap[mint] : {};
+
+  const name = pickStr(token.name, metaRec.name, birdsRec.name);
+  const symbol = pickStr(token.symbol, metaRec.symbol, birdsRec.symbol);
+  const priceUsd = pickNum(
+    token.priceUsd,
+    birdsRec.price,
+    isRecord(mintPrice) ? mintPrice.usdPrice : null,
+  );
+  const mcap = pickNum(token.mcap, token.marketCap, birdsRec.marketCap, safetyRec.marketCap);
+  const fdv = pickNum(token.fdv, birdsRec.fdv);
+  const liq = pickNum(token.liquidity, birdsRec.liquidityUsd, birdsRec.liquidity);
+  const vol = pickNum(token.buyVolume24h, birdsRec.volume24h, token.volume);
+  const change = pickNum(token.priceChange24h, birdsRec.priceChange24h);
+  const holderCount = pickNum(
+    token.holderCount,
+    safetyRec.totalHolders,
+    holdersRec.totalHolders,
+    holdersRec.count,
+  );
+  const top10 = pickNum(
+    token.topHoldersPct,
+    safetyRec.top10RealHolderPct,
+    holdersRec.top10pct,
+    holdersRec.top10Pct,
+  );
+  const verdict = pickStr(
+    typeof scanRec.verdict === "string" ? scanRec.verdict : null,
+    typeof safetyRec.rugged === "boolean"
+      ? safetyRec.rugged
+        ? "RUGGED"
+        : null
+      : null,
+  );
+  const risk = pickNum(safetyRec.riskScore);
+  const launchpad = pickStr(safetyRec.launchpad);
+  const mintRenounced =
+    safetyRec.mintAuthorityRenounced ??
+    (isRecord(scanRec.flags) ? scanRec.flags.mintAuthorityDisabled : null);
+  const freezeRenounced =
+    safetyRec.freezeAuthorityRenounced ??
+    (isRecord(scanRec.flags) ? scanRec.flags.freezeAuthorityDisabled : null);
+  const lpLocked = pickNum(safetyRec.lpLockedPct);
+  const dexUrl = pickStr(token.dexUrl, birdsRec.dexUrl);
+  const supply = pickStr(
+    token.totalSupply != null ? String(token.totalSupply) : null,
+    metaRec.supply != null ? String(metaRec.supply) : null,
+  );
+
+  const hasCore =
+    name || symbol || priceUsd != null || mcap != null || verdict || risk != null;
+  if (!hasCore && !mint) return null;
+
+  const lines: string[] = [];
+  const title = [symbol ? `$${symbol}` : null, name && name !== symbol ? name : null]
+    .filter(Boolean)
+    .join(" · ") || (mint ? `${mint.slice(0, 4)}…${mint.slice(-4)}` : "This token");
+  lines.push(`${title} — live advanced report`);
+  if (mint === "13H4WJvGEg4xrrBwWn2vsQgz7xhmhxgNdw19i1QsxPX9") {
+    lines.push("This is the official $ORBITX mint.");
+  }
+  if (verdict) lines.push(`Verdict: ${verdict}`);
+  lines.push("");
+  lines.push("Market");
+  if (priceUsd != null) {
+    lines.push(
+      `• Price ${fmtUsd(priceUsd)}${change != null ? ` (${change > 0 ? "+" : ""}${change.toFixed(1)}% 24h)` : ""}`,
+    );
+  }
+  if (mcap != null) lines.push(`• Market cap ${fmtUsd(mcap)}`);
+  if (fdv != null) lines.push(`• FDV ${fmtUsd(fdv)}`);
+  if (liq != null) lines.push(`• Liquidity ${fmtUsd(liq)}`);
+  if (vol != null) lines.push(`• 24h volume ${fmtUsd(vol)}`);
+  if (supply) lines.push(`• Supply ${supply}`);
+  if (holderCount != null) {
+    lines.push(
+      `• Holders ${holderCount}${top10 != null ? ` (top 10 ≈ ${top10}%)` : ""}`,
+    );
+  }
+
+  lines.push("");
+  lines.push("Safety");
+  if (risk != null) lines.push(`• Rugcheck risk ${risk}`);
+  if (mintRenounced != null) {
+    lines.push(`• Mint authority ${mintRenounced ? "renounced" : "STILL ACTIVE"}`);
+  }
+  if (freezeRenounced != null) {
+    lines.push(`• Freeze authority ${freezeRenounced ? "renounced" : "STILL ACTIVE"}`);
+  }
+  if (lpLocked != null) lines.push(`• LP locked ${lpLocked}%`);
+  if (launchpad) lines.push(`• Launchpad ${launchpad}`);
+  if (isRecord(safetyRec) && Array.isArray(safetyRec.risks) && safetyRec.risks.length > 0) {
+    const risks = safetyRec.risks
+      .slice(0, 5)
+      .map((item) => (isRecord(item) ? pickStr(item.name, item.desc) : null))
+      .filter((item): item is string => Boolean(item));
+    if (risks.length) lines.push(`• Flags: ${risks.join("; ")}`);
+  }
+
+  const topHolders = Array.isArray(holdersRec.holders)
+    ? holdersRec.holders
+    : Array.isArray(safetyRec.topHolders)
+      ? safetyRec.topHolders
+      : Array.isArray(intelRec.holders)
+        ? intelRec.holders
+        : [];
+  if (topHolders.length > 0) {
+    lines.push("");
+    lines.push("Top holders");
+    for (const row of topHolders.slice(0, 5)) {
+      if (!isRecord(row)) continue;
+      const addr = pickStr(row.address, row.owner, row.wallet);
+      const pct = pickNum(row.pct, row.percentage, row.percent);
+      if (addr) {
+        lines.push(`• ${addr.slice(0, 4)}…${addr.slice(-4)}${pct != null ? ` ${pct}%` : ""}`);
+      }
+    }
+  }
+
+  const firstRec = isRecord(first) ? first : {};
+  const xrayRec = isRecord(xray) ? xray : {};
+  const firstWallet = pickStr(
+    firstRec.wallet,
+    firstRec.address,
+    isRecord(firstRec.firstBuyer) ? firstRec.firstBuyer.wallet : null,
+  );
+  if (firstWallet || isRecord(xrayRec) && (xrayRec.snipers || xrayRec.earlyBuyers)) {
+    lines.push("");
+    lines.push("Forensics");
+    if (firstWallet) {
+      lines.push(
+        `• First buyer ${firstWallet.slice(0, 4)}…${firstWallet.slice(-4)} — https://solscan.io/account/${firstWallet}`,
+      );
+    }
+    if (Array.isArray(xrayRec.snipers)) {
+      lines.push(`• Snipers tagged: ${xrayRec.snipers.length}`);
+    }
+    if (Array.isArray(xrayRec.bundles)) {
+      lines.push(`• Bundle clusters: ${xrayRec.bundles.length}`);
+    }
+  }
+
+  const enhancedText = firstUsefulString(enhanced);
+  if (enhancedText) {
+    lines.push("");
+    lines.push("Analyst note");
+    lines.push(enhancedText.slice(0, 700));
+  }
+
+  if (mint) {
+    lines.push("");
+    lines.push("Links");
+    lines.push(`• Solscan https://solscan.io/token/${mint}`);
+    lines.push(`• DexScreener ${dexUrl ?? `https://dexscreener.com/solana/${mint}`}`);
+    lines.push(`• CA \`${mint}\``);
+  }
+
+  const failed = toolEvents.filter((event) => event.status === "error");
+  if (failed.length > 0) {
+    lines.push("");
+    lines.push(
+      `Some live tools missed this turn (${failed.map((event) => event.toolId).join(", ")}). Numbers above are from the tools that returned.`,
+    );
+  }
+  lines.push("");
+  lines.push("NFA. DYOR.");
+  return lines.join("\n");
+}
+
 function speakFromResults(
   message: string,
   toolEvents: ToolEvent[],
   results: unknown[],
 ): string {
   const mint = extractAddresses(message)[0];
+  const launch = byTool(toolEvents, results, "launch-coin");
+  if (isRecord(launch) && (launch.kind === "launch" || launch.preview === true)) {
+    const name = pickStr(launch.name) ?? "your token";
+    const symbol = pickStr(launch.symbol);
+    const url = pickStr(launch.openUrl) ?? "https://pump.fun/create";
+    return [
+      `Launch draft for ${name}${symbol ? ` ($${symbol})` : ""}. Nothing was broadcast.`,
+      `Open ${url} and sign the create tx in Phantom. I still need an image plus optional twitter/telegram if you want the metadata packed.`,
+      pickStr(launch.note) ?? "A live launch only happens after your wallet signature.",
+    ].join(" ");
+  }
+  const nft = byTool(toolEvents, results, "nft-mint");
+  if (isRecord(nft) && (nft.kind === "nft_mint" || nft.preview === true)) {
+    const name = pickStr(nft.name) ?? "your NFT";
+    return [
+      `NFT mint draft for ${name}. Nothing is minted yet.`,
+      "You sign a Metaplex create in your wallet. I need name, symbol, and a metadata URI (or image) before we can build the unsigned tx.",
+      pickStr(nft.openUrl) ?? "Use the OrbitX NFT hub when you're ready to sign.",
+    ].join(" ");
+  }
+
+  const report = buildAdvancedReport(message, toolEvents, results);
+  if (report) return report;
+
   if (toolEvents.length === 0) {
     if (mint) {
-      return `That's ${mint.slice(0, 4)}…${mint.slice(-4)} — official $ORBITX if it matches 13H4…sPX9. I didn't get a live book on it that turn. Send @token-data or @og-scan-token with the CA and I'll read the chain out loud.`;
+      return `That's ${mint.slice(0, 4)}…${mint.slice(-4)} — official $ORBITX if it matches 13H4…sPX9. I didn't get a live book on it that turn. Send it again and I'll pull the full stack.`;
     }
-    return "Got you. I can talk, or I can look something up — @token-data, @og-scan-token, @jupiter-quote, @news-fetcher. What do you want first?";
+    return "Got you. Paste a mint for a full report, or say launch a coin / mint an NFT. @token-data, @og-scan-token, @jupiter-quote still work too.";
   }
+
   const bits: string[] = [];
   for (let i = 0; i < results.length; i += 1) {
     const event = toolEvents[i];
@@ -562,10 +970,9 @@ function speakFromResults(
     }
   }
   if (bits.length === 0) {
-    const names = toolEvents.map((event) => event.label).join(", ");
-    return `I pulled ${names}${mint ? ` on ${mint.slice(0, 4)}…${mint.slice(-4)}` : ""}. The payload is thin — want me to hit @og-scan-token next?`;
+    return `I ran ${toolEvents.map((event) => event.label).join(", ")}${mint ? ` on ${mint.slice(0, 4)}…${mint.slice(-4)}` : ""}. The payload came back thin — say that again and I'll retry the stack.`;
   }
-  return bits.slice(0, 3).join(" ");
+  return bits.slice(0, 8).join("\n");
 }
 
 async function speakViaAnalyzer(
@@ -580,7 +987,11 @@ async function speakViaAnalyzer(
       messages: [
         {
           role: "user",
-          content: `Speak in first person like a live chat, 2–6 short sentences. User said: ${message}\n\nLive context:\n${toolContext || "(no tools this turn)"}`,
+          content: `${
+            extractAddresses(message).length > 0 || TELL_ABOUT.test(message)
+              ? "Write a full advanced token briefing with sections. Use only the live context. Do not invent numbers."
+              : "Speak in first person like a live chat, 2–6 short sentences."
+          } User said: ${message}\n\nLive context:\n${toolContext || "(no tools this turn)"}`,
         },
       ],
     },
@@ -602,7 +1013,7 @@ function buildSpeakMessages(
 ): Msg[] {
   let user = message;
   if (results.length > 0) {
-    user += `\n\n[You just looked this up. Speak it naturally. Do not mention tool counts.]\n${JSON.stringify(results).slice(0, 3200)}`;
+    user += `\n\n[You just looked this up. If this is a mint or they asked for a report, write the FULL advanced briefing. Do not mention tool counts. Never invent numbers.]\n${JSON.stringify(results).slice(0, 7000)}`;
   }
   return [
     { role: "system", content: knowledge.slice(0, 2400) },
@@ -618,17 +1029,32 @@ async function speakAll(
   toolEvents: ToolEvent[],
   results: unknown[],
 ): Promise<string> {
+  const report = speakFromResults(userMessage, toolEvents, results);
+  const dead =
+    /I'm here\. Ask me anything|N\/N tools returned|I ran live tools against|type @ and a tool/i;
   try {
-    return await synthesize(messages);
+    const text = await synthesize(messages);
+    if (text && !dead.test(text)) {
+      if (extractAddresses(userMessage).length > 0 && text.length < 320 && report.length > text.length) {
+        return report;
+      }
+      return text;
+    }
   } catch (error) {
     console.error("orbitx speak synthesize", error instanceof Error ? error.message : error);
   }
   try {
-    return await speakViaAnalyzer(jwt, userMessage, JSON.stringify(results).slice(0, 2000));
+    const text = await speakViaAnalyzer(jwt, userMessage, JSON.stringify(results).slice(0, 4000));
+    if (text && !dead.test(text)) {
+      if (extractAddresses(userMessage).length > 0 && text.length < 320 && report.length > text.length) {
+        return report;
+      }
+      return text;
+    }
   } catch (error) {
     console.error("orbitx speak analyzer", error instanceof Error ? error.message : error);
   }
-  return speakFromResults(userMessage, toolEvents, results);
+  return report;
 }
 
 function chunkWords(text: string, size = 3): string[] {
@@ -731,7 +1157,7 @@ Deno.serve(async (req) => {
       "x-poster",
       "nft-execute-sale",
     ]);
-    const toolIds = (
+    let toolIds = (
       !live
         ? []
         : mentions.length > 0
@@ -741,139 +1167,143 @@ Deno.serve(async (req) => {
             : planTools(message, intent)
     ).filter((id) => !blocked.has(id));
 
-    const toolEvents: ToolEvent[] = [];
-    const results: unknown[] = [];
+    if (
+      mentions.length === 0 &&
+      addresses.length > 0 &&
+      wantsFullReport(message) &&
+      !toolIds.includes("launch-coin") &&
+      !toolIds.includes("nft-mint") &&
+      !toolIds.includes("jupiter-quote")
+    ) {
+      toolIds = Array.from(new Set([...toolIds, ...FULL_TOKEN_REPORT])).slice(0, 10);
+    }
+
+    const toolEvents: ToolEvent[] = toolIds.map((toolId) => ({
+      id: `tool_${toolId}`,
+      toolId,
+      label: toolId.replace(/-/g, " "),
+      status: "running" as const,
+    }));
+    const results: unknown[] = new Array(toolIds.length);
     const cards: ChatCard[] = [];
 
-    for (const toolId of toolIds) {
-      const event: ToolEvent = {
-        id: `tool_${toolId}`,
-        toolId,
-        label: toolId.replace(/-/g, " "),
-        status: "running",
-      };
-      toolEvents.push(event);
-      const started = Date.now();
-      try {
-        let payload: Record<string, unknown> = {};
-        if (toolId === "og-scan-token") {
-          payload = { query: addresses[0] ?? message.slice(0, 80), source: "orbitx-ai" };
-        } else if (toolId === "token-data") {
-          payload = addresses[0]
-            ? { action: "get_metadata", token_address: addresses[0] }
-            : { action: "trending" };
-        } else if (toolId === "token-safety") {
-          payload = { mint: addresses[0] ?? message };
-        } else if (toolId === "og-wallet" || toolId === "pnl-scan") {
-          payload = { wallet: walletAddress ?? addresses[0], address: walletAddress ?? addresses[0] };
-        } else if (toolId === "jupiter-quote") {
-          const sol = parseSolAmount(message) ?? 0.1;
-          payload = {
-            inputMint: SOL_MINT,
-            outputMint: addresses[0] ?? SOL_MINT,
-            amount: Math.round(sol * 1_000_000_000),
-            slippageBps: 50,
-          };
-        } else if (toolId === "alerts") {
-          payload = { action: "parse", nl_request: message };
-        } else if (toolId === "og-holders") {
-          payload = { mint: addresses[0], limit: 20 };
-        } else if (
-          toolId === "ogdex-xray" ||
-          toolId === "ogdex-intel-v2" ||
-          toolId === "ogdex-intel" ||
-          toolId === "ogdex-firstbuyer" ||
-          toolId === "oxw-token-scan"
-        ) {
-          payload = { mint: addresses[0] ?? message, query: addresses[0] ?? message };
-        } else if (toolId === "wallet-manager") {
-          payload = { action: "snapshot", wallet: walletAddress ?? addresses[0] };
-        } else if (toolId === "jupiter-price") {
-          payload = { mints: addresses.length > 0 ? addresses : [SOL_MINT] };
-        } else if (toolId === "jupiter-tokens") {
-          payload = { query: message.slice(0, 80) };
-        } else if (toolId === "news-fetcher") {
-          payload = { query: message.slice(0, 120), mint: addresses[0] };
-        } else if (
-          toolId === "unified-intelligence" ||
-          toolId === "enhanced-intelligence" ||
-          toolId === "ai-analyzer"
-        ) {
-          payload = {
-            query: message,
-            mint: addresses[0],
-            wallet: walletAddress,
-            subject: message.slice(0, 160),
-          };
-        } else if (toolId === "birdseye-analytics") {
-          payload = { scope: "solana", timeframe: "24h", query: message };
-        } else if (toolId === "pumpfun-migrations" || toolId === "migration-watch") {
-          payload = { mint: addresses[0], status: "recent" };
-        } else {
-          payload = { query: message, mint: addresses[0], wallet: walletAddress };
-        }
-
-        const result = await callFn(toolId, payload, jwt);
-        results.push(compact(result));
-        event.status = "ok";
-
-        if (toolId === "jupiter-quote" && isRecord(result)) {
-          const quote = isRecord(result.quote) ? result.quote : result;
-          const { data: intentRow } = await userClient
-            .from("orbitx_ai_transaction_intents")
-            .insert({
-              user_id: user.id,
-              conversation_id: conversationId,
-              kind: "swap",
-              status: "preview",
-              input_mint: SOL_MINT,
-              output_mint: addresses[0] ?? null,
-              amount_raw: String(payload.amount ?? ""),
-              quote: compact(quote),
-            })
-            .select("id")
-            .single();
-          const hops = Array.isArray(quote.routePlan) ? quote.routePlan.length : 0;
-          cards.push({
-            kind: "tx",
-            title: "Swap quote preview",
-            data: {
-              inAmount: String(quote.inAmount ?? ""),
-              outAmount: String(quote.outAmount ?? ""),
-              slippageBps: quote.slippageBps ?? 50,
-              status: "preview",
-              route: hops > 0 ? `${hops} hop Jupiter` : "Jupiter",
+    await Promise.all(
+      toolIds.map(async (toolId, index) => {
+        const event = toolEvents[index];
+        if (!event) return;
+        const started = Date.now();
+        try {
+          let result: unknown;
+          if (toolId === "launch-coin" || toolId === "nft-mint") {
+            const draft = parseCreateDraft(message);
+            const kind = toolId === "launch-coin" ? "launch" : "nft_mint";
+            const openUrl =
+              toolId === "launch-coin"
+                ? "https://pump.fun/create"
+                : "https://orbitx.world";
+            const quote = {
+              ...draft,
+              wallet: walletAddress ?? null,
+              note:
+                toolId === "launch-coin"
+                  ? "Draft only. Sign the pump.fun / OrbitX launchpad create tx in your wallet. Nothing was broadcast."
+                  : "Draft only. Sign the Metaplex mint in your wallet. Nothing was minted.",
+              openUrl,
+            };
+            const { data: intentRow } = await userClient
+              .from("orbitx_ai_transaction_intents")
+              .insert({
+                user_id: user.id,
+                conversation_id: conversationId,
+                kind,
+                status: "preview",
+                quote,
+              })
+              .select("id")
+              .single();
+            result = {
+              preview: true,
+              kind,
+              ...draft,
+              openUrl,
               intentId: intentRow?.id ?? "",
-              quoteJson: JSON.stringify(compact(quote)),
-              inputMint: SOL_MINT,
-              outputMint: addresses[0] ?? SOL_MINT,
-            },
-          });
-        } else {
-          cards.push(...cardsFromTool(toolId, result));
-        }
+              note: quote.note,
+            };
+            cards.push({
+              kind: "tx",
+              title: toolId === "launch-coin" ? "Launch draft" : "NFT mint draft",
+              data: {
+                status: "preview",
+                name: draft.name ?? "",
+                symbol: draft.symbol ?? "",
+                openUrl,
+                intentId: intentRow?.id ?? "",
+              },
+            });
+          } else {
+            const payload = payloadForTool(toolId, message, addresses, walletAddress);
+            result = await callFn(toolId, payload, jwt);
+            if (toolId === "jupiter-quote" && isRecord(result)) {
+              const quote = isRecord(result.quote) ? result.quote : result;
+              const { data: intentRow } = await userClient
+                .from("orbitx_ai_transaction_intents")
+                .insert({
+                  user_id: user.id,
+                  conversation_id: conversationId,
+                  kind: "swap",
+                  status: "preview",
+                  input_mint: SOL_MINT,
+                  output_mint: addresses[0] ?? null,
+                  amount_raw: String(payload.amount ?? ""),
+                  quote: compact(quote),
+                })
+                .select("id")
+                .single();
+              const hops = Array.isArray(quote.routePlan) ? quote.routePlan.length : 0;
+              cards.push({
+                kind: "tx",
+                title: "Swap quote preview",
+                data: {
+                  inAmount: String(quote.inAmount ?? ""),
+                  outAmount: String(quote.outAmount ?? ""),
+                  slippageBps: quote.slippageBps ?? 50,
+                  status: "preview",
+                  route: hops > 0 ? `${hops} hop Jupiter` : "Jupiter",
+                  intentId: intentRow?.id ?? "",
+                  quoteJson: JSON.stringify(compact(quote)),
+                  inputMint: SOL_MINT,
+                  outputMint: addresses[0] ?? SOL_MINT,
+                },
+              });
+            } else {
+              cards.push(...cardsFromTool(toolId, result));
+            }
+          }
 
-        await userClient.from("orbitx_ai_tool_executions").insert({
-          user_id: user.id,
-          conversation_id: conversationId,
-          tool_id: toolId,
-          status: "ok",
-          duration_ms: Date.now() - started,
-        });
-      } catch (error) {
-        event.status = "error";
-        event.detail = error instanceof Error ? error.message : "tool failed";
-        results.push({ error: event.detail });
-        await userClient.from("orbitx_ai_tool_executions").insert({
-          user_id: user.id,
-          conversation_id: conversationId,
-          tool_id: toolId,
-          status: "error",
-          duration_ms: Date.now() - started,
-          error_code: "invoke_failed",
-        });
-      }
-    }
+          results[index] = compact(result);
+          event.status = "ok";
+          await userClient.from("orbitx_ai_tool_executions").insert({
+            user_id: user.id,
+            conversation_id: conversationId,
+            tool_id: toolId,
+            status: "ok",
+            duration_ms: Date.now() - started,
+          });
+        } catch (error) {
+          event.status = "error";
+          event.detail = error instanceof Error ? error.message : "tool failed";
+          results[index] = { error: event.detail };
+          await userClient.from("orbitx_ai_tool_executions").insert({
+            user_id: user.id,
+            conversation_id: conversationId,
+            tool_id: toolId,
+            status: "error",
+            duration_ms: Date.now() - started,
+            error_code: "invoke_failed",
+          });
+        }
+      }),
+    );
 
     const { data: historyRows } = await userClient
       .from("ai_messages")

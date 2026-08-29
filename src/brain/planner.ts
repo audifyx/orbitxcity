@@ -8,8 +8,27 @@ const TRADE_VERBS =
 
 const ALERT_VERBS = /\b(alert|notify|watch|ping|remind)\b/i;
 const SOCIAL_VERBS = /\b(tweet|post|share|x\.com|twitter)\b/i;
+const CREATE_LAUNCH_VERBS =
+  /\b(launch (a |the )?(coin|token|memecoin)|create (a |the )?(coin|token|memecoin)|mint (a |the )?(coin|token)|pump\.?fun create)\b/i;
+const MINT_NFT_VERBS =
+  /\b(mint (an? |the )?nft|create (an? |the )?nft|nft mint)\b/i;
+const TELL_ABOUT =
+  /\b(tell me about|what(?:'s| is)|full report|deep ?dive|breakdown|info(?:rmation)? (on|about)|look(?:ing)? (this )?up|report on)\b/i;
 const LAUNCH_VERBS = /\b(launch|pump\.?fun|bonding\s?curve|migrate|migration)\b/i;
 const NFT_VERBS = /\b(nft|listing|floor|collection)\b/i;
+
+export const FULL_TOKEN_REPORT_TOOLS = [
+  "og-scan-token",
+  "token-data",
+  "token-safety",
+  "og-holders",
+  "jupiter-price",
+  "birdseye-analytics",
+  "ogdex-intel-v2",
+  "ogdex-xray",
+  "ogdex-firstbuyer",
+  "enhanced-intelligence",
+] as const;
 const PORTFOLIO_VERBS = /\b(portfolio|holdings|balance|positions|bag)\b/i;
 const RESEARCH_VERBS =
   /\b(research|analyze|analysis|report|deep\s?dive|due\s?diligence|dd)\b/i;
@@ -46,7 +65,13 @@ function detectIntent(text: string, addresses: string[]): PlanIntent {
   if (SOCIAL_VERBS.test(text)) {
     return "social";
   }
-  if (NFT_VERBS.test(text)) {
+  if (MINT_NFT_VERBS.test(text) || (NFT_VERBS.test(text) && /\bmint\b/i.test(text))) {
+    return "nft";
+  }
+  if (CREATE_LAUNCH_VERBS.test(text)) {
+    return "launch";
+  }
+  if (NFT_VERBS.test(text) && !CREATE_LAUNCH_VERBS.test(text)) {
     return "nft";
   }
   if (LAUNCH_VERBS.test(text)) {
@@ -55,14 +80,17 @@ function detectIntent(text: string, addresses: string[]): PlanIntent {
   if (PORTFOLIO_VERBS.test(text)) {
     return "portfolio";
   }
+  if (TELL_ABOUT.test(text) && addresses.length > 0) {
+    return "analyze_token";
+  }
   if (SCREEN_VERBS.test(text) && addresses.length === 0) {
     return "screen";
   }
   if (NEWS_VERBS.test(text) && addresses.length === 0) {
     return "news";
   }
-  if (RESEARCH_VERBS.test(text)) {
-    return "research";
+  if (RESEARCH_VERBS.test(text) || TELL_ABOUT.test(text)) {
+    return addresses.length > 0 ? "analyze_token" : "research";
   }
   if (TOKEN_VERBS.test(text) || (addresses.length > 0 && WALLET_VERBS.test(text) === false)) {
     return "analyze_token";
@@ -156,17 +184,14 @@ function pickTools(
 
   switch (intent) {
     case "analyze_token":
-      add("og-scan-token");
-      add("token-safety");
-      if (/\b(holder|whale|concentration)\b/i.test(text)) {
-        add("og-holders");
-      }
-      if (FORENSIC_VERBS.test(text) || /\b(ogdex|xray|x-ray)\b/i.test(text)) {
-        add("ogdex-xray");
-        add("ogdex-firstbuyer");
+      for (const id of FULL_TOKEN_REPORT_TOOLS) {
+        add(id);
       }
       if (hasMint) {
-        notes.push(`Detected mint candidate: ${addresses[0]}`);
+        notes.push(`Full advanced report for mint ${addresses[0]}`);
+      }
+      if (FORENSIC_VERBS.test(text)) {
+        notes.push("Forensic x-ray and first-buyer included.");
       }
       break;
 
@@ -233,17 +258,27 @@ function pickTools(
       break;
 
     case "launch":
-      add("pumpfun-migrations");
-      add("migration-watch");
-      add("ogdex-firstbuyer");
-      add("token-data");
+      if (CREATE_LAUNCH_VERBS.test(text)) {
+        add("launch-coin");
+        notes.push("Launch draft only — nothing broadcasts until they sign on the launchpad.");
+      } else {
+        add("pumpfun-migrations");
+        add("migration-watch");
+        add("ogdex-firstbuyer");
+        add("token-data");
+      }
       break;
 
     case "nft":
-      add("wallet-manager");
-      if (explicitWrite) {
-        add("nft-execute-sale");
-        notes.push("NFT sale tool requires wallet sign and confirmation.");
+      if (MINT_NFT_VERBS.test(text)) {
+        add("nft-mint");
+        notes.push("NFT mint draft only — they must sign in wallet. Nothing is minted here.");
+      } else {
+        add("wallet-manager");
+        if (explicitWrite) {
+          add("nft-execute-sale");
+          notes.push("NFT sale tool requires wallet sign and confirmation.");
+        }
       }
       break;
 
@@ -289,7 +324,7 @@ function pickTools(
 }
 
 const ASK_FOR_TOOLS =
-  /\b(scan|analyze|analyse|quote|swap|inspect|look\s?up|lookup|deep[- ]?dive|fetch news|research this|run (the )?tool|use @|use [a-z]|metadata|on-chain)\b/i;
+  /\b(scan|analyze|analyse|quote|swap|inspect|look\s?up|lookup|deep[- ]?dive|fetch news|research this|run (the )?tool|use @|use [a-z]|metadata|on-chain|tell me about|full report|info on|launch a|mint (an? )?nft|create (a |an )?(coin|token|nft))\b/i;
 
 function slugName(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");

@@ -23,8 +23,8 @@ export function EmptyHome({
 
       <Text style={styles.headline}>OrbitX Agent</Text>
       <Text style={styles.subcopy}>
-        Talk to me like a person. I answer live. Type @ to call a tool — scan,
-        quote, news — only when you ask.
+        Talk to me like a person. Paste a mint for a full report, or ask me to
+        launch a coin or mint an NFT. Type @ to pick a tool.
       </Text>
 
       <View style={styles.chips}>
