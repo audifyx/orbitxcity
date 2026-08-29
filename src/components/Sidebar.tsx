@@ -36,21 +36,16 @@ type NavItem = {
   label: string;
 };
 
+/** Routes stay registered; we unhide them in the sidebar as each surface is finished. */
+export const VISIBLE_NAV_ROUTES: readonly NavRoute[] = [
+  "home",
+  "wallet",
+  "settings",
+];
+
 const NAV_ITEMS: NavItem[] = [
   { route: "home", label: "Home" },
-  { route: "trending", label: "Trending" },
   { route: "wallet", label: "Wallet" },
-  { route: "tools", label: "Tools" },
-  { route: "agents", label: "Agents" },
-  { route: "activity", label: "Activity" },
-  { route: "alerts", label: "Alerts" },
-  { route: "launch", label: "Launch" },
-  { route: "nft", label: "NFT" },
-  { route: "paper", label: "Paper" },
-  { route: "research", label: "Research" },
-  { route: "strategy", label: "Strategy" },
-  { route: "social", label: "Social" },
-  { route: "profile", label: "Profile" },
   { route: "settings", label: "Settings" },
 ];
 
@@ -83,6 +78,7 @@ function routeFromPath(path?: string): NavRoute {
   if (path.includes("social")) return "social";
   if (path.includes("profile")) return "profile";
   if (path.includes("settings")) return "settings";
+  if (path.includes("alerts")) return "alerts";
   return "home";
 }
 

@@ -1,5 +1,6 @@
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
+import { AGENT_CAPABILITY_CHIPS } from "../brain/knowledge";
 import { OrbitXMark } from "./OrbitXMark";
 import { colors } from "../theme";
 
@@ -8,12 +9,7 @@ export type EmptyHomeProps = {
   onSuggestionPress?: (suggestion: string) => void;
 };
 
-const DEFAULT_SUGGESTIONS = [
-  "Scan trending Solana tokens",
-  "Analyze my wallet PnL",
-  "Find low-cap gems under $1M",
-  "Explain this transaction route",
-];
+const DEFAULT_SUGGESTIONS = [...AGENT_CAPABILITY_CHIPS];
 
 export function EmptyHome({
   suggestions = DEFAULT_SUGGESTIONS,
@@ -25,9 +21,10 @@ export function EmptyHome({
         <OrbitXMark size={36} />
       </View>
 
-      <Text style={styles.headline}>What are we exploring today?</Text>
+      <Text style={styles.headline}>OrbitX Agent</Text>
       <Text style={styles.subcopy}>
-        Markets, wallets, routes, and on-chain signals — ask in plain language.
+        The OS for Solana. Scan tokens, wallets, markets, and quotes in one
+        chat — live tools, then a straight answer.
       </Text>
 
       <View style={styles.chips}>

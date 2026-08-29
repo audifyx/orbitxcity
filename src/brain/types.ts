@@ -63,6 +63,8 @@ export type PlanIntent =
   | "launch"
   | "nft"
   | "portfolio"
+  | "screen"
+  | "news"
   | "other";
 
 export type UtterancePlan = {

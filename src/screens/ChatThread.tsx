@@ -480,33 +480,15 @@ export function ChatThread({
       }));
     const actions: CommandResult[] = [
       {
-        id: "nav:trending",
-        title: "Trending",
-        subtitle: "Live Solana market intelligence",
-        kind: "action",
-      },
-      {
         id: "nav:wallet",
         title: "Wallet",
-        subtitle: "Portfolio command center",
+        subtitle: "Connected wallet and logout",
         kind: "action",
       },
       {
-        id: "nav:paper",
-        title: "Paper",
-        subtitle: "Simulated trading book",
-        kind: "action",
-      },
-      {
-        id: "nav:launch",
-        title: "Launch",
-        subtitle: "Token launch drafts",
-        kind: "action",
-      },
-      {
-        id: "nav:research",
-        title: "Research",
-        subtitle: "OG Scan intelligence",
+        id: "nav:settings",
+        title: "Settings",
+        subtitle: "Model, memory, and permissions",
         kind: "action",
       },
     ];
@@ -527,7 +509,7 @@ export function ChatThread({
       keyboardVerticalOffset={Platform.OS === "ios" ? 8 : 0}
     >
       <View style={styles.threadHeader}>
-        <Text style={styles.headerKicker}>ORBITX INTELLIGENCE</Text>
+        <Text style={styles.headerKicker}>ORBITX AGENT</Text>
         {Platform.OS !== "web" ? (
           <Pressable
             style={styles.searchButton}

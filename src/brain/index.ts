@@ -49,6 +49,8 @@ export {
   type ToolAllowanceResult,
 } from "./permissions";
 
+export { AGENT_CAPABILITY_CHIPS, AGENT_KNOWLEDGE, ORBITX_TOKEN_MINT } from "./knowledge";
+
 export { planFromUtterance } from "./planner";
 
 export {

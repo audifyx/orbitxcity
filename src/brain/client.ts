@@ -1,6 +1,7 @@
 import { resolveModelId } from "./models";
 import { planFromUtterance } from "./planner";
 import { AGENTS } from "./agents";
+import { AGENT_KNOWLEDGE } from "./knowledge";
 import { TOOLS } from "./tools";
 
 export type ChatCard = {
@@ -125,6 +126,15 @@ export async function orchestrate(
   const fallbackId = req.conversationId ?? "";
   const plan = planFromUtterance(req.message, [...AGENTS], [...TOOLS]);
 
+  const specialists = plan.agentIds
+    .map((id) => AGENTS.find((agent) => agent.id === id))
+    .filter((agent): agent is (typeof AGENTS)[number] => Boolean(agent))
+    .map((agent) => ({
+      id: agent.id,
+      name: agent.name,
+      systemRole: agent.systemRole,
+    }));
+
   const body: Record<string, unknown> = {
     conversationId: req.conversationId,
     message: req.message,
@@ -132,6 +142,8 @@ export async function orchestrate(
     page: req.page,
     tokenMint: req.tokenMint,
     walletAddress: req.walletAddress,
+    knowledge: AGENT_KNOWLEDGE,
+    specialists,
     plan: {
       agentIds: plan.agentIds,
       toolIds: plan.toolIds,

@@ -1,5 +1,5 @@
 export { OrbitXMark } from "./OrbitXMark";
-export { Sidebar } from "./Sidebar";
+export { Sidebar, VISIBLE_NAV_ROUTES } from "./Sidebar";
 export type { NavRoute, SidebarProps } from "./Sidebar";
 
 export { Composer } from "./Composer";

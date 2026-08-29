@@ -15,6 +15,11 @@ const RESEARCH_VERBS =
   /\b(research|analyze|analysis|report|deep\s?dive|due\s?diligence|dd)\b/i;
 const TOKEN_VERBS = /\b(token|rug|honeypot|mint|ca\b|contract)\b/i;
 const WALLET_VERBS = /\b(wallet|holder|whale|address)\b/i;
+const SCREEN_VERBS =
+  /\b(trend|trending|screen|screener|runners|movers|gems|new\s?pairs|moonshot)\b/i;
+const NEWS_VERBS = /\b(news|headline|narrative|kols?|sentiment)\b/i;
+const FORENSIC_VERBS =
+  /\b(forensic|x-?ray|first\s?buyer|sniper|bundle|insider|dev\s?wallet)\b/i;
 
 const EXPLICIT_WRITE_VERBS =
   /\b(execute|broadcast|send\s?swap|place\s?order|post\s?now|publish|list\s?nft|sell\s?nft)\b/i;
@@ -49,6 +54,12 @@ function detectIntent(text: string, addresses: string[]): PlanIntent {
   }
   if (PORTFOLIO_VERBS.test(text)) {
     return "portfolio";
+  }
+  if (SCREEN_VERBS.test(text) && addresses.length === 0) {
+    return "screen";
+  }
+  if (NEWS_VERBS.test(text) && addresses.length === 0) {
+    return "news";
   }
   if (RESEARCH_VERBS.test(text)) {
     return "research";
@@ -101,6 +112,12 @@ function pickAgents(intent: PlanIntent, text: string): string[] {
     case "research":
       ids.push("research", "deep-research", "news");
       break;
+    case "screen":
+      ids.push("market", "token", "launch");
+      break;
+    case "news":
+      ids.push("news", "social", "research");
+      break;
     case "launch":
       ids.push("launch", "bonding-curve", "migration-specialist");
       break;
@@ -143,11 +160,10 @@ function pickTools(
       add("token-safety");
       add("og-scan-token");
       add("oxw-token-scan");
-      if (/\b(holder|distribution)\b/i.test(text)) {
-        add("og-holders");
-      }
-      if (/\b(ogdex|xray|x-ray)\b/i.test(text)) {
+      add("og-holders");
+      if (FORENSIC_VERBS.test(text) || /\b(ogdex|xray|x-ray)\b/i.test(text)) {
         add("ogdex-xray");
+        add("ogdex-firstbuyer");
       } else {
         add("ogdex-intel-v2");
       }
@@ -243,9 +259,24 @@ function pickTools(
       add("birdseye-analytics");
       break;
 
+    case "screen":
+      add("token-data");
+      add("birdseye-analytics");
+      add("pumpfun-migrations");
+      add("news-fetcher");
+      notes.push("Screener / trending pass — no mint required.");
+      break;
+
+    case "news":
+      add("news-fetcher");
+      add("ai-analyzer");
+      add("unified-intelligence");
+      break;
+
     default:
       add("unified-intelligence");
       add("ai-analyzer");
+      add("news-fetcher");
       break;
   }
 
