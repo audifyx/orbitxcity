@@ -1,4 +1,3 @@
-import Constants from "expo-constants";
 import { Platform } from "react-native";
 import * as Linking from "expo-linking";
 
@@ -6,35 +5,25 @@ import { publicAppUrl } from "./env";
 import { type WalletId } from "./wallets";
 
 const PHANTOM_ANDROID_PACKAGE = "app.phantom";
-const JUPITER_ANDROID_PACKAGE = "ag.jup.jupiter.android";
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function expoDevOrigin(): string | null {
-  const hostUri = Constants.expoConfig?.hostUri ?? "";
-  const host = hostUri.replace(/^https?:\/\//, "").split("/")[0];
-  if (!host) {
-    return null;
-  }
-  const hostname = host.replace(/:\d+$/, "");
-  if (hostname.endsWith(".exp.direct") || hostname.endsWith(".exp.host")) {
-    return `https://${hostname}`;
-  }
-  return null;
-}
-
 function appOrigin(): string {
   if (Platform.OS === "web" && typeof window !== "undefined") {
     const { protocol, host } = window.location;
-    if (host && !host.includes("localhost") && protocol !== "file:") {
+    if (
+      host &&
+      !host.includes("localhost") &&
+      !host.includes("exp.direct") &&
+      !host.includes("exp.host") &&
+      protocol !== "file:"
+    ) {
       return `${protocol}//${host}`;
     }
   }
-  // Expo Go opens the wallet onto this tunnel so it loads the current
-  // bundle, not a stale orbitxcity.vercel.app build.
-  return expoDevOrigin() ?? publicAppUrl.replace(/\/$/, "");
+  return publicAppUrl.replace(/\/$/, "");
 }
 
 export function connectPageUrl(walletId: WalletId): string {
@@ -105,16 +94,16 @@ function jupiterBrowseUrls(target: string): string[] {
   const hostPath = target.replace(/^https?:\/\//, "");
   const urls: string[] = [];
 
-  // Jupiter has no public https://jup.ag/ul/browse page. That URL is a dead
-  // website. Open the Jupiter app, or let Mobile Wallet Adapter do it.
+  // Jupiter has no browse universal link. Open OrbitX in Chrome so Mobile
+  // Wallet Adapter can launch Jupiter. Never open jup.ag/ul/browse.
   if (Platform.OS === "android") {
     urls.push(
-      `intent://${hostPath}#Intent;scheme=https;package=${JUPITER_ANDROID_PACKAGE};end`,
+      `intent://${hostPath}#Intent;scheme=https;package=com.android.chrome;end`,
     );
+    urls.push(`googlechrome://navigate?url=${encoded}`);
   }
 
-  urls.push(`jupiter://dapp?url=${encoded}`);
-  urls.push(`jup://dapp?url=${encoded}`);
+  urls.push(target);
   return urls;
 }
 

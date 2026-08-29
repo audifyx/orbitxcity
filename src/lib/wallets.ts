@@ -263,6 +263,10 @@ function rememberStandardWallet(wallet: StandardWallet): void {
   }
 }
 
+export function prepareWalletStandard(): void {
+  ensureStandardListeners();
+}
+
 function ensureStandardListeners(): void {
   const win = getWindow();
   if (!win) {

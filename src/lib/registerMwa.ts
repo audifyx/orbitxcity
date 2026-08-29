@@ -8,6 +8,7 @@ import {
 
 import { MWA_IDENTITY } from "./mwaIdentity";
 import { isInsideWalletBrowser } from "./walletOpen";
+import { prepareWalletStandard } from "./wallets";
 
 let registered = false;
 
@@ -22,6 +23,7 @@ export function registerWebMwa(): void {
     return;
   }
 
+  prepareWalletStandard();
   registered = true;
   registerMwa({
     appIdentity: MWA_IDENTITY,
