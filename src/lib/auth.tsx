@@ -52,6 +52,7 @@ interface AuthContextValue {
   signInWithSignature: (pubkey: string, signature: string) => Promise<void>;
   completeNativeConnect: (url: string) => Promise<void>;
   completeNativeSign: (url: string) => Promise<void>;
+  clearError: () => void;
   disconnect: () => Promise<void>;
 }
 
@@ -71,6 +72,9 @@ function publicAuthError(error: unknown, fallback: string): string {
   }
   if (lower.includes("invalid account")) {
     return "Wallet could not sign with that account. Use sign-in with Jupiter or reconnect Phantom.";
+  }
+  if (lower.includes("not installed") || lower.includes("jupiter_siws_required")) {
+    return "";
   }
   return message;
 }
@@ -290,6 +294,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         await startNativeConnect();
       } catch (connectError) {
         const message = publicAuthError(connectError, "Wallet connection failed.");
+        if (!message) {
+          return;
+        }
         setError(message);
         throw new Error(message);
       } finally {
@@ -349,6 +356,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [finishVerification, pendingPubkey],
   );
 
+  const clearError = useCallback(() => {
+    setError(null);
+  }, []);
+
   const disconnect = useCallback(async () => {
     setError(null);
     setPendingPubkey(null);
@@ -377,6 +388,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       signInWithSignature,
       completeNativeConnect,
       completeNativeSign,
+      clearError,
       disconnect,
     }),
     [
@@ -390,6 +402,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       signInWithSignature,
       completeNativeConnect,
       completeNativeSign,
+      clearError,
       disconnect,
     ],
   );
