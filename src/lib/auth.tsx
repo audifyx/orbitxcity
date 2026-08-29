@@ -7,12 +7,10 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { Platform } from "react-native";
 import type { Session } from "@supabase/supabase-js";
 import * as SecureStore from "expo-secure-store";
 import {
   clearPhantomSecureStore,
-  startNativeConnect,
   startNativeSign,
   handleNativeConnectRedirect,
   handleNativeSignRedirect,
@@ -20,10 +18,14 @@ import {
 } from "./phantom";
 import { supabase, walletAuth, warmWalletAuth } from "./supabase";
 import {
+  isInsideWalletBrowser,
+  isMobileDevice,
+  openWalletInAppBrowser,
+} from "./walletOpen";
+import {
   connectBrowserWallet,
   isSolanaPubkey,
   isSolanaSignature,
-  openJupiterMobile,
   signBrowserWallet,
   waitForWallet,
   type WalletId,
@@ -47,7 +49,7 @@ interface AuthContextValue {
   loading: boolean;
   error: string | null;
   connecting: boolean;
-  connect: (walletId?: WalletId) => Promise<void>;
+  connect: (walletId?: WalletId, options?: { injectedOnly?: boolean }) => Promise<void>;
   requestSignInMessage: (pubkey: string) => Promise<string>;
   signInWithSignature: (pubkey: string, signature: string) => Promise<void>;
   completeNativeConnect: (url: string) => Promise<void>;
@@ -261,12 +263,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const connect = useCallback(
-    async (walletId: WalletId = "phantom") => {
+    async (walletId: WalletId = "phantom", options?: { injectedOnly?: boolean }) => {
       setConnecting(true);
       setError(null);
 
       try {
-        const injected = await waitForWallet(walletId);
+        const insideWallet = isInsideWalletBrowser(walletId);
+        const injected = await waitForWallet(walletId, insideWallet ? 4500 : 2500);
 
         if (injected) {
           const { pubkey } = await connectBrowserWallet(walletId);
@@ -281,14 +284,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return;
         }
 
-        if (walletId === "jupiter") {
-          await openJupiterMobile();
+        if (options?.injectedOnly) {
           throw new Error(
-            "Jupiter is opening. Approve the connection and sign the login message.",
+            "Wallet is open but not ready. Approve connect, then sign. This is not a transaction.",
           );
         }
 
-        await startNativeConnect();
+        if (insideWallet) {
+          throw new Error(
+            "Approve the connect request in your wallet, then sign. This is not a transaction.",
+          );
+        }
+
+        if (!isMobileDevice()) {
+          throw new Error(
+            "Open OrbitX on your phone, or use the Phantom or Jupiter extension in this browser.",
+          );
+        }
+
+        await openWalletInAppBrowser(walletId);
       } catch (connectError) {
         const message = publicAuthError(connectError, "Wallet connection failed.");
         if (!message) {
@@ -297,9 +311,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setError(message);
         throw new Error(message);
       } finally {
-        if (Platform.OS === "web" || walletId === "jupiter") {
-          setConnecting(false);
-        }
+        setConnecting(false);
       }
     },
     [finishVerification],

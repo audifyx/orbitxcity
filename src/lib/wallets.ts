@@ -1,8 +1,5 @@
 import { Platform } from "react-native";
-import * as Linking from "expo-linking";
 import bs58 from "bs58";
-
-import { publicAppUrl } from "./env";
 
 export type WalletId = "jupiter" | "phantom";
 
@@ -39,12 +36,6 @@ type JupiterWindow = Window & {
   jupiter?: { solana?: InjectedProvider } | InjectedProvider;
   jup?: { solana?: InjectedProvider } | InjectedProvider;
 };
-
-const JUPITER_OPEN_CANDIDATES = [
-  "jupiter://",
-  "jup://",
-  "https://jup.ag",
-] as const;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -282,7 +273,7 @@ export function isWalletInjected(id: WalletId): boolean {
   return discoverStandardWallets().some((wallet) => walletNameMatches(wallet.name, id));
 }
 
-export async function waitForWallet(id: WalletId, timeoutMs = 800): Promise<boolean> {
+export async function waitForWallet(id: WalletId, timeoutMs = 2500): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
   ensureStandardListeners();
   while (Date.now() < deadline) {
@@ -326,26 +317,8 @@ export async function signBrowserWallet(id: WalletId, message: string): Promise<
 }
 
 export async function openJupiterMobile(): Promise<void> {
-  const app = `${publicAppUrl.replace(/\/$/, "")}/connect?wallet=jupiter`;
-  const encoded = encodeURIComponent(app);
-  const candidates = [
-    `jupiter://browse?url=${encoded}`,
-    `jup://browse?url=${encoded}`,
-    ...JUPITER_OPEN_CANDIDATES,
-  ];
-
-  for (const url of candidates) {
-    try {
-      const canOpen = await Linking.canOpenURL(url);
-      if (canOpen) {
-        await Linking.openURL(url);
-        return;
-      }
-    } catch {
-      // try the next candidate
-    }
-  }
-  await Linking.openURL(app);
+  const { openWalletInAppBrowser } = await import("./walletOpen");
+  await openWalletInAppBrowser("jupiter");
 }
 
 export function walletNeedsManualSiws(id: WalletId): boolean {
