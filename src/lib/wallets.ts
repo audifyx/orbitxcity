@@ -239,6 +239,9 @@ async function signInjectedProvider(
   if (!readInjectedPubkey(injected)) {
     await connectInjectedProvider(injected);
   }
+  if (!readInjectedPubkey(injected)) {
+    throw new Error("Wallet connected but is not ready to sign. Approve again.");
+  }
 
   try {
     return await attempt();

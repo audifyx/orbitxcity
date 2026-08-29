@@ -163,8 +163,8 @@ export async function connectInjected(): Promise<{ pubkey: string }> {
   }
 
   const response = await provider.connect();
-  const pubkey =
-    response.publicKey.toBase58?.() ?? response.publicKey.toString();
+  const key = response?.publicKey ?? provider.publicKey;
+  const pubkey = key?.toBase58?.() ?? key?.toString() ?? "";
 
   if (!pubkey) {
     throw new Error("Phantom did not return a public key.");
@@ -178,10 +178,16 @@ export async function signInjected(message: string): Promise<string> {
   if (!provider) {
     throw new Error("Phantom not found. Install Phantom and try again.");
   }
+  if (!provider.publicKey) {
+    await provider.connect();
+  }
+  if (!provider.publicKey) {
+    throw new Error("Phantom connected but is not ready to sign. Approve again.");
+  }
 
   const messageBytes = new TextEncoder().encode(message);
-  const { signature } = await provider.signMessage(messageBytes, "utf8");
-  return bs58.encode(signature);
+  const signed = await provider.signMessage(messageBytes, "utf8");
+  return bs58.encode(signed.signature);
 }
 
 export async function startNativeConnect(): Promise<void> {

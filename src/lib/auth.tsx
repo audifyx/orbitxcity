@@ -292,7 +292,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       try {
         const insideWallet = isInsideWalletBrowser(walletId);
-        const injected = await waitForWallet(walletId, insideWallet ? 4500 : 2500);
+        const injected = await waitForWallet(walletId, insideWallet ? 8000 : 2500);
 
         if (injected) {
           const { pubkey } = await connectBrowserWallet(walletId);

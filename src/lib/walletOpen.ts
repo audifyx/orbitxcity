@@ -1,3 +1,4 @@
+import Constants from "expo-constants";
 import { Platform } from "react-native";
 import * as Linking from "expo-linking";
 
@@ -11,14 +12,29 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function expoDevOrigin(): string | null {
+  const hostUri = Constants.expoConfig?.hostUri ?? "";
+  const host = hostUri.replace(/^https?:\/\//, "").split("/")[0];
+  if (!host) {
+    return null;
+  }
+  const hostname = host.replace(/:\d+$/, "");
+  if (hostname.endsWith(".exp.direct") || hostname.endsWith(".exp.host")) {
+    return `https://${hostname}`;
+  }
+  return null;
+}
+
 function appOrigin(): string {
   if (Platform.OS === "web" && typeof window !== "undefined") {
     const { protocol, host } = window.location;
-    if (protocol === "https:" && host && !host.includes("localhost")) {
+    if (host && !host.includes("localhost") && protocol !== "file:") {
       return `${protocol}//${host}`;
     }
   }
-  return publicAppUrl.replace(/\/$/, "");
+  // Expo Go opens the wallet onto this tunnel so it loads the current
+  // bundle, not a stale orbitxcity.vercel.app build.
+  return expoDevOrigin() ?? publicAppUrl.replace(/\/$/, "");
 }
 
 export function connectPageUrl(walletId: WalletId): string {
