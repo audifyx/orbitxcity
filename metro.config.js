@@ -8,5 +8,14 @@ process.env.EXPO_ROUTER_APP_ROOT = process.env.EXPO_ROUTER_APP_ROOT || "./app";
 /** @type {import('expo/metro-config').MetroConfig} */
 const config = getDefaultConfig(__dirname);
 config.resolver.unstable_enablePackageExports = true;
+const privyHostBlock = /privy-host\/.*/;
+const existingBlockList = config.resolver.blockList;
+if (Array.isArray(existingBlockList)) {
+  config.resolver.blockList = [...existingBlockList, privyHostBlock];
+} else if (existingBlockList) {
+  config.resolver.blockList = [existingBlockList, privyHostBlock];
+} else {
+  config.resolver.blockList = privyHostBlock;
+}
 
 module.exports = config;

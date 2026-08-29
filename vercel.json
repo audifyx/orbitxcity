@@ -1,5 +1,5 @@
 {
-  "buildCommand": "EXPO_NO_METRO_LAZY=1 npx expo export -p web",
+  "buildCommand": "npm run build:web",
   "outputDirectory": "dist",
   "devCommand": "npx expo start --web",
   "installCommand": "npm ci",
@@ -7,7 +7,7 @@
   "framework": null,
   "rewrites": [
     {
-      "source": "/((?!_expo/|favicon.ico).*)",
+      "source": "/((?!_expo/|favicon.ico|privy-host).*)",
       "destination": "/"
     }
   ]

@@ -17,7 +17,7 @@ import {
   WALLET_PUBKEY_KEY,
 } from "./phantom";
 import { supabase, walletAuth, warmWalletAuth } from "./supabase";
-import { connectWithPrivy, isPrivyConfigured } from "./privyConnect";
+import { connectWithPrivy, consumePrivyHostResult, isPrivyConfigured } from "./privyConnect";
 import { isMobileDevice, openWalletInAppBrowser } from "./walletOpen";
 import {
   isSolanaPubkey,
@@ -169,6 +169,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const finishVerification = useCallback(
+    async (pubkey: string, signature: string) => {
+      const verifyData = parseVerifyResponse(
+        await walletAuth("verify", { pubkey, signature }),
+      );
+
+      const { error: setSessionError } = await supabase.auth.setSession({
+        access_token: verifyData.access_token,
+        refresh_token: verifyData.refresh_token,
+      });
+
+      if (setSessionError) {
+        throw new Error(setSessionError.message);
+      }
+
+      setPendingPubkey(null);
+    },
+    [],
+  );
+
   useEffect(() => {
     void warmWalletAuth();
   }, []);
@@ -183,6 +203,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }, 8000);
 
     void (async () => {
+      try {
+        const hosted = consumePrivyHostResult();
+        if (hosted) {
+          await finishVerification(hosted.pubkey, hosted.signature);
+          setWallet(hosted.pubkey);
+          setLoading(false);
+          return;
+        }
+      } catch (hostedError) {
+        if (!mounted) {
+          return;
+        }
+        setError(publicAuthError(hostedError, "Wallet sign-in failed."));
+      }
+
       const { data, error: sessionError } = await supabase.auth.getSession();
       if (!mounted) {
         return;
@@ -209,27 +244,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       clearTimeout(failsafe);
       subscription.unsubscribe();
     };
-  }, [applySession]);
-
-  const finishVerification = useCallback(
-    async (pubkey: string, signature: string) => {
-      const verifyData = parseVerifyResponse(
-        await walletAuth("verify", { pubkey, signature }),
-      );
-
-      const { error: setSessionError } = await supabase.auth.setSession({
-        access_token: verifyData.access_token,
-        refresh_token: verifyData.refresh_token,
-      });
-
-      if (setSessionError) {
-        throw new Error(setSessionError.message);
-      }
-
-      setPendingPubkey(null);
-    },
-    [],
-  );
+  }, [applySession, finishVerification]);
 
   const requestSignInMessage = useCallback(async (pubkey: string) => {
     const trimmed = pubkey.trim();
@@ -282,12 +297,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           const linked = await connectWithPrivy(walletId);
           setPendingPubkey(linked.pubkey);
           setWallet(linked.pubkey);
-
-          const nonceData = parseNonceResponse(
-            await walletAuth("nonce", { pubkey: linked.pubkey }),
-          );
-          const signature = await linked.signMessage(nonceData.message);
-          await finishVerification(linked.pubkey, signature);
+          await finishVerification(linked.pubkey, linked.signature);
           return;
         }
 
