@@ -1,4 +1,5 @@
-import { privyAppId, privyClientId } from "./env";
+import { isSafeAppReturn, privyHostUrl } from "./hostedAuth";
+import { privyAppId } from "./env";
 import { isSolanaPubkey, isSolanaSignature, type WalletId } from "./wallets";
 
 const RESULT_KEY = "orbitx-privy-result";
@@ -40,14 +41,11 @@ export function consumePrivyHostResult(): HostDone | null {
   return { pubkey: parsed.pubkey, signature: parsed.signature };
 }
 
-function hostUrl(walletId: WalletId): string {
-  const url = new URL("/privy-host.html", window.location.origin);
-  url.searchParams.set("appId", privyAppId);
-  url.searchParams.set("wallet", walletId);
-  if (privyClientId) {
-    url.searchParams.set("clientId", privyClientId);
+function currentReturnParam(): string {
+  if (typeof window === "undefined") {
+    return "";
   }
-  return url.toString();
+  return new URLSearchParams(window.location.search).get("return") ?? "";
 }
 
 export async function connectWithPrivy(walletId: WalletId): Promise<HostDone> {
@@ -57,9 +55,15 @@ export async function connectWithPrivy(walletId: WalletId): Promise<HostDone> {
     );
   }
 
+  const returnTo = currentReturnParam();
+  const url = privyHostUrl(
+    walletId,
+    returnTo && isSafeAppReturn(returnTo) ? returnTo : undefined,
+  );
+
   // Same tab only. Wallet extensions cannot connect from a popup, which is
   // what produced Privy's "Can't connect" error.
-  window.location.assign(hostUrl(walletId));
+  window.location.assign(url);
   await new Promise<HostDone>(() => undefined);
   throw new Error("Opening wallet connect…");
 }

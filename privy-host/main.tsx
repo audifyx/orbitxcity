@@ -21,6 +21,7 @@ type HostParams = {
   appId: string;
   clientId: string;
   walletId: WalletId;
+  returnTo: string;
 };
 
 function readParams(): HostParams {
@@ -30,7 +31,36 @@ function readParams(): HostParams {
     appId: (search.get("appId") ?? "").trim(),
     clientId: (search.get("clientId") ?? "").trim(),
     walletId: wallet === "jupiter" ? "jupiter" : "phantom",
+    returnTo: (search.get("return") ?? "").trim(),
   };
+}
+
+function isSafeHostReturn(value: string): boolean {
+  if (!value || value.length > 2048) {
+    return false;
+  }
+  try {
+    const url = new URL(value);
+    if (url.username || url.password) {
+      return false;
+    }
+    if (url.protocol === "orbitx:") {
+      const path = `${url.host}${url.pathname}`.replace(/\/+$/, "");
+      return path === "auth" || path === "/auth" || path.endsWith("/auth");
+    }
+    if (url.protocol === "exp:" || url.protocol === "exps:") {
+      return url.href.includes("/auth");
+    }
+    if (url.protocol === "https:" || url.protocol === "http:") {
+      return (
+        url.origin === window.location.origin &&
+        url.pathname.replace(/\/+$/, "") === "/auth"
+      );
+    }
+  } catch {
+    return false;
+  }
+  return false;
 }
 
 function isSolanaPubkey(value: string): boolean {
@@ -66,7 +96,17 @@ function postToOpener(payload: Record<string, unknown>): boolean {
   return true;
 }
 
-function finishInOpenerOrReturn(payload: Record<string, string>): void {
+function finishInOpenerOrReturn(
+  payload: Record<string, string>,
+  returnTo: string,
+): void {
+  if (payload.pubkey && payload.signature && isSafeHostReturn(returnTo)) {
+    const url = new URL(returnTo);
+    url.searchParams.set("pubkey", payload.pubkey);
+    url.searchParams.set("signature", payload.signature);
+    window.location.replace(url.toString());
+    return;
+  }
   if (postToOpener(payload)) {
     window.close();
     return;
@@ -285,7 +325,7 @@ function HostApp({ params }: { params: HostParams }) {
           wallet,
         }),
       );
-      finishInOpenerOrReturn({ type: "done", pubkey, signature: signed });
+      finishInOpenerOrReturn({ type: "done", pubkey, signature: signed }, params.returnTo);
     } catch (finishError) {
       const message = friendlyHostError(finishError);
       setError(message);
@@ -348,11 +388,14 @@ function HostApp({ params }: { params: HostParams }) {
             throw new Error("wallet-auth nonce response is invalid.");
           }
           const signed = await signInjected(injected.provider, message);
-          finishInOpenerOrReturn({
-            type: "done",
-            pubkey: injected.pubkey,
-            signature: signed,
-          });
+          finishInOpenerOrReturn(
+            {
+              type: "done",
+              pubkey: injected.pubkey,
+              signature: signed,
+            },
+            params.returnTo,
+          );
         } catch (injectedError) {
           finishing.current = false;
           setError(friendlyHostError(injectedError));
@@ -380,9 +423,13 @@ function HostApp({ params }: { params: HostParams }) {
         textAlign: "center",
       }}
     >
-      <div style={{ fontSize: 22, fontWeight: 600 }}>OrbitX</div>
+      <div style={{ fontSize: 22, fontWeight: 600 }}>Sign in to OrbitX</div>
       <div style={{ color: "rgba(176, 198, 232, 0.72)", lineHeight: 1.5, maxWidth: 360 }}>
-        {error ?? status}
+        {error ??
+          status ??
+          (params.returnTo
+            ? "Connect your wallet and sign a message. You will return to the OrbitX app. This is not a transaction."
+            : "Connect your wallet and sign a message. This is not a transaction.")}
       </div>
       {ready && !finishing.current ? (
         <button
@@ -404,11 +451,14 @@ function HostApp({ params }: { params: HostParams }) {
                   throw new Error("wallet-auth nonce response is invalid.");
                 }
                 const signed = await signInjected(injected.provider, message);
-                finishInOpenerOrReturn({
-                  type: "done",
-                  pubkey: injected.pubkey,
-                  signature: signed,
-                });
+                finishInOpenerOrReturn(
+                  {
+                    type: "done",
+                    pubkey: injected.pubkey,
+                    signature: signed,
+                  },
+                  params.returnTo,
+                );
               } catch (injectedError) {
                 finishing.current = false;
                 setError(friendlyHostError(injectedError));

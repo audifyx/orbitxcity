@@ -51,8 +51,8 @@ function OrbitMark({ size = 56 }: { size?: number }) {
 }
 
 const WALLETS: { id: WalletId; label: string; hint: string }[] = [
-  { id: "jupiter", label: "Jupiter", hint: "Opens Jupiter — approve, then sign" },
-  { id: "phantom", label: "Phantom", hint: "Opens Phantom — approve, then sign" },
+  { id: "jupiter", label: "Jupiter", hint: "Opens the OrbitX sign-in page — approve, then return here" },
+  { id: "phantom", label: "Phantom", hint: "Approve in Phantom, then sign. You return to the app." },
 ];
 
 export default function ConnectScreen() {
@@ -67,18 +67,23 @@ export default function ConnectScreen() {
   const autoStarted = useRef(false);
 
   const handleConnect = useCallback(
-    async (walletId: WalletId) => {
+    async (walletId: WalletId, hostedOnly = false) => {
       setLocalError(null);
       clearError();
       setPickerOpen(false);
       setStatus(
-        walletId === "jupiter"
-          ? "Opening Jupiter… approve connect, then sign. This is not a transaction."
-          : "Opening Phantom… approve connect, then sign. This is not a transaction.",
+        hostedOnly || walletId === "jupiter"
+          ? "Opening the OrbitX sign-in page. Approve your wallet, then you will return here."
+          : "Opening Phantom… approve connect, then sign. You will return to the app.",
       );
       try {
-        await connect(walletId);
-        router.replace("/");
+        const result = await connect(
+          walletId,
+          hostedOnly ? { hostedOnly: true } : undefined,
+        );
+        if (result) {
+          router.replace("/");
+        }
       } catch (err) {
         const message =
           err instanceof Error ? err.message : "Wallet connection failed.";
@@ -139,8 +144,8 @@ export default function ConnectScreen() {
         <OrbitMark />
         <Text style={styles.title}>Connect wallet</Text>
         <Text style={styles.subtitle}>
-          Tap connect and pick Jupiter or Phantom. Approve the wallet request,
-          then sign in. That sign-in is not a transaction.
+          Tap connect and pick Jupiter or Phantom. Sign a message to connect
+          this account to OrbitX. That sign-in is not a transaction.
         </Text>
 
         {displayError ? (
@@ -202,6 +207,19 @@ export default function ConnectScreen() {
                 <Text style={styles.walletHint}>{wallet.hint}</Text>
               </Pressable>
             ))}
+            <Pressable
+              style={({ pressed }) => [
+                styles.walletRow,
+                pressed && styles.primaryButtonPressed,
+              ]}
+              onPress={() => void handleConnect("phantom", true)}
+              disabled={connecting}
+            >
+              <Text style={styles.walletName}>Sign-in page</Text>
+              <Text style={styles.walletHint}>
+                Opens a Privy sign-in link, then returns to this app
+              </Text>
+            </Pressable>
             <Pressable onPress={() => setPickerOpen(false)}>
               <Text style={styles.back}>Cancel</Text>
             </Pressable>

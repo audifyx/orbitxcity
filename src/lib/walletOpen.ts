@@ -1,7 +1,12 @@
 import { Platform } from "react-native";
 import * as Linking from "expo-linking";
 
-import { publicAppUrl } from "./env";
+import {
+  appOrigin,
+  hostedAuthPageUrl,
+  nativeAuthReturnUrl,
+  type HostedWalletId,
+} from "./hostedAuth";
 import { type WalletId } from "./wallets";
 
 const PHANTOM_ANDROID_PACKAGE = "app.phantom";
@@ -10,24 +15,10 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function appOrigin(): string {
-  if (Platform.OS === "web" && typeof window !== "undefined") {
-    const { protocol, host } = window.location;
-    if (
-      host &&
-      !host.includes("localhost") &&
-      !host.includes("exp.direct") &&
-      !host.includes("exp.host") &&
-      protocol !== "file:"
-    ) {
-      return `${protocol}//${host}`;
-    }
-  }
-  return publicAppUrl.replace(/\/$/, "");
-}
+export { appOrigin };
 
 export function connectPageUrl(walletId: WalletId): string {
-  return `${appOrigin()}/connect?wallet=${walletId}`;
+  return hostedAuthPageUrl(walletId, nativeAuthReturnUrl());
 }
 
 export function isMobileDevice(): boolean {
@@ -94,8 +85,8 @@ function jupiterBrowseUrls(target: string): string[] {
   const hostPath = target.replace(/^https?:\/\//, "");
   const urls: string[] = [];
 
-  // Jupiter has no browse universal link. Open OrbitX in Chrome so Privy
-  // can launch Jupiter. Never open jup.ag/ul/browse.
+  // Jupiter has no browse universal link. Open the OrbitX sign-in page in
+  // Chrome so Privy can launch Jupiter. Never open jup.ag/ul/browse.
   if (Platform.OS === "android") {
     urls.push(
       `intent://${hostPath}#Intent;scheme=https;package=com.android.chrome;end`,
@@ -107,8 +98,11 @@ function jupiterBrowseUrls(target: string): string[] {
   return urls;
 }
 
-export async function openWalletInAppBrowser(walletId: WalletId): Promise<void> {
-  const target = connectPageUrl(walletId);
+export async function openWalletInAppBrowser(
+  walletId: WalletId,
+  targetUrl?: string,
+): Promise<void> {
+  const target = targetUrl ?? connectPageUrl(walletId);
   const urls =
     walletId === "phantom" ? phantomBrowseUrls(target) : jupiterBrowseUrls(target);
 
@@ -123,4 +117,10 @@ export async function openWalletInAppBrowser(walletId: WalletId): Promise<void> 
       ? "Could not reach Jupiter. Install Jupiter Mobile and tap Connect again."
       : "Could not open Phantom. Install Phantom and try again.",
   );
+}
+
+export async function openHostedAuth(walletId: HostedWalletId): Promise<void> {
+  const returnTo = nativeAuthReturnUrl();
+  const target = hostedAuthPageUrl(walletId, returnTo);
+  await openWalletInAppBrowser(walletId, target);
 }

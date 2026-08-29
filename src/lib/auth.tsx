@@ -4,13 +4,18 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
 import type { Session } from "@supabase/supabase-js";
+import { Platform } from "react-native";
+import * as Linking from "expo-linking";
 import * as SecureStore from "expo-secure-store";
+import { parseAuthCallback } from "./hostedAuth";
 import {
   clearPhantomSecureStore,
+  startNativeConnect,
   startNativeSign,
   handleNativeConnectRedirect,
   handleNativeSignRedirect,
@@ -18,7 +23,7 @@ import {
 } from "./phantom";
 import { supabase, walletAuth, warmWalletAuth } from "./supabase";
 import { connectWithPrivy, consumePrivyHostResult, isPrivyConfigured } from "./privyConnect";
-import { isInsideWalletBrowser, isMobileDevice, openWalletInAppBrowser } from "./walletOpen";
+import { isInsideWalletBrowser, isMobileDevice, openHostedAuth } from "./walletOpen";
 import {
   connectBrowserWallet,
   isSolanaPubkey,
@@ -48,7 +53,13 @@ interface AuthContextValue {
   loading: boolean;
   error: string | null;
   connecting: boolean;
-  connect: (walletId?: WalletId, options?: { injectedOnly?: boolean }) => Promise<void>;
+  connect: (
+    walletId?: WalletId,
+    options?: { injectedOnly?: boolean; hostedOnly?: boolean },
+  ) => Promise<{ pubkey: string; signature: string } | void>;
+  requestWalletSignature: (
+    walletId: WalletId,
+  ) => Promise<{ pubkey: string; signature: string }>;
   requestSignInMessage: (pubkey: string) => Promise<string>;
   signInWithSignature: (pubkey: string, signature: string) => Promise<void>;
   completeNativeConnect: (url: string) => Promise<void>;
@@ -61,18 +72,29 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 const WALLET_STORAGE_KEY = "orbitx-wallet";
 
 function persistWallet(pubkey: string | null): void {
-  if (typeof window === "undefined") {
-    return;
-  }
-  try {
-    if (pubkey) {
-      window.localStorage.setItem(WALLET_STORAGE_KEY, pubkey);
-    } else {
-      window.localStorage.removeItem(WALLET_STORAGE_KEY);
+  if (typeof window !== "undefined") {
+    try {
+      if (pubkey) {
+        window.localStorage.setItem(WALLET_STORAGE_KEY, pubkey);
+      } else {
+        window.localStorage.removeItem(WALLET_STORAGE_KEY);
+      }
+    } catch {
+      // Private mode / quota — session tokens still persist via Supabase storage.
     }
-  } catch {
-    // Private mode / quota — session tokens still persist via Supabase storage.
   }
+
+  void (async () => {
+    try {
+      if (pubkey) {
+        await SecureStore.setItemAsync(WALLET_PUBKEY_KEY, pubkey);
+      } else {
+        await SecureStore.deleteItemAsync(WALLET_PUBKEY_KEY);
+      }
+    } catch {
+      // SecureStore is optional on web.
+    }
+  })();
 }
 
 function readPersistedWallet(): string | null {
@@ -314,6 +336,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, [applySession, finishVerification]);
 
+  const requestWalletSignature = useCallback(async (walletId: WalletId) => {
+    const linked = await connectBrowserWallet(walletId);
+    const nonceData = parseNonceResponse(
+      await walletAuth("nonce", { pubkey: linked.pubkey }),
+    );
+    const signature = await signBrowserWallet(walletId, nonceData.message);
+    if (!isSolanaSignature(signature)) {
+      throw new Error("Wallet did not return a valid signature.");
+    }
+    return { pubkey: linked.pubkey, signature };
+  }, []);
+
   const requestSignInMessage = useCallback(async (pubkey: string) => {
     const trimmed = pubkey.trim();
     if (!isSolanaPubkey(trimmed)) {
@@ -356,7 +390,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const connect = useCallback(
-    async (walletId: WalletId = "phantom", options?: { injectedOnly?: boolean }) => {
+    async (
+      walletId: WalletId = "phantom",
+      options?: { injectedOnly?: boolean; hostedOnly?: boolean },
+    ) => {
       setConnecting(true);
       setError(null);
 
@@ -379,11 +416,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             throw new Error("Wallet did not return a valid signature.");
           }
           await finishVerification(linked.pubkey, signature);
-          return;
+          return { pubkey: linked.pubkey, signature };
         }
 
-        if (isMobileDevice() && walletId === "phantom") {
-          await openWalletInAppBrowser(walletId);
+        if (Platform.OS !== "web") {
+          if (walletId === "phantom" && !options?.hostedOnly) {
+            try {
+              await startNativeConnect();
+              return;
+            } catch {
+              // Phantom UL failed — fall through to the hosted Privy page.
+            }
+          }
+          await openHostedAuth(walletId);
           return;
         }
 
@@ -392,11 +437,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setPendingPubkey(linked.pubkey);
           setWallet(linked.pubkey);
           await finishVerification(linked.pubkey, linked.signature);
-          return;
+          return linked;
         }
 
         if (isMobileDevice()) {
-          await openWalletInAppBrowser(walletId);
+          await openHostedAuth(walletId);
           return;
         }
 
@@ -416,6 +461,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
     [finishVerification],
   );
+
+  const consumedAuthUrl = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (Platform.OS === "web") {
+      return;
+    }
+
+    const consume = (url: string | null) => {
+      if (!url || consumedAuthUrl.current === url) {
+        return;
+      }
+      const parsed = parseAuthCallback(url);
+      if (!parsed) {
+        return;
+      }
+      consumedAuthUrl.current = url;
+      void signInWithSignature(parsed.pubkey, parsed.signature).catch(
+        () => undefined,
+      );
+    };
+
+    const subscription = Linking.addEventListener("url", ({ url }) => {
+      consume(url);
+    });
+    void Linking.getInitialURL().then(consume);
+
+    return () => {
+      subscription.remove();
+    };
+  }, [signInWithSignature]);
 
   const completeNativeConnect = useCallback(async (url: string) => {
     setConnecting(true);
@@ -494,6 +570,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       error,
       connecting,
       connect,
+      requestWalletSignature,
       requestSignInMessage,
       signInWithSignature,
       completeNativeConnect,
@@ -508,6 +585,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       error,
       connecting,
       connect,
+      requestWalletSignature,
       requestSignInMessage,
       signInWithSignature,
       completeNativeConnect,
