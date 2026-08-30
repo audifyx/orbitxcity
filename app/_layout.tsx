@@ -62,30 +62,32 @@ class BootErrorBoundary extends Component<
 }
 
 function AuthGate({ children }: { children: ReactNode }) {
-  const { session, loading } = useAuth();
+  const { signedIn, loading } = useAuth();
   const segments = useSegments();
   const pathname = usePathname();
   const router = useRouter();
 
   useEffect(() => {
-    const root = segments[0];
-    const isAuthGroup = root === "(auth)";
-    const isCallback = root === "onconnect" || root === "onsign" || root === "auth";
-    const isExport = root === "wallet-export" || pathname === "/wallet-export";
-
-    if (session && (isAuthGroup || pathname === "/connect" || pathname === "/auth")) {
-      router.replace("/");
-      return;
-    }
-
     if (loading) {
       return;
     }
 
-    if (!session && !isAuthGroup && !isCallback && !isExport) {
+    const root = segments[0];
+    const isAuthGroup = root === "(auth)";
+    const isCallback = root === "onconnect" || root === "onsign" || root === "auth";
+    const isExport = root === "wallet-export" || pathname === "/wallet-export";
+    const onLogin =
+      isAuthGroup || pathname === "/connect" || pathname === "/auth";
+
+    if (signedIn && onLogin) {
+      router.replace("/");
+      return;
+    }
+
+    if (!signedIn && !onLogin && !isCallback && !isExport) {
       router.replace("/connect");
     }
-  }, [loading, session, segments, pathname, router]);
+  }, [loading, signedIn, segments, pathname, router]);
 
   return <>{children}</>;
 }

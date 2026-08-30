@@ -9,6 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import type { Session } from "@supabase/supabase-js";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Platform } from "react-native";
 import * as Linking from "expo-linking";
 import * as SecureStore from "expo-secure-store";
@@ -46,6 +47,7 @@ interface WalletAuthVerifyResponse {
 interface AuthContextValue {
   session: Session | null;
   wallet: string | null;
+  signedIn: boolean;
   userId: string | null;
   loading: boolean;
   error: string | null;
@@ -67,6 +69,23 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 const WALLET_STORAGE_KEY = "orbitx-wallet";
+const MANUAL_LOGOUT_KEY = "orbitx-manual-logout";
+
+let skipPrivyResume = false;
+
+export function shouldSkipPrivyResume(): boolean {
+  return skipPrivyResume;
+}
+
+export function markManualLogout(): void {
+  skipPrivyResume = true;
+  void AsyncStorage.setItem(MANUAL_LOGOUT_KEY, "1").catch(() => undefined);
+}
+
+export function clearManualLogout(): void {
+  skipPrivyResume = false;
+  void AsyncStorage.removeItem(MANUAL_LOGOUT_KEY).catch(() => undefined);
+}
 
 function persistWallet(pubkey: string | null): void {
   if (typeof window !== "undefined") {
@@ -94,15 +113,26 @@ function persistWallet(pubkey: string | null): void {
   })();
 }
 
-function readPersistedWallet(): string | null {
-  if (typeof window === "undefined") {
-    return null;
-  }
+async function readPersistedWallet(): Promise<string | null> {
   try {
-    return window.localStorage.getItem(WALLET_STORAGE_KEY);
+    const stored = await SecureStore.getItemAsync(WALLET_PUBKEY_KEY);
+    if (stored && isSolanaPubkey(stored)) {
+      return stored;
+    }
   } catch {
-    return null;
+    // SecureStore is optional on web.
   }
+  if (typeof window !== "undefined") {
+    try {
+      const stored = window.localStorage.getItem(WALLET_STORAGE_KEY);
+      if (stored && isSolanaPubkey(stored)) {
+        return stored;
+      }
+    } catch {
+      return null;
+    }
+  }
+  return null;
 }
 
 function publicAuthError(error: unknown, fallback: string): string {
@@ -205,19 +235,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    const persisted = await readPersistedWallet();
     try {
       const resolvedWallet = await resolveWalletForUser(nextSession.user.id);
-      const nextWallet = resolvedWallet ?? readPersistedWallet();
+      const nextWallet =
+        resolvedWallet && isSolanaPubkey(resolvedWallet)
+          ? resolvedWallet
+          : persisted;
       setWallet(nextWallet);
       persistWallet(nextWallet);
       setError(null);
     } catch (resolveError) {
-      const fallback = readPersistedWallet();
-      if (fallback) {
-        setWallet(fallback);
+      if (persisted) {
+        setWallet(persisted);
         setError(null);
         return;
       }
+      setWallet(null);
       setError(publicAuthError(resolveError, "Failed to resolve wallet for session."));
     }
   }, []);
@@ -241,6 +275,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         data.session ?? (await supabase.auth.getSession()).data.session;
 
       setPendingPubkey(null);
+      clearManualLogout();
       persistWallet(pubkey);
       setWallet(pubkey);
       if (nextSession) {
@@ -304,11 +339,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       await applySession(data.session);
       if (data.session) {
-        const stored = readPersistedWallet();
+        const stored = await readPersistedWallet();
         if (stored) {
           setWallet(stored);
         }
       }
+      const loggedOut = await AsyncStorage.getItem(MANUAL_LOGOUT_KEY);
+      skipPrivyResume = loggedOut === "1";
       setLoading(false);
     })();
 
@@ -484,24 +521,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const disconnect = useCallback(async () => {
     setError(null);
     setPendingPubkey(null);
+    markManualLogout();
     persistWallet(null);
-
-    const { error: signOutError } = await supabase.auth.signOut();
-    if (signOutError) {
-      setError(signOutError.message);
-      throw new Error(signOutError.message);
-    }
-
-    await clearPhantomSecureStore();
-    await logoutPrivySession();
     setWallet(null);
     setSession(null);
+
+    const { error: signOutError } = await supabase.auth.signOut();
+    try {
+      await clearPhantomSecureStore();
+    } catch {
+      // Local session is already cleared.
+    }
+    try {
+      await logoutPrivySession();
+    } catch {
+      // Stay on the login page even if Privy logout is slow.
+    }
+    if (signOutError) {
+      setError(signOutError.message);
+    }
   }, []);
 
   const value = useMemo<AuthContextValue>(
     () => ({
       session,
       wallet,
+      signedIn: Boolean(session && wallet && isSolanaPubkey(wallet)),
       userId: session?.user.id ?? null,
       loading,
       error,

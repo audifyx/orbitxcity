@@ -45,13 +45,13 @@ function OrbitMark({ size = 56 }: { size?: number }) {
 export default function ConnectScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { session } = useAuth();
+  const { signedIn } = useAuth();
 
   useEffect(() => {
-    if (session) {
+    if (signedIn) {
       router.replace("/");
     }
-  }, [router, session]);
+  }, [router, signedIn]);
 
   return (
     <ScrollView

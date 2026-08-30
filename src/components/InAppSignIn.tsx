@@ -17,7 +17,7 @@ import {
 } from "@privy-io/expo";
 import { applicationId } from "expo-application";
 
-import { useAuth } from "../lib/auth";
+import { clearManualLogout, shouldSkipPrivyResume, useAuth } from "../lib/auth";
 import { privyClientId } from "../lib/env";
 import { isSolanaPubkey, toBase58Signature, utf8ToBase64 } from "../lib/wallets";
 import { colors } from "../theme";
@@ -131,6 +131,7 @@ export function InAppSignIn() {
   const sendCode = useCallback(async () => {
     setLocalError(null);
     setBusy(true);
+    clearManualLogout();
     try {
       if (mode === "email") {
         const email = identifier.trim().toLowerCase();
@@ -185,7 +186,7 @@ export function InAppSignIn() {
   }, [code, emailLogin, finishWalletSession, identifier, mode, smsLogin]);
 
   useEffect(() => {
-    if (!isReady || !user || resumed.current) {
+    if (!isReady || !user || resumed.current || shouldSkipPrivyResume()) {
       return;
     }
     resumed.current = true;
@@ -302,6 +303,29 @@ export function InAppSignIn() {
           accessibilityLabel="Resend code"
         >
           <Text style={styles.resend}>Resend code</Text>
+        </Pressable>
+      ) : null}
+
+      {user && !working ? (
+        <Pressable
+          onPress={() => {
+            clearManualLogout();
+            setLocalError(null);
+            setBusy(true);
+            setStatus("Finishing your OrbitX wallet…");
+            void finishWalletSession()
+              .catch((error) => {
+                setLocalError(friendlyPrivyError(error));
+                setStatus(null);
+              })
+              .finally(() => {
+                setBusy(false);
+              });
+          }}
+          accessibilityRole="button"
+          accessibilityLabel="Continue with this account"
+        >
+          <Text style={styles.resend}>Continue with this account</Text>
         </Pressable>
       ) : null}
     </KeyboardAvoidingView>

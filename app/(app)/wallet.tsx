@@ -433,7 +433,11 @@ export default function WalletScreen() {
 
           <Pressable
             style={styles.dangerButton}
-            onPress={() => void disconnect()}
+            onPress={() => {
+              void disconnect().finally(() => {
+                router.replace("/connect");
+              });
+            }}
           >
             <Text style={styles.dangerButtonText}>Log out</Text>
           </Pressable>
