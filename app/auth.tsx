@@ -54,6 +54,12 @@ export default function AuthScreen() {
   );
 
   useEffect(() => {
+    if (Platform.OS !== "web") {
+      router.replace("/connect");
+    }
+  }, [router]);
+
+  useEffect(() => {
     if (session) {
       if (Platform.OS === "web" && returnTo && isSafeAppReturn(returnTo) && callback) {
         window.location.replace(appendAuthResult(returnTo, callback));
