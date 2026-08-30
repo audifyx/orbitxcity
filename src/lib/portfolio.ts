@@ -280,7 +280,12 @@ async function fetchEdgeSnapshot(wallet: string): Promise<WalletSnapshot | null>
 
   for (const name of attempts) {
     try {
-      const result = await invokeFunction(name, { wallet, action: "snapshot" });
+      const result = await invokeFunction(
+        name,
+        name === "wallet-manager"
+          ? { action: "get_balance", wallet_address: wallet }
+          : { wallet, action: "snapshot" },
+      );
       const rec = asRecord(result);
       if (!rec) {
         continue;

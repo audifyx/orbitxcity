@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -24,6 +24,7 @@ import {
 } from "../brain";
 import type { ToolCategory as BrainToolCategory } from "../brain/types";
 import {
+  ApproveSheet,
   CommandPalette,
   Composer,
   EmptyHome,
@@ -36,12 +37,15 @@ import {
   type ToolCategory,
 } from "../components";
 import { useAuth } from "../lib/auth";
+import { readAutoApproveBuys, writeAutoApproveBuys } from "../lib/autoApprove";
 import {
   confirmSignature,
   fetchSwapTransaction,
   parseQuoteJson,
   signAndSendSwapTransaction,
 } from "../lib/jupiter";
+import { mintOrbitxNft } from "../lib/nftMarket";
+import { createPumpToken } from "../lib/pumpfun";
 import {
   invokeFunction,
   invokeFunctionStream,
@@ -148,6 +152,9 @@ export function ChatThread({
   const [toolSheetOpen, setToolSheetOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [paletteQuery, setPaletteQuery] = useState("");
+  const [instantBuy, setInstantBuy] = useState(false);
+  const [approveOpen, setApproveOpen] = useState(false);
+  const autoFired = useRef<Set<string>>(new Set());
 
   const loadMessages = useCallback(async (convId: string) => {
     setLoadingHistory(true);
@@ -283,7 +290,7 @@ export function ChatThread({
     const plan = planFromUtterance(text, [...AGENTS], [...TOOLS]);
     const plannedEvents = plan.toolIds.map((toolId) => ({
       id: `tool_${toolId}`,
-      label: toolId.replace(/-/g, " "),
+      label: TOOLS.find((tool) => tool.id === toolId)?.name ?? toolId.replace(/-/g, " "),
       status: "running" as const,
     }));
 
@@ -513,6 +520,30 @@ export function ChatThread({
     [matchTxCard, wallet],
   );
 
+  useEffect(() => {
+    void readAutoApproveBuys().then(setInstantBuy);
+  }, []);
+
+  useEffect(() => {
+    if (!instantBuy || sending) {
+      return;
+    }
+    for (const message of messages) {
+      for (const card of message.cards ?? []) {
+        if (card.kind !== "tx" || !card.data.quoteJson) {
+          continue;
+        }
+        const status = String(card.data.status ?? "preview");
+        const key = String(card.data.intentId ?? card.data.quoteJson);
+        if (status !== "preview" || autoFired.current.has(key)) {
+          continue;
+        }
+        autoFired.current.add(key);
+        void handleConfirmTx(card);
+      }
+    }
+  }, [handleConfirmTx, instantBuy, messages, sending]);
+
   const selectedModel = MODELS.find((model) => model.id === modelId) ?? MODELS[0];
 
   const paletteResults: CommandResult[] = useMemo(() => {
@@ -549,6 +580,24 @@ export function ChatThread({
         kind: "action",
       },
       {
+        id: "nav:dex",
+        title: "DEX",
+        subtitle: "Buy and sell with Jupiter / pump.fun",
+        kind: "action",
+      },
+      {
+        id: "nav:launch",
+        title: "Launch",
+        subtitle: "Create a coin on pump.fun",
+        kind: "action",
+      },
+      {
+        id: "nav:nft",
+        title: "NFTs",
+        subtitle: "Mint, list, and buy",
+        kind: "action",
+      },
+      {
         id: "nav:settings",
         title: "Settings",
         subtitle: "Model, memory, and permissions",
@@ -572,7 +621,15 @@ export function ChatThread({
       keyboardVerticalOffset={Platform.OS === "ios" ? 8 : 0}
     >
       <View style={styles.threadHeader}>
-        <Text style={styles.headerKicker}>ORBITX AGENT</Text>
+        <View style={styles.headerCopy}>
+          <View style={styles.headerLiveRow}>
+            <View style={styles.liveDot} />
+            <Text style={styles.headerKicker}>ORBITX CORE · LIVE</Text>
+          </View>
+          <Text style={styles.headerTitle} numberOfLines={1}>
+            {wallet ? `${wallet.slice(0, 4)}…${wallet.slice(-4)} armed` : "Sign in to trade"}
+          </Text>
+        </View>
         {Platform.OS !== "web" ? (
           <Pressable
             style={styles.searchButton}
@@ -605,6 +662,46 @@ export function ChatThread({
             messages={messages}
             onConfirmTx={(card) => void handleConfirmTx(card)}
             onCancelTx={(card) => void handleCancelTx(card)}
+            onBuyToken={(mint) => {
+              setDraft(`buy 0.05 SOL of ${mint}`);
+            }}
+            onSellToken={(mint) => {
+              setDraft(`sell 0.05 SOL of ${mint}`);
+            }}
+            onOpenCreate={(kind) => {
+              router.push(kind === "nft" ? "/nft" : "/launch");
+            }}
+            onApproveCreate={(kind, card) => {
+              void (async () => {
+                if (!wallet) {
+                  setStorageError("Sign in before signing.");
+                  return;
+                }
+                try {
+                  if (kind === "launch") {
+                    const created = await createPumpToken({
+                      wallet,
+                      name: String(card.data.name ?? "OrbitX"),
+                      symbol: String(card.data.symbol ?? "ORB"),
+                      description: String(card.data.description ?? ""),
+                      initialBuySol: 0.05,
+                    });
+                    setStorageError(`Launched ${created.mint}`);
+                    return;
+                  }
+                  const minted = await mintOrbitxNft({
+                    wallet,
+                    name: String(card.data.name ?? "Orbit Pass"),
+                    symbol: String(card.data.symbol ?? "PASS"),
+                  });
+                  setStorageError(`Minted ${minted.mint}`);
+                } catch (error) {
+                  setStorageError(
+                    error instanceof Error ? error.message : "Create failed.",
+                  );
+                }
+              })();
+            }}
             onRegenerate={() => {
               const lastUser = [...messages]
                 .reverse()
@@ -631,9 +728,31 @@ export function ChatThread({
           modelLabel={selectedModel?.label ?? "Balanced"}
           onModelPress={() => setModelSheetOpen(true)}
           onToolsPress={() => setToolSheetOpen(true)}
+          instantBuy={instantBuy}
+          onInstantBuyPress={() => {
+            if (instantBuy) {
+              setInstantBuy(false);
+              void writeAutoApproveBuys(false);
+              return;
+            }
+            setApproveOpen(true);
+          }}
           mentionTools={TOOLS.map((tool) => ({ id: tool.id, name: tool.name }))}
         />
       </View>
+
+      <ApproveSheet
+        visible={approveOpen}
+        title="Approve instant buys"
+        body="OrbitX will sign Jupiter buys with your Privy wallet as soon as a quote is ready. You can turn this off anytime. This is not a seed export."
+        confirmLabel="Approve instant buys"
+        onClose={() => setApproveOpen(false)}
+        onConfirm={() => {
+          setInstantBuy(true);
+          void writeAutoApproveBuys(true);
+          setApproveOpen(false);
+        }}
+      />
 
       <ModelSheet
         visible={modelSheetOpen}
@@ -670,7 +789,7 @@ export function ChatThread({
         results={paletteResults}
         onPick={(id) => {
           if (id.startsWith("nav:")) {
-            router.push(`/${id.slice(4)}` as "/trending");
+            router.push(`/${id.slice(4)}` as "/dex");
           } else if (id.startsWith("tool:")) {
             const tool = TOOLS.find((item) => item.id === id.slice(5));
             if (tool) setDraft(`@${tool.id} `);
@@ -695,15 +814,36 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingVertical: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.hairline,
+    backgroundColor: colors.void,
+  },
+  headerCopy: {
+    flex: 1,
+    gap: 3,
+  },
+  headerLiveRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 7,
+  },
+  liveDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: colors.success,
   },
   headerKicker: {
-    color: colors.mute,
+    color: colors.signal,
     fontFamily: "Inter_500Medium",
     fontSize: 10,
-    letterSpacing: 2,
+    letterSpacing: 2.4,
+  },
+  headerTitle: {
+    color: colors.frost,
+    fontFamily: "SpaceGrotesk_600SemiBold",
+    fontSize: 15,
   },
   searchButton: {
     width: 36,

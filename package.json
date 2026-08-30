@@ -15,6 +15,7 @@
     "@solana-program/system": "^0.12.2",
     "@solana-program/token": "^0.12.0",
     "@solana/kit": "^7.1.1",
+    "@solana/spl-token": "^0.4.13",
     "@solana/web3.js": "^1.98.4",
     "@stripe/stripe-js": "^9.14.0",
     "@supabase/supabase-js": "^2.112.4",
@@ -66,7 +67,7 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "build:privy-host": "node scripts/build-privy-host.mjs",
-    "build:web": "npm run build:privy-host && EXPO_NO_METRO_LAZY=1 expo export -p web",
+    "build:web": "npm run build:privy-host && EXPO_NO_METRO_LAZY=1 expo export -p web && node scripts/copy-web-static.mjs",
     "typecheck": "tsc --noEmit"
   },
   "private": true
