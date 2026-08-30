@@ -2,7 +2,7 @@ import { Platform } from "react-native";
 import * as Linking from "expo-linking";
 import bs58 from "bs58";
 
-import { privyAppId, privyClientId, publicAppUrl } from "./env";
+import { privyAppId, publicAppUrl } from "./env";
 
 function isSolanaPubkey(value: string): boolean {
   try {
@@ -131,18 +131,12 @@ export function hostedAuthPageUrl(returnTo: string): string {
   const url = new URL("/auth", `${appOrigin()}/`);
   url.searchParams.set("return", returnTo);
   url.searchParams.set("appId", privyAppId);
-  if (privyClientId) {
-    url.searchParams.set("clientId", privyClientId);
-  }
   return url.toString();
 }
 
 export function privyHostUrl(returnTo?: string): string {
-  const url = new URL("/privy-host.html", `${appOrigin()}/`);
+  const url = new URL("/privy-host", `${appOrigin()}/`);
   url.searchParams.set("appId", privyAppId);
-  if (privyClientId) {
-    url.searchParams.set("clientId", privyClientId);
-  }
   if (returnTo && isSafeAppReturn(returnTo)) {
     url.searchParams.set("return", returnTo);
   }

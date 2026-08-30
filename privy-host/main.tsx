@@ -11,23 +11,47 @@ import bs58 from "bs58";
 const CHANNEL = "orbitx-privy-v1";
 const RESULT_KEY = "orbitx-privy-result";
 const ERROR_KEY = "orbitx-privy-error";
+const DEFAULT_APP_ID = "cmtdqdoj0043z0dlabgpr7l6g";
+const REQUIRED_ORIGINS = [
+  "https://orbitxcity.vercel.app",
+  "https://ogscan.fun",
+  "https://www.ogscan.fun",
+];
 const SUPABASE_URL = "https://ffjipnkhcebjvttliptb.supabase.co";
 const SUPABASE_ANON_KEY =
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZmamlwbmtoY2VianZ0dGxpcHRiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc1Mjc5NDgsImV4cCI6MjA5MzEwMzk0OH0.aXu8bbpVVwc8KOJf1-lHqO3cz_0GZD10_TE0GlKQ1BI";
 
 type HostParams = {
   appId: string;
-  clientId: string;
   returnTo: string;
 };
 
 function readParams(): HostParams {
   const search = new URLSearchParams(window.location.search);
   return {
-    appId: (search.get("appId") ?? "").trim(),
-    clientId: (search.get("clientId") ?? "").trim(),
+    appId: (search.get("appId") ?? DEFAULT_APP_ID).trim() || DEFAULT_APP_ID,
     returnTo: (search.get("return") ?? "").trim(),
   };
+}
+
+function originBlockMessage(): string {
+  return `Privy blocked ${window.location.origin}. In the Privy dashboard open Configuration → App settings → Domains and add these HTTPS origins: ${REQUIRED_ORIGINS.join(", ")}. HTTP and og-scan.fun do not count.`;
+}
+
+function isOriginError(error: unknown): boolean {
+  const rec =
+    error && typeof error === "object" ? (error as Record<string, unknown>) : {};
+  const code = String(rec.privyErrorCode ?? rec.code ?? "");
+  const message =
+    error instanceof Error ? error.message : String(error ?? "");
+  const lower = `${code} ${message}`.toLowerCase();
+  return (
+    code === "invalid_origin" ||
+    lower.includes("invalid_origin") ||
+    lower.includes("allowed origin") ||
+    lower.includes("allowlisted") ||
+    lower.includes("allow-listed")
+  );
 }
 
 function isSafeHostReturn(value: string): boolean {
@@ -146,6 +170,9 @@ async function walletAuth(
 }
 
 function friendlyHostError(error: unknown): string {
+  if (isOriginError(error)) {
+    return originBlockMessage();
+  }
   const message =
     typeof error === "string"
       ? error
@@ -153,6 +180,12 @@ function friendlyHostError(error: unknown): string {
         ? error.message
         : "Sign-in failed.";
   const lower = message.toLowerCase();
+  if (
+    lower.includes("something went wrong") ||
+    lower.includes("try again later")
+  ) {
+    return originBlockMessage();
+  }
   if (
     lower.includes("declined") ||
     lower.includes("rejected") ||
@@ -185,7 +218,7 @@ function isEmbeddedSolanaWallet(wallet: {
 }
 
 function HostApp({ params }: { params: HostParams }) {
-  const { ready, authenticated, login } = usePrivy();
+  const { ready, authenticated, login, error: privyError } = usePrivy();
   const { wallets, ready: walletsReady } = useWallets();
   const { createWallet } = useCreateWallet();
   const { signMessage } = useSignMessage();
@@ -269,14 +302,26 @@ function HostApp({ params }: { params: HostParams }) {
   const openLogin = (): void => {
     setError(null);
     setStatus("Enter your email or phone. OrbitX will create your wallet.");
-    login({
-      loginMethods: ["email", "sms"],
-    });
+    try {
+      login({
+        loginMethods: ["email", "sms"],
+      });
+    } catch (loginError) {
+      setError(friendlyHostError(loginError));
+      setStatus("");
+    }
   };
 
   useEffect(() => {
     postToOpener({ type: "ready" });
   }, []);
+
+  useEffect(() => {
+    if (privyError) {
+      setError(friendlyHostError(privyError));
+      setStatus("");
+    }
+  }, [privyError]);
 
   useEffect(() => {
     if (!ready) {
@@ -315,7 +360,7 @@ function HostApp({ params }: { params: HostParams }) {
       }}
     >
       <div style={{ fontSize: 22, fontWeight: 600 }}>Sign in to OrbitX</div>
-      <div style={{ color: "rgba(176, 198, 232, 0.72)", lineHeight: 1.5, maxWidth: 360 }}>
+      <div style={{ color: "rgba(176, 198, 232, 0.72)", lineHeight: 1.5, maxWidth: 420, whiteSpace: "pre-wrap" }}>
         {error ??
           status ??
           "Use your email or phone. OrbitX creates an in-app wallet for this account."}
@@ -356,7 +401,6 @@ function Root() {
   return (
     <PrivyProvider
       appId={params.appId}
-      {...(params.clientId ? { clientId: params.clientId } : {})}
       config={{
         appearance: {
           theme: "dark",

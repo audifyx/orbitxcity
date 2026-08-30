@@ -36,7 +36,14 @@ Set these **public** variables on the Vercel project (Production + Preview):
 - `EXPO_PUBLIC_SOLANA_RPC_URL` (optional)
 - `EXPO_PUBLIC_APP_URL` (`https://orbitxcity.vercel.app`)
 - `EXPO_PUBLIC_PRIVY_APP_ID` or `PRIVY_APP_ID` (public Privy App ID for email/phone login)
-- `EXPO_PUBLIC_PRIVY_CLIENT_ID` or `PRIVY_CLIENT_ID` (optional)
+
+In the Privy dashboard, enable email and SMS, then add these **Allowed origins** (HTTPS):
+
+- `https://orbitxcity.vercel.app`
+- `https://ogscan.fun`
+- `https://www.ogscan.fun`
+
+`http://orbitx.world` and `http://og-scan.fun` will not work for this site.
 
 Never put `PRIVY_APP_SECRET` in `EXPO_PUBLIC_*` or the Expo client.
 
