@@ -10,6 +10,7 @@ import bs58 from "bs58";
 
 import {
   formatPrivyOriginBlock,
+  PRIVY_DOMAINS_DASHBOARD_URL,
   readPrivyDashboardStatus,
   REQUIRED_PRIVY_ORIGINS,
 } from "../src/lib/privyDashboard";
@@ -420,16 +421,50 @@ function DashboardBlock({
       <div style={{ color: "rgba(176, 198, 232, 0.72)", lineHeight: 1.5, maxWidth: 460 }}>
         {message}
       </div>
+      <div
+        style={{
+          color: "#f4f7ff",
+          lineHeight: 1.7,
+          maxWidth: 460,
+          fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+          fontSize: 13,
+        }}
+      >
+        {REQUIRED_PRIVY_ORIGINS.map((origin) => (
+          <div key={origin}>{origin}</div>
+        ))}
+      </div>
+      <a
+        href={PRIVY_DOMAINS_DASHBOARD_URL}
+        target="_blank"
+        rel="noreferrer"
+        style={{
+          minHeight: 48,
+          minWidth: 220,
+          borderRadius: 14,
+          background: "#7EB6FF",
+          color: "#000",
+          fontSize: 16,
+          fontWeight: 500,
+          textDecoration: "none",
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: "0 20px",
+        }}
+      >
+        Open Privy Domains
+      </a>
       <button
         type="button"
         onClick={onRecheck}
         style={{
           minHeight: 48,
           minWidth: 220,
-          border: 0,
+          border: "1px solid rgba(126, 182, 255, 0.45)",
           borderRadius: 14,
-          background: "#7EB6FF",
-          color: "#000",
+          background: "transparent",
+          color: "#7EB6FF",
           fontSize: 16,
           fontWeight: 500,
           cursor: "pointer",

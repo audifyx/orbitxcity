@@ -4,6 +4,9 @@ export const REQUIRED_PRIVY_ORIGINS = [
   "https://www.ogscan.fun",
 ] as const;
 
+export const PRIVY_DOMAINS_DASHBOARD_URL =
+  "https://dashboard.privy.io/apps?setting=domains&page=settings";
+
 export type PrivyDashboardStatus = {
   allowedDomains: string[];
   emailAuth: boolean;
@@ -51,7 +54,7 @@ export function formatPrivyOriginBlock(status: {
   const here = status.currentOrigin || "this page";
   return [
     `Privy blocked ${here}. Email and SMS are already on. Allowed origins are still ${listed}.`,
-    `In the Privy dashboard open Configuration → App settings → Domains and add these exact HTTPS origins: ${[...needed].join(", ")}.`,
+    `In the Orbitx app open Configuration → App settings → Domains → Web & mobile web and add these exact HTTPS origins: ${[...needed].join(", ")}.`,
     "HTTP, orbitx.world, and og-scan.fun (with the hyphen) do not match this site.",
   ].join(" ");
 }

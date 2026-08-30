@@ -8,12 +8,16 @@ import {
   View,
 } from "react-native";
 import { useRouter } from "expo-router";
+import * as Linking from "expo-linking";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Circle, Line } from "react-native-svg";
 
 import { useAuth } from "../../src/lib/auth";
 import { privyAppId } from "../../src/lib/env";
-import { readPrivyDashboardStatus } from "../../src/lib/privyDashboard";
+import {
+  PRIVY_DOMAINS_DASHBOARD_URL,
+  readPrivyDashboardStatus,
+} from "../../src/lib/privyDashboard";
 import { colors } from "../../src/theme";
 
 function OrbitMark({ size = 56 }: { size?: number }) {
@@ -117,6 +121,15 @@ export default function ConnectScreen() {
         {displayError ? (
           <View style={styles.errorBox}>
             <Text style={styles.errorText}>{displayError}</Text>
+            {displayError.includes("Allowed origins") ? (
+              <Pressable
+                onPress={() => void Linking.openURL(PRIVY_DOMAINS_DASHBOARD_URL)}
+                accessibilityRole="link"
+                accessibilityLabel="Open Privy Domains"
+              >
+                <Text style={styles.dashboardLink}>Open Privy Domains</Text>
+              </Pressable>
+            ) : null}
           </View>
         ) : null}
 
@@ -202,6 +215,13 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 20,
     textAlign: "center",
+  },
+  dashboardLink: {
+    color: colors.signal,
+    fontFamily: "Inter_500Medium",
+    fontSize: 14,
+    textAlign: "center",
+    marginTop: 10,
   },
   primaryButton: {
     width: "100%",
