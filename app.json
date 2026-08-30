@@ -2,6 +2,7 @@
   "expo": {
     "name": "OrbitX",
     "slug": "orbitx",
+    "owner": "orbitxworlds-team",
     "scheme": "orbitx",
     "version": "0.1.0",
     "orientation": "portrait",
