@@ -71,5 +71,5 @@ export const AGENT_CAPABILITY_CHIPS = [
   "hey tell me about 13H4WJvGEg4xrrBwWn2vsQgz7xhmhxgNdw19i1QsxPX9",
   "launch a coin named Orbit ticker ORB",
   "mint an NFT called Orbit Pass",
-  "buy 0.05 SOL of 13H4WJvGEg4xrrBwWn2vsQgz7xhmhxgNdw19i1QsxPX9",
+  "buy $0.25 of 13H4WJvGEg4xrrBwWn2vsQgz7xhmhxgNdw19i1QsxPX9",
 ] as const;

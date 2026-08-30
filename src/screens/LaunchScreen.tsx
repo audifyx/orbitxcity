@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Pressable,
   ScrollView,
@@ -10,6 +10,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useAuth } from "../lib/auth";
+import { formatBuySol, solAmountForUsd, suggestBuySol } from "../lib/swapGuard";
 import { createPumpToken } from "../lib/pumpfun";
 import { supabase } from "../lib/supabase";
 import { colors } from "../theme";
@@ -19,7 +20,28 @@ export function LaunchScreen() {
   const { userId, wallet } = useAuth();
   const [name, setName] = useState("");
   const [symbol, setSymbol] = useState("");
-  const [buySol, setBuySol] = useState("0.05");
+  const [buySol, setBuySol] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadDefault = wallet
+      ? suggestBuySol(wallet)
+      : solAmountForUsd();
+    void loadDefault
+      .then((sol) => {
+        if (!cancelled) {
+          setBuySol((current) =>
+            current === "" || current === "0.05" ? formatBuySol(sol) : current,
+          );
+        }
+      })
+      .catch(() => {
+        // Keep empty until they type an amount.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [wallet]);
   const [description, setDescription] = useState("");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<string | null>(null);

@@ -1,9 +1,13 @@
 import { solanaRpcUrl } from "./env";
 import { isSolanaPubkey } from "./wallets";
 
+const SOL_MINT = "So11111111111111111111111111111111111111112";
+
 const FEE_RESERVE_LAMPORTS = 5_000_000;
-const DEFAULT_BUY_SOL = 0.05;
-const MIN_BUY_SOL = 0.001;
+export const DEFAULT_BUY_USD = 0.25;
+const MIN_BUY_SOL = 0.00005;
+const FALLBACK_SOL_USD = 180;
+const JUPITER_PRICE_URL = "https://lite-api.jup.ag/price/v2";
 
 type RpcEnvelope = {
   result?: { value?: number };
@@ -100,14 +104,45 @@ export async function assertCanAffordBuy(
   }
 }
 
+export function formatBuySol(sol: number): string {
+  if (!Number.isFinite(sol) || sol <= 0) {
+    return "";
+  }
+  return String(Number(sol.toFixed(6)));
+}
+
+export async function fetchSolUsdPrice(): Promise<number> {
+  try {
+    const response = await fetch(
+      `${JUPITER_PRICE_URL}?ids=${encodeURIComponent(SOL_MINT)}`,
+    );
+    const json: unknown = await response.json().catch(() => null);
+    const data = asRecord(asRecord(json)?.data);
+    const row = data ? asRecord(data[SOL_MINT]) : null;
+    const price = Number(row?.price);
+    if (response.ok && Number.isFinite(price) && price > 0) {
+      return price;
+    }
+  } catch {
+    // Use the fallback below.
+  }
+  return FALLBACK_SOL_USD;
+}
+
+export async function solAmountForUsd(usd = DEFAULT_BUY_USD): Promise<number> {
+  const price = await fetchSolUsdPrice();
+  const sol = usd / price;
+  return Number(sol.toFixed(6));
+}
+
 export async function suggestBuySol(wallet: string): Promise<number> {
   const have = await getSolLamports(wallet);
   const spendable = (have - FEE_RESERVE_LAMPORTS) / 1e9;
+  const target = await solAmountForUsd(DEFAULT_BUY_USD);
   if (spendable < MIN_BUY_SOL) {
     throw new Error(
       `Not enough SOL to buy. Wallet has ${formatSol(have)} SOL. Add SOL or sell something first.`,
     );
   }
-  const capped = Math.min(DEFAULT_BUY_SOL, spendable);
-  return Math.floor(capped * 10000) / 10000;
+  return Number(Math.min(target, spendable).toFixed(6));
 }

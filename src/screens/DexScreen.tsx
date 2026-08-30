@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Pressable,
   ScrollView,
@@ -13,14 +13,40 @@ import { WebView } from "react-native-webview";
 import { ORBITX_TOKEN_MINT } from "../brain/knowledge";
 import { useAuth } from "../lib/auth";
 import { executeDexSwap, quoteDexSwap, type TradeSide } from "../lib/dexTrade";
-import { formatSwapError } from "../lib/swapGuard";
+import {
+  formatBuySol,
+  formatSwapError,
+  solAmountForUsd,
+  suggestBuySol,
+} from "../lib/swapGuard";
 import { colors } from "../theme";
 
 export function DexScreen() {
   const insets = useSafeAreaInsets();
   const { wallet } = useAuth();
   const [mint, setMint] = useState(ORBITX_TOKEN_MINT);
-  const [amount, setAmount] = useState("0.05");
+  const [amount, setAmount] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadDefault = wallet
+      ? suggestBuySol(wallet)
+      : solAmountForUsd();
+    void loadDefault
+      .then((sol) => {
+        if (!cancelled) {
+          setAmount((current) =>
+            current === "" || current === "0.05" ? formatBuySol(sol) : current,
+          );
+        }
+      })
+      .catch(() => {
+        // Keep empty until they type an amount.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [wallet]);
   const [side, setSide] = useState<TradeSide>("buy");
   const [busy, setBusy] = useState(false);
   const [desk, setDesk] = useState<"native" | "og">("native");

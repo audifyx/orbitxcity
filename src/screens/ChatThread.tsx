@@ -45,6 +45,7 @@ import {
   waitForSignature,
 } from "../lib/jupiter";
 import {
+  DEFAULT_BUY_USD,
   assertCanAffordBuy,
   formatSwapError,
   suggestBuySol,
@@ -585,7 +586,7 @@ export function ChatThread({
             content:
               side === "sell"
                 ? `Sell preview for 0.05 of this token. Approve to sign with your OrbitX wallet.`
-                : `Buy preview for ${amount} SOL. Approve to sign with your OrbitX wallet.`,
+                : `Buy preview for $${DEFAULT_BUY_USD.toFixed(2)} (${amount} SOL). Approve to sign with your OrbitX wallet.`,
             cards: [card],
           },
         ]);
@@ -767,7 +768,7 @@ export function ChatThread({
                       name: String(card.data.name ?? "OrbitX"),
                       symbol: String(card.data.symbol ?? "ORB"),
                       description: String(card.data.description ?? ""),
-                      initialBuySol: 0.05,
+                      initialBuySol: await suggestBuySol(wallet),
                     });
                     setStorageError(`Launched ${created.mint}`);
                     return;

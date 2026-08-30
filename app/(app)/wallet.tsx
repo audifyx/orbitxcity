@@ -19,7 +19,12 @@ import {
   executeDexSwap,
   type TradeSide,
 } from "../../src/lib/dexTrade";
-import { formatSwapError } from "../../src/lib/swapGuard";
+import {
+  DEFAULT_BUY_USD,
+  formatBuySol,
+  formatSwapError,
+  suggestBuySol,
+} from "../../src/lib/swapGuard";
 import type { ExportPageStatus } from "../../src/lib/exportWallet";
 import { ORBITX_MINT } from "../../src/lib/portfolio";
 import {
@@ -53,7 +58,8 @@ export default function WalletScreen() {
   const [exportOpen, setExportOpen] = useState(false);
   const [exportNote, setExportNote] = useState<string | null>(null);
   const [tradeMint, setTradeMint] = useState(ORBITX_MINT);
-  const [tradeAmount, setTradeAmount] = useState("0.05");
+  const [tradeAmount, setTradeAmount] = useState("");
+  const [defaultBuySol, setDefaultBuySol] = useState("");
   const [tradeSide, setTradeSide] = useState<TradeSide>("buy");
   const [tradeBusy, setTradeBusy] = useState(false);
   const [tradeStatus, setTradeStatus] = useState<string | null>(null);
@@ -80,6 +86,30 @@ export default function WalletScreen() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (!wallet) {
+      return;
+    }
+    let cancelled = false;
+    void suggestBuySol(wallet)
+      .then((sol) => {
+        if (cancelled) {
+          return;
+        }
+        const text = formatBuySol(sol);
+        setDefaultBuySol(text);
+        setTradeAmount((current) =>
+          current === "" || current === "0.05" ? text : current,
+        );
+      })
+      .catch(() => {
+        // Keep the field empty until they type an amount.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [wallet]);
 
   const askOrbitX = useCallback(() => {
     const context = wallet
@@ -286,7 +316,7 @@ export default function WalletScreen() {
                         onPress={() => {
                           setTradeMint(token.mint);
                           setTradeSide("buy");
-                          setTradeAmount("0.05");
+                          setTradeAmount(defaultBuySol);
                         }}
                       >
                         <Text style={styles.tinyBtnText}>Buy</Text>
@@ -320,8 +350,8 @@ export default function WalletScreen() {
             <Text style={styles.cardKicker}>SWAP</Text>
             <Text style={styles.cardTitle}>Buy or sell</Text>
             <Text style={styles.cardBody}>
-              Jupiter quote, then your OrbitX wallet signs. Buy amount is SOL.
-              Sell amount is the token.
+              Jupiter quote, then your OrbitX wallet signs. Buy default is $
+              {DEFAULT_BUY_USD.toFixed(2)} of SOL. Sell amount is the token.
             </Text>
             <TextInput
               style={styles.input}

@@ -9,7 +9,7 @@ import {
   type JupiterQuote,
 } from "./jupiter";
 import { pumpCurveTrade } from "./pumpfun";
-import { assertCanAffordBuy, formatSwapError } from "./swapGuard";
+import { assertCanAffordBuy, formatSwapError, solAmountForUsd } from "./swapGuard";
 import { isSolanaPubkey } from "./wallets";
 
 export { SOL_MINT };
@@ -155,5 +155,11 @@ export async function quoteFromPreview(input: {
   if (!isSolanaPubkey(mint) || mint === SOL_MINT) {
     throw new Error("This preview has no token mint to swap.");
   }
-  return quoteDexSwap({ side, mint, amount: input.amount ?? 0.05 });
+  const fallbackAmount =
+    side === "buy" ? await solAmountForUsd() : 0.05;
+  return quoteDexSwap({
+    side,
+    mint,
+    amount: input.amount ?? fallbackAmount,
+  });
 }
