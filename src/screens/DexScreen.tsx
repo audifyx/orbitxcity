@@ -13,6 +13,7 @@ import { WebView } from "react-native-webview";
 import { ORBITX_TOKEN_MINT } from "../brain/knowledge";
 import { useAuth } from "../lib/auth";
 import { executeDexSwap, quoteDexSwap, type TradeSide } from "../lib/dexTrade";
+import { formatSwapError } from "../lib/swapGuard";
 import { colors } from "../theme";
 
 export function DexScreen() {
@@ -54,7 +55,7 @@ export function DexScreen() {
       });
       setStatus(`${result.route} ${nextSide} · ${result.signature}`);
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Trade failed.");
+      setStatus(formatSwapError(error));
     } finally {
       setBusy(false);
     }

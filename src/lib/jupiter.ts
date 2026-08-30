@@ -103,6 +103,24 @@ export function uiAmountToRaw(amount: number, decimals: number): string {
   return String(raw);
 }
 
+async function fetchJupiterJson(
+  url: string,
+  init?: RequestInit,
+): Promise<{ ok: boolean; status: number; json: unknown }> {
+  let lastStatus = 0;
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const response = await fetch(url, init);
+    lastStatus = response.status;
+    if (response.status === 429 || response.status === 503) {
+      await sleep(500 * 2 ** attempt);
+      continue;
+    }
+    const json: unknown = await response.json().catch(() => null);
+    return { ok: response.ok, status: response.status, json };
+  }
+  throw new Error(lastStatus === 429 ? "Too Many Requests" : `Jupiter request failed (${lastStatus})`);
+}
+
 async function quoteFromLiteApi(params: {
   inputMint: string;
   outputMint: string;
@@ -114,16 +132,15 @@ async function quoteFromLiteApi(params: {
   url.searchParams.set("outputMint", params.outputMint);
   url.searchParams.set("amount", params.amount);
   url.searchParams.set("slippageBps", String(params.slippageBps));
-  const response = await fetch(url.toString());
-  const json: unknown = await response.json().catch(() => null);
-  if (!response.ok || !isQuote(json)) {
+  const { ok, status, json } = await fetchJupiterJson(url.toString());
+  if (!ok || !isQuote(json)) {
     const rec = asRecord(json);
     const detail =
       typeof rec?.error === "string"
         ? rec.error
         : typeof rec?.message === "string"
           ? rec.message
-          : `Jupiter quote failed (${response.status})`;
+          : `Jupiter quote failed (${status})`;
     throw new Error(detail);
   }
   return json;
@@ -163,6 +180,11 @@ export async function fetchQuote(params: {
     } catch {
       // Prefer the live Jupiter error.
     }
+    const fallback =
+      liteError instanceof Error ? liteError.message : "No Jupiter quote returned";
+    if (/too many requests|429/i.test(fallback)) {
+      throw new Error("Too Many Requests");
+    }
     throw liteError instanceof Error
       ? liteError
       : new Error("No Jupiter quote returned");
@@ -173,7 +195,7 @@ export async function fetchSwapTransaction(params: {
   quoteResponse: JupiterQuote;
   userPublicKey: string;
 }): Promise<string> {
-  const response = await fetch(JUPITER_LITE_SWAP, {
+  const { ok, status, json } = await fetchJupiterJson(JUPITER_LITE_SWAP, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -184,16 +206,17 @@ export async function fetchSwapTransaction(params: {
       prioritizationFeeLamports: "auto",
     }),
   });
-  const json = (await response.json()) as {
-    swapTransaction?: string;
-    error?: string;
-  };
-  if (!response.ok || !json.swapTransaction) {
-    throw new Error(
-      json.error ?? `Jupiter swap build failed (${response.status})`,
-    );
+  const rec = asRecord(json);
+  const swapTransaction =
+    typeof rec?.swapTransaction === "string" ? rec.swapTransaction : "";
+  if (!ok || !swapTransaction) {
+    const detail =
+      typeof rec?.error === "string"
+        ? rec.error
+        : `Jupiter swap build failed (${status})`;
+    throw new Error(detail);
   }
-  return json.swapTransaction;
+  return swapTransaction;
 }
 
 export type SignatureOutcome = "confirmed" | "failed" | "pending";

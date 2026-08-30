@@ -9,6 +9,7 @@ import {
   type JupiterQuote,
 } from "./jupiter";
 import { pumpCurveTrade } from "./pumpfun";
+import { assertCanAffordBuy, formatSwapError } from "./swapGuard";
 import { isSolanaPubkey } from "./wallets";
 
 export { SOL_MINT };
@@ -67,6 +68,9 @@ export async function executeDexSwap(input: {
   if (!isSolanaPubkey(input.wallet)) {
     throw new Error("Sign in before trading.");
   }
+  if (input.side === "buy") {
+    await assertCanAffordBuy(input.wallet, input.amount);
+  }
 
   let quote: JupiterQuote;
   try {
@@ -91,22 +95,26 @@ export async function executeDexSwap(input: {
         route: "pump",
       };
     }
-    throw error;
+    throw new Error(formatSwapError(error));
   }
 
-  const swapTx = await fetchSwapTransaction({
-    quoteResponse: quote,
-    userPublicKey: input.wallet,
-  });
-  const signature = await signAndSendSwapTransaction(swapTx);
-  const outcome = await waitForSignature(signature, {
-    attempts: 24,
-    intervalMs: 2000,
-  });
-  if (outcome === "failed") {
-    throw new Error("Jupiter swap landed as failed.");
+  try {
+    const swapTx = await fetchSwapTransaction({
+      quoteResponse: quote,
+      userPublicKey: input.wallet,
+    });
+    const signature = await signAndSendSwapTransaction(swapTx);
+    const outcome = await waitForSignature(signature, {
+      attempts: 24,
+      intervalMs: 2000,
+    });
+    if (outcome === "failed") {
+      throw new Error("Jupiter swap landed as failed.");
+    }
+    return { signature, quote, route: "jupiter" };
+  } catch (error) {
+    throw new Error(formatSwapError(error));
   }
-  return { signature, quote, route: "jupiter" };
 }
 
 export async function quoteFromPreview(input: {

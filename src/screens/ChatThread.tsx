@@ -38,12 +38,17 @@ import {
 } from "../components";
 import { useAuth } from "../lib/auth";
 import { readAutoApproveBuys, writeAutoApproveBuys } from "../lib/autoApprove";
-import { quoteDexSwap, quoteFromPreview } from "../lib/dexTrade";
+import { quoteDexSwap, quoteFromPreview, SOL_MINT } from "../lib/dexTrade";
 import {
   fetchSwapTransaction,
   signAndSendSwapTransaction,
   waitForSignature,
 } from "../lib/jupiter";
+import {
+  assertCanAffordBuy,
+  formatSwapError,
+  suggestBuySol,
+} from "../lib/swapGuard";
 import { isSolanaPubkey } from "../lib/wallets";
 import { mintOrbitxNft } from "../lib/nftMarket";
 import { createPumpToken } from "../lib/pumpfun";
@@ -451,12 +456,16 @@ export function ChatThread({
             typeof card.data.amount === "number" ? card.data.amount : undefined,
         });
       } catch (error) {
-        setStorageError(
-          error instanceof Error
-            ? error.message
-            : "Could not fetch a Jupiter quote to sign.",
-        );
+        setStorageError(formatSwapError(error));
         return;
+      }
+      if (quote.inputMint === SOL_MINT) {
+        try {
+          await assertCanAffordBuy(wallet, Number(quote.inAmount) / 1e9);
+        } catch (error) {
+          setStorageError(formatSwapError(error));
+          return;
+        }
       }
       const intentId = String(card.data.intentId ?? "");
       const patch = (status: string, extra?: Record<string, string>) => {
@@ -523,9 +532,7 @@ export function ChatThread({
           });
         }
       } catch (error) {
-        const detail =
-          error instanceof Error ? error.message : "Swap signing failed";
-        setStorageError(detail);
+        const detail = formatSwapError(error);
         patch("failed");
         if (intentId && isUuid(intentId)) {
           await supabase
@@ -550,7 +557,8 @@ export function ChatThread({
       }
       setStorageError(null);
       try {
-        const amount = 0.05;
+        const amount =
+          side === "buy" ? await suggestBuySol(wallet) : 0.05;
         const quote = await quoteDexSwap({ side, mint, amount });
         const card: MessageCard = {
           kind: "tx",
@@ -577,14 +585,12 @@ export function ChatThread({
             content:
               side === "sell"
                 ? `Sell preview for 0.05 of this token. Approve to sign with your OrbitX wallet.`
-                : `Buy preview for 0.05 SOL. Approve to sign with your OrbitX wallet.`,
+                : `Buy preview for ${amount} SOL. Approve to sign with your OrbitX wallet.`,
             cards: [card],
           },
         ]);
       } catch (error) {
-        setStorageError(
-          error instanceof Error ? error.message : "Could not quote this swap.",
-        );
+        setStorageError(formatSwapError(error));
       }
     },
     [wallet],

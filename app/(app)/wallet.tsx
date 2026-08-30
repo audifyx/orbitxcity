@@ -19,6 +19,7 @@ import {
   executeDexSwap,
   type TradeSide,
 } from "../../src/lib/dexTrade";
+import { formatSwapError } from "../../src/lib/swapGuard";
 import type { ExportPageStatus } from "../../src/lib/exportWallet";
 import { ORBITX_MINT } from "../../src/lib/portfolio";
 import {
@@ -156,7 +157,7 @@ export default function WalletScreen() {
         );
         await load();
       } catch (err) {
-        setTradeStatus(err instanceof Error ? err.message : "Trade failed.");
+        setTradeStatus(formatSwapError(err));
       } finally {
         setTradeBusy(false);
       }

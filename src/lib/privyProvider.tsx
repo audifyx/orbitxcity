@@ -5,6 +5,7 @@ import { PrivyProvider, useEmbeddedSolanaWallet, usePrivy } from "@privy-io/expo
 
 import { privyAppId, privyClientId, solanaRpcUrl } from "./env";
 import { setPrivySignOnly, setPrivyTransactionSigner } from "./privyTx";
+import { formatCaughtSwapError } from "./swapGuard";
 import { isSolanaPubkey } from "./wallets";
 
 let logoutPrivyImpl: (() => Promise<void>) | null = null;
@@ -47,23 +48,27 @@ function PrivySessionBinder({ children }: { children: ReactNode }) {
     }
 
     setPrivyTransactionSigner(async (transactionB64) => {
-      const provider = await wallet.getProvider();
-      const connection = new Connection(solanaRpcUrl, "confirmed");
-      const result = await provider.request({
-        method: "signAndSendTransaction",
-        params: {
-          transaction: decodeTransaction(transactionB64),
-          connection,
-        },
-      });
-      const signature =
-        result && typeof result === "object" && "signature" in result
-          ? String(result.signature)
-          : "";
-      if (!signature) {
-        throw new Error("Privy did not return a transaction signature.");
+      try {
+        const provider = await wallet.getProvider();
+        const connection = new Connection(solanaRpcUrl, "confirmed");
+        const result = await provider.request({
+          method: "signAndSendTransaction",
+          params: {
+            transaction: decodeTransaction(transactionB64),
+            connection,
+          },
+        });
+        const signature =
+          result && typeof result === "object" && "signature" in result
+            ? String(result.signature)
+            : "";
+        if (!signature) {
+          throw new Error("Privy did not return a transaction signature.");
+        }
+        return signature;
+      } catch (error) {
+        throw new Error(await formatCaughtSwapError(error));
       }
-      return signature;
     });
 
     setPrivySignOnly(async (transactionB64) => {
