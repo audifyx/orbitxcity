@@ -12,6 +12,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Circle, Line } from "react-native-svg";
 
 import { useAuth } from "../../src/lib/auth";
+import { privyAppId } from "../../src/lib/env";
+import { readPrivyDashboardStatus } from "../../src/lib/privyDashboard";
 import { colors } from "../../src/theme";
 
 function OrbitMark({ size = 56 }: { size?: number }) {
@@ -55,6 +57,21 @@ export default function ConnectScreen() {
 
   const [localError, setLocalError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
+
+  useEffect(() => {
+    const origin =
+      typeof window !== "undefined" && window.location?.origin
+        ? window.location.origin
+        : "";
+    void readPrivyDashboardStatus(privyAppId, origin)
+      .then((result) => {
+        if (result?.message) {
+          setLocalError(result.message);
+          setStatus(null);
+        }
+      })
+      .catch(() => undefined);
+  }, []);
 
   const handleSignIn = useCallback(async () => {
     setLocalError(null);

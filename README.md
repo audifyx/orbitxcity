@@ -37,13 +37,15 @@ Set these **public** variables on the Vercel project (Production + Preview):
 - `EXPO_PUBLIC_APP_URL` (`https://orbitxcity.vercel.app`)
 - `EXPO_PUBLIC_PRIVY_APP_ID` or `PRIVY_APP_ID` (public Privy App ID for email/phone login)
 
-In the Privy dashboard, enable email and SMS, then add these **Allowed origins** (HTTPS):
+In the Privy dashboard, email and SMS can already be on. The login modal still fails with **Something went wrong / Try again later** until **Allowed origins** match the live site exactly.
+
+Add these **HTTPS** origins under Configuration → App settings → Domains:
 
 - `https://orbitxcity.vercel.app`
 - `https://ogscan.fun`
 - `https://www.ogscan.fun`
 
-`http://orbitx.world` and `http://og-scan.fun` will not work for this site.
+Do **not** use `http://orbitx.world` or `http://og-scan.fun`. Those are the values currently on the Orbitx Privy app, and they do not match this site. Also set Solana embedded wallets → Create on login to all users.
 
 Never put `PRIVY_APP_SECRET` in `EXPO_PUBLIC_*` or the Expo client.
 

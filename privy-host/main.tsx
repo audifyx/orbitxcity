@@ -8,15 +8,16 @@ import {
 } from "@privy-io/react-auth/solana";
 import bs58 from "bs58";
 
+import {
+  formatPrivyOriginBlock,
+  readPrivyDashboardStatus,
+  REQUIRED_PRIVY_ORIGINS,
+} from "../src/lib/privyDashboard";
+
 const CHANNEL = "orbitx-privy-v1";
 const RESULT_KEY = "orbitx-privy-result";
 const ERROR_KEY = "orbitx-privy-error";
 const DEFAULT_APP_ID = "cmtdqdoj0043z0dlabgpr7l6g";
-const REQUIRED_ORIGINS = [
-  "https://orbitxcity.vercel.app",
-  "https://ogscan.fun",
-  "https://www.ogscan.fun",
-];
 const SUPABASE_URL = "https://ffjipnkhcebjvttliptb.supabase.co";
 const SUPABASE_ANON_KEY =
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZmamlwbmtoY2VianZ0dGxpcHRiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc1Mjc5NDgsImV4cCI6MjA5MzEwMzk0OH0.aXu8bbpVVwc8KOJf1-lHqO3cz_0GZD10_TE0GlKQ1BI";
@@ -35,7 +36,11 @@ function readParams(): HostParams {
 }
 
 function originBlockMessage(): string {
-  return `Privy blocked ${window.location.origin}. In the Privy dashboard open Configuration → App settings → Domains and add these HTTPS origins: ${REQUIRED_ORIGINS.join(", ")}. HTTP and og-scan.fun do not count.`;
+  return formatPrivyOriginBlock({
+    allowedDomains: [],
+    currentOrigin: window.location.origin,
+    requiredOriginsMissing: [...REQUIRED_PRIVY_ORIGINS],
+  });
 }
 
 function isOriginError(error: unknown): boolean {
@@ -388,12 +393,101 @@ function HostApp({ params }: { params: HostParams }) {
   );
 }
 
+function DashboardBlock({
+  message,
+  onRecheck,
+}: {
+  message: string;
+  onRecheck: () => void;
+}) {
+  return (
+    <div
+      style={{
+        minHeight: "100vh",
+        background: "#000",
+        color: "#f4f7ff",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 28,
+        gap: 16,
+        textAlign: "center",
+        fontFamily: "system-ui",
+      }}
+    >
+      <div style={{ fontSize: 22, fontWeight: 600 }}>Privy origin is wrong</div>
+      <div style={{ color: "rgba(176, 198, 232, 0.72)", lineHeight: 1.5, maxWidth: 460 }}>
+        {message}
+      </div>
+      <button
+        type="button"
+        onClick={onRecheck}
+        style={{
+          minHeight: 48,
+          minWidth: 220,
+          border: 0,
+          borderRadius: 14,
+          background: "#7EB6FF",
+          color: "#000",
+          fontSize: 16,
+          fontWeight: 500,
+          cursor: "pointer",
+        }}
+      >
+        I added the HTTPS origins
+      </button>
+    </div>
+  );
+}
+
 function Root() {
   const params = readParams();
+  const [dashboardError, setDashboardError] = useState<string | null | undefined>(
+    undefined,
+  );
+
+  const checkDashboard = (): void => {
+    setDashboardError(undefined);
+    void readPrivyDashboardStatus(params.appId, window.location.origin)
+      .then((status) => {
+        setDashboardError(status?.message ?? null);
+      })
+      .catch(() => {
+        setDashboardError(null);
+      });
+  };
+
+  useEffect(() => {
+    checkDashboard();
+  }, [params.appId]);
+
   if (!params.appId) {
     return (
       <div style={{ color: "#ff9a9a", padding: 28, fontFamily: "system-ui" }}>
         OrbitX is missing the Privy App ID on this build.
+      </div>
+    );
+  }
+
+  if (dashboardError) {
+    return <DashboardBlock message={dashboardError} onRecheck={checkDashboard} />;
+  }
+
+  if (dashboardError === undefined) {
+    return (
+      <div
+        style={{
+          minHeight: "100vh",
+          background: "#000",
+          color: "rgba(176, 198, 232, 0.72)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontFamily: "system-ui",
+        }}
+      >
+        Checking Privy dashboard settings…
       </div>
     );
   }
