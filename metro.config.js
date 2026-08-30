@@ -9,8 +9,14 @@ process.env.EXPO_ROUTER_APP_ROOT = process.env.EXPO_ROUTER_APP_ROOT || "./app";
 
 /** @type {import('expo/metro-config').MetroConfig} */
 const config = getDefaultConfig(__dirname);
-// Native Expo Go only. Do not serve a web app from Metro.
-config.resolver.platforms = ["android", "ios", "native"];
+const bundlerArgs = process.argv.join(" ");
+const isWebExport =
+  process.env.EXPO_OS === "web" ||
+  process.env.EAS_BUILD_PLATFORM === "web" ||
+  /\bweb\b/.test(bundlerArgs);
+if (!isWebExport) {
+  config.resolver.platforms = ["android", "ios", "native"];
+}
 config.resolver.unstable_enablePackageExports = true;
 const resolveRequest = config.resolver.resolveRequest;
 

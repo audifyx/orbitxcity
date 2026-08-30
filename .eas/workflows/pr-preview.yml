@@ -4,13 +4,11 @@ on:
   pull_request: {}
 
 jobs:
-  deploy:
-    type: deploy
-    name: Deploy PR preview
-    hooks:
-      after_install_node_modules:
-        - name: Bundle Privy host pages
-          run: npm run build:privy-host
   comment:
-    needs: [deploy]
     type: github-comment
+    name: Note Expo Go preview
+    params:
+      payload: |
+        OrbitX is an **Android Expo Go** app, not a website.
+
+        Sign-in, wallet, and swaps happen in Expo Go. Privy seed export opens the phone browser on the Vercel export page (`/export`).

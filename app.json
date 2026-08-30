@@ -5,7 +5,7 @@
     "owner": "orbitxworlds-team",
     "scheme": "orbitx",
     "version": "0.1.0",
-    "platforms": ["android", "ios"],
+    "platforms": ["android", "ios", "web"],
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",

@@ -1,13 +1,15 @@
-import { copyFileSync, existsSync, mkdirSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const dist = join(root, "dist");
+rmSync(dist, { recursive: true, force: true });
 mkdirSync(dist, { recursive: true });
 mkdirSync(join(dist, "export"), { recursive: true });
 
 const files = [
+  ["index.html", "index.html"],
   ["privy-host.html", "privy-host.html"],
   ["privy-host.js", "privy-host.js"],
   ["wallet-export.html", "wallet-export.html"],
