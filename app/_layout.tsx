@@ -71,6 +71,7 @@ function AuthGate({ children }: { children: ReactNode }) {
     const root = segments[0];
     const isAuthGroup = root === "(auth)";
     const isCallback = root === "onconnect" || root === "onsign" || root === "auth";
+    const isExport = root === "wallet-export" || pathname === "/wallet-export";
 
     if (session && (isAuthGroup || pathname === "/connect" || pathname === "/auth")) {
       router.replace("/");
@@ -81,7 +82,7 @@ function AuthGate({ children }: { children: ReactNode }) {
       return;
     }
 
-    if (!session && !isAuthGroup && !isCallback) {
+    if (!session && !isAuthGroup && !isCallback && !isExport) {
       router.replace("/connect");
     }
   }, [loading, session, segments, pathname, router]);
@@ -158,6 +159,7 @@ function RootLayoutInner() {
                   <Stack.Screen name="onconnect" />
                   <Stack.Screen name="onsign" />
                   <Stack.Screen name="auth" />
+                  <Stack.Screen name="wallet-export" />
                 </Stack>
                 {showSplash ? (
                   <SplashScreen onComplete={() => setShowSplash(false)} />

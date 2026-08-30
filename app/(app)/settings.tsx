@@ -301,8 +301,8 @@ export default function SettingsScreen() {
           Conversations are stored in your OrbitX account with RLS. Message
           contents are sent to the selected model provider to generate replies.
           OrbitX does not log prompt contents in application logs. Email and
-          phone sign-in create an in-app wallet. Private keys never leave that
-          wallet.
+          phone sign-in create an in-app Privy wallet. Exporting the secret key
+          is handled by Privy. OrbitX never receives or stores that key.
         </Text>
       </View>
     </ScrollView>

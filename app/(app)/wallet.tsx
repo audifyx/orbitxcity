@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -10,44 +11,27 @@ import {
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { ExportKeySheet } from "../../src/components/ExportKeySheet";
 import { useAuth } from "../../src/lib/auth";
-import { invokeFunction } from "../../src/lib/supabase";
+import { copyText } from "../../src/lib/clipboard";
+import type { ExportPageStatus } from "../../src/lib/exportWallet";
+import {
+  formatPnl,
+  formatTokenAmount,
+  formatUsd,
+  loadWalletSnapshot,
+  type WalletSnapshot,
+} from "../../src/lib/portfolio";
 import { colors } from "../../src/theme";
 
-type WalletSnapshot = {
-  solBalance?: number;
-  tokens?: Array<{
-    mint: string;
-    symbol: string;
-    balance: number;
-    usdValue?: number;
-  }>;
-  pnl24h?: number;
-  pnl7d?: number;
-};
-
-function truncateAddress(address: string): string {
-  if (address.length <= 12) {
-    return address;
+function formatExportResult(status: ExportPageStatus, error?: string): string {
+  if (status === "success") {
+    return "Privy closed the export window. OrbitX never received your key.";
   }
-  return `${address.slice(0, 4)}…${address.slice(-4)}`;
-}
-
-async function fetchWalletData(wallet: string): Promise<WalletSnapshot> {
-  const attempts = ["wallet-manager", "og-wallet", "pnl-scan"] as const;
-
-  for (const name of attempts) {
-    try {
-      const result = await invokeFunction(name, { wallet, action: "snapshot" });
-      if (typeof result === "object" && result !== null) {
-        return result as WalletSnapshot;
-      }
-    } catch {
-      continue;
-    }
+  if (status === "error") {
+    return error ?? "Privy could not export this wallet.";
   }
-
-  throw new Error("Wallet data unavailable from connected services.");
+  return "Export closed. Your key stayed in Privy.";
 }
 
 export default function WalletScreen() {
@@ -58,6 +42,9 @@ export default function WalletScreen() {
   const [snapshot, setSnapshot] = useState<WalletSnapshot | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportNote, setExportNote] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!wallet) {
@@ -68,7 +55,7 @@ export default function WalletScreen() {
     setLoading(true);
     setError(null);
     try {
-      const data = await fetchWalletData(wallet);
+      const data = await loadWalletSnapshot(wallet);
       setSnapshot(data);
     } catch (err) {
       setSnapshot(null);
@@ -92,6 +79,46 @@ export default function WalletScreen() {
     });
   }, [router, wallet]);
 
+  const copyAddress = useCallback(async () => {
+    if (!wallet) {
+      return;
+    }
+    const ok = await copyText(wallet);
+    if (!ok) {
+      setError("Could not copy this address.");
+      return;
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1600);
+  }, [wallet]);
+
+  const confirmExport = useCallback(() => {
+    Alert.alert(
+      "Export secret key",
+      "Privy will show your encoded secret key. OrbitX never receives it. Anyone with this key can take your funds.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Continue",
+          onPress: () => {
+            setExportNote(null);
+            setExportOpen(true);
+          },
+        },
+      ],
+    );
+  }, []);
+
+  const handleExportResult = useCallback(
+    (status: ExportPageStatus, exportError?: string) => {
+      setExportNote(formatExportResult(status, exportError));
+    },
+    [],
+  );
+
+  const tokens = snapshot?.tokens ?? [];
+  const pnlNegative = (snapshot?.pnl24h ?? 0) < 0;
+
   return (
     <ScrollView
       style={styles.root}
@@ -101,7 +128,10 @@ export default function WalletScreen() {
       ]}
     >
       <Text style={styles.title}>Wallet</Text>
-      <Text style={styles.subtitle}>Your OrbitX in-app wallet</Text>
+      <Text style={styles.subtitle}>
+        Email or phone created this Solana wallet in Privy. OrbitX only stores
+        the public address. The secret key never comes to our servers.
+      </Text>
 
       {!wallet ? (
         <View style={styles.card}>
@@ -113,64 +143,116 @@ export default function WalletScreen() {
       ) : (
         <>
           <View style={styles.card}>
-            <Text style={styles.cardKicker}>Connected</Text>
-            <Text style={styles.address}>{truncateAddress(wallet)}</Text>
+            <Text style={styles.cardKicker}>IN-APP · PRIVY</Text>
+            <Text style={styles.cardTitle}>Address</Text>
+            <Text selectable style={styles.fullAddress}>
+              {wallet}
+            </Text>
+            <Pressable
+              style={styles.copyBtn}
+              onPress={() => void copyAddress()}
+              accessibilityRole="button"
+              accessibilityLabel="Copy wallet address"
+            >
+              <Text style={styles.copyBtnText}>
+                {copied ? "Copied" : "Copy address"}
+              </Text>
+            </Pressable>
+          </View>
+
+          <View style={styles.card}>
+            <Text style={styles.cardKicker}>PORTFOLIO</Text>
             {loading ? (
               <ActivityIndicator color={colors.signal} style={styles.loader} />
             ) : error ? (
               <Text style={styles.errorText}>{error}</Text>
             ) : (
               <>
+                <Text style={styles.totalValue}>
+                  {formatUsd(snapshot?.totalUsd)}
+                </Text>
+                <Text style={styles.totalHint}>Estimated value</Text>
                 <View style={styles.statRow}>
                   <View style={styles.stat}>
                     <Text style={styles.statLabel}>SOL</Text>
                     <Text style={styles.statValue}>
-                      {snapshot?.solBalance?.toFixed(4) ?? "—"}
+                      {snapshot?.solBalance != null
+                        ? formatTokenAmount(snapshot.solBalance)
+                        : "—"}
                     </Text>
                   </View>
                   <View style={styles.stat}>
                     <Text style={styles.statLabel}>24h PnL</Text>
-                    <Text style={styles.statValue}>
-                      {snapshot?.pnl24h != null
-                        ? `${snapshot.pnl24h >= 0 ? "+" : ""}${snapshot.pnl24h.toFixed(2)}%`
-                        : "—"}
+                    <Text
+                      style={[
+                        styles.statValue,
+                        snapshot?.pnl24h != null
+                          ? pnlNegative
+                            ? styles.pnlDown
+                            : styles.pnlUp
+                          : null,
+                      ]}
+                    >
+                      {formatPnl(snapshot?.pnl24h)}
                     </Text>
                   </View>
                   <View style={styles.stat}>
                     <Text style={styles.statLabel}>7d PnL</Text>
                     <Text style={styles.statValue}>
-                      {snapshot?.pnl7d != null
-                        ? `${snapshot.pnl7d >= 0 ? "+" : ""}${snapshot.pnl7d.toFixed(2)}%`
-                        : "—"}
+                      {formatPnl(snapshot?.pnl7d)}
                     </Text>
                   </View>
                 </View>
-
-                <Text style={styles.sectionLabel}>Tokens</Text>
-                {(snapshot?.tokens ?? []).length === 0 ? (
-                  <Text style={styles.muted}>No token balances returned.</Text>
-                ) : (
-                  (snapshot?.tokens ?? []).map((token) => (
-                    <View key={token.mint} style={styles.tokenRow}>
-                      <Text style={styles.tokenSymbol}>{token.symbol}</Text>
-                      <Text style={styles.tokenBalance}>
-                        {token.balance.toLocaleString()}
-                        {token.usdValue != null
-                          ? ` · $${token.usdValue.toFixed(2)}`
-                          : ""}
-                      </Text>
-                    </View>
-                  ))
-                )}
               </>
             )}
           </View>
+
+          <View style={styles.card}>
+            <Text style={styles.cardKicker}>HOLDINGS</Text>
+            {loading ? (
+              <ActivityIndicator color={colors.signal} style={styles.loader} />
+            ) : tokens.length === 0 ? (
+              <Text style={styles.muted}>
+                No token balances yet. SOL and tokens you receive show up here.
+              </Text>
+            ) : (
+              tokens.map((token) => (
+                <View key={token.mint} style={styles.tokenRow}>
+                  <View style={styles.tokenMeta}>
+                    <Text style={styles.tokenSymbol}>{token.symbol}</Text>
+                    <Text selectable style={styles.tokenMint}>
+                      {token.mint}
+                    </Text>
+                  </View>
+                  <View style={styles.tokenAmounts}>
+                    <Text style={styles.tokenBalance}>
+                      {formatTokenAmount(token.balance)}
+                    </Text>
+                    <Text style={styles.tokenUsd}>
+                      {formatUsd(token.usdValue)}
+                    </Text>
+                  </View>
+                </View>
+              ))
+            )}
+          </View>
+
+          <Pressable style={styles.exportButton} onPress={confirmExport}>
+            <Text style={styles.exportButtonText}>Export key</Text>
+            <Text style={styles.exportButtonHint}>
+              Encoded in Privy. We never see it.
+            </Text>
+          </Pressable>
+
+          {exportNote ? (
+            <Text style={styles.exportNote}>{exportNote}</Text>
+          ) : null}
 
           <Pressable style={styles.primaryButton} onPress={askOrbitX}>
             <Text style={styles.primaryButtonText}>Ask OrbitX</Text>
           </Pressable>
 
-          <Pressable style={styles.secondaryButton} onPress={load}>
+          <Pressable style={styles.secondaryButton} onPress={() => void load()}>
             <Text style={styles.secondaryButtonText}>Refresh</Text>
           </Pressable>
 
@@ -180,6 +262,13 @@ export default function WalletScreen() {
           >
             <Text style={styles.dangerButtonText}>Log out</Text>
           </Pressable>
+
+          <ExportKeySheet
+            visible={exportOpen}
+            address={wallet}
+            onClose={() => setExportOpen(false)}
+            onResult={handleExportResult}
+          />
         </>
       )}
     </ScrollView>
@@ -204,6 +293,7 @@ const styles = StyleSheet.create({
     color: colors.mute,
     fontFamily: "Inter_400Regular",
     fontSize: 14,
+    lineHeight: 20,
     marginBottom: 4,
   },
   card: {
@@ -231,11 +321,27 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 20,
   },
-  address: {
+  fullAddress: {
     color: colors.frost,
     fontFamily: "SpaceGrotesk_600SemiBold",
-    fontSize: 22,
-    letterSpacing: 1,
+    fontSize: 15,
+    lineHeight: 22,
+    letterSpacing: 0.2,
+  },
+  copyBtn: {
+    alignSelf: "flex-start",
+    minHeight: 36,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.hairline,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  copyBtnText: {
+    color: colors.ice,
+    fontFamily: "Inter_500Medium",
+    fontSize: 13,
   },
   loader: {
     marginTop: 8,
@@ -244,6 +350,18 @@ const styles = StyleSheet.create({
     color: "#FF9A9A",
     fontFamily: "Inter_400Regular",
     fontSize: 14,
+    lineHeight: 20,
+  },
+  totalValue: {
+    color: colors.frost,
+    fontFamily: "SpaceGrotesk_600SemiBold",
+    fontSize: 32,
+  },
+  totalHint: {
+    color: colors.mute,
+    fontFamily: "Inter_400Regular",
+    fontSize: 12,
+    marginTop: -4,
   },
   statRow: {
     flexDirection: "row",
@@ -268,34 +386,81 @@ const styles = StyleSheet.create({
     fontSize: 16,
     marginTop: 4,
   },
-  sectionLabel: {
-    color: colors.mute,
-    fontFamily: "Inter_500Medium",
-    fontSize: 11,
-    letterSpacing: 1.4,
-    marginTop: 8,
+  pnlUp: {
+    color: colors.success,
+  },
+  pnlDown: {
+    color: colors.danger,
   },
   muted: {
     color: colors.mute,
     fontFamily: "Inter_400Regular",
     fontSize: 14,
+    lineHeight: 20,
   },
   tokenRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    paddingVertical: 8,
+    gap: 12,
+    paddingVertical: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.hairline,
+  },
+  tokenMeta: {
+    flex: 1,
+    gap: 4,
   },
   tokenSymbol: {
     color: colors.frost,
     fontFamily: "Inter_500Medium",
-    fontSize: 14,
+    fontSize: 15,
   },
-  tokenBalance: {
+  tokenMint: {
     color: colors.mute,
     fontFamily: "Inter_400Regular",
+    fontSize: 11,
+  },
+  tokenAmounts: {
+    alignItems: "flex-end",
+    gap: 4,
+  },
+  tokenBalance: {
+    color: colors.frost,
+    fontFamily: "Inter_500Medium",
+    fontSize: 14,
+  },
+  tokenUsd: {
+    color: colors.mute,
+    fontFamily: "Inter_400Regular",
+    fontSize: 12,
+  },
+  exportButton: {
+    minHeight: 56,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(126, 182, 255, 0.35)",
+    backgroundColor: "rgba(126, 182, 255, 0.1)",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 16,
+    gap: 2,
+  },
+  exportButtonText: {
+    color: colors.ice,
+    fontFamily: "Inter_500Medium",
+    fontSize: 16,
+  },
+  exportButtonHint: {
+    color: colors.mute,
+    fontFamily: "Inter_400Regular",
+    fontSize: 12,
+  },
+  exportNote: {
+    color: colors.mist,
+    fontFamily: "Inter_400Regular",
     fontSize: 13,
+    lineHeight: 18,
+    textAlign: "center",
   },
   primaryButton: {
     minHeight: 48,
