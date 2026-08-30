@@ -1,0 +1,17 @@
+name: Deploy web
+
+on:
+  push:
+    branches: ["main"]
+
+jobs:
+  deploy:
+    type: deploy
+    name: Deploy OrbitX web
+    environment: production
+    params:
+      prod: true
+    hooks:
+      after_install_node_modules:
+        - name: Bundle Privy host pages
+          run: npm run build:privy-host

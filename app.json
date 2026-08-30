@@ -38,6 +38,11 @@
       "bundler": "metro",
       "output": "single"
     },
+    "extra": {
+      "eas": {
+        "projectId": "d3034f0d-841d-41c2-9435-b83b501c685a"
+      }
+    },
     "plugins": [
       "expo-dev-client",
       "expo-font",

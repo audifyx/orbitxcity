@@ -68,6 +68,9 @@
     "web": "expo start --web",
     "build:privy-host": "node scripts/build-privy-host.mjs",
     "build:web": "npm run build:privy-host && EXPO_NO_METRO_LAZY=1 expo export -p web && node scripts/copy-web-static.mjs",
+    "deploy:web": "npm run build:web && eas deploy --dev-domain orbitx",
+    "deploy:web:prod": "npm run build:web && eas deploy --prod --dev-domain orbitx",
+    "eas:init": "eas init --id d3034f0d-841d-41c2-9435-b83b501c685a --non-interactive",
     "typecheck": "tsc --noEmit"
   },
   "private": true

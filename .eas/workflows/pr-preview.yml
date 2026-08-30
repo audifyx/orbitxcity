@@ -1,0 +1,16 @@
+name: Web PR preview
+
+on:
+  pull_request: {}
+
+jobs:
+  deploy:
+    type: deploy
+    name: Deploy PR preview
+    hooks:
+      after_install_node_modules:
+        - name: Bundle Privy host pages
+          run: npm run build:privy-host
+  comment:
+    needs: [deploy]
+    type: github-comment
