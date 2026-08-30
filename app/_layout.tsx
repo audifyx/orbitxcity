@@ -15,8 +15,10 @@ import { SpaceGrotesk_600SemiBold } from "@expo-google-fonts/space-grotesk";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
-import { AuthProvider, useAuth } from "../src/lib/auth";
+import ConnectScreen from "./(auth)/connect";
+import { AuthProvider } from "../src/lib/auth";
 import { OrbitxPrivyProvider } from "../src/lib/privyProvider";
+import { useUnlockedSession } from "../src/lib/sessionGate";
 import { SplashScreen } from "../src/screens/SplashScreen";
 import { colors } from "../src/theme";
 
@@ -61,14 +63,26 @@ class BootErrorBoundary extends Component<
   }
 }
 
+function LoginLock() {
+  const { unlocked, waiting } = useUnlockedSession();
+  if (unlocked) {
+    return null;
+  }
+  return (
+    <View style={styles.lock} pointerEvents="auto">
+      {waiting ? <View style={styles.boot} /> : <ConnectScreen />}
+    </View>
+  );
+}
+
 function AuthGate({ children }: { children: ReactNode }) {
-  const { signedIn, loading } = useAuth();
+  const { unlocked, waiting } = useUnlockedSession();
   const segments = useSegments();
   const pathname = usePathname();
   const router = useRouter();
 
   useEffect(() => {
-    if (loading) {
+    if (waiting) {
       return;
     }
 
@@ -79,17 +93,22 @@ function AuthGate({ children }: { children: ReactNode }) {
     const onLogin =
       isAuthGroup || pathname === "/connect" || pathname === "/auth";
 
-    if (signedIn && onLogin) {
+    if (unlocked && onLogin) {
       router.replace("/");
       return;
     }
 
-    if (!signedIn && !onLogin && !isCallback && !isExport) {
+    if (!unlocked && !onLogin && !isCallback && !isExport) {
       router.replace("/connect");
     }
-  }, [loading, signedIn, segments, pathname, router]);
+  }, [waiting, unlocked, segments, pathname, router]);
 
-  return <>{children}</>;
+  return (
+    <>
+      {children}
+      <LoginLock />
+    </>
+  );
 }
 
 function RootLayoutInner() {
@@ -191,6 +210,11 @@ const styles = StyleSheet.create({
   flex: {
     flex: 1,
     backgroundColor: colors.void,
+  },
+  lock: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: colors.void,
+    zIndex: 50,
   },
   crash: {
     flex: 1,

@@ -14,7 +14,7 @@ import {
 } from "react-native-safe-area-context";
 
 import { Sidebar, type NavRoute } from "../../src/components";
-import { useAuth } from "../../src/lib/auth";
+import { useUnlockedSession } from "../../src/lib/sessionGate";
 import { supabase } from "../../src/lib/supabase";
 import { colors } from "../../src/theme";
 
@@ -64,7 +64,7 @@ export default function AppLayout() {
   const pathname = usePathname();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { signedIn, loading } = useAuth();
+  const { unlocked, waiting } = useUnlockedSession();
   const isDesktop = width >= DESKTOP_BREAKPOINT;
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [conversations, setConversations] = useState<
@@ -72,10 +72,10 @@ export default function AppLayout() {
   >([]);
 
   useEffect(() => {
-    if (!loading && !signedIn) {
+    if (!waiting && !unlocked) {
       router.replace("/connect");
     }
-  }, [loading, router, signedIn]);
+  }, [waiting, router, unlocked]);
 
   useEffect(() => {
     let cancelled = false;
@@ -130,7 +130,7 @@ export default function AppLayout() {
     />
   );
 
-  if (loading || !signedIn) {
+  if (waiting || !unlocked) {
     return <View style={styles.root} />;
   }
 

@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Circle, Line } from "react-native-svg";
 
 import { InAppSignIn } from "../../src/components/InAppSignIn";
-import { useAuth } from "../../src/lib/auth";
+import { useUnlockedSession } from "../../src/lib/sessionGate";
 import { colors } from "../../src/theme";
 
 function OrbitMark({ size = 56 }: { size?: number }) {
@@ -45,13 +45,13 @@ function OrbitMark({ size = 56 }: { size?: number }) {
 export default function ConnectScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { signedIn } = useAuth();
+  const { unlocked } = useUnlockedSession();
 
   useEffect(() => {
-    if (signedIn) {
+    if (unlocked) {
       router.replace("/");
     }
-  }, [router, signedIn]);
+  }, [router, unlocked]);
 
   return (
     <ScrollView

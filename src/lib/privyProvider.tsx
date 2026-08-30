@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, type ReactNode } from "react";
 import { Buffer } from "buffer";
 import { Connection, Transaction, VersionedTransaction } from "@solana/web3.js";
 import { PrivyProvider, useEmbeddedSolanaWallet, usePrivy } from "@privy-io/expo";
@@ -7,6 +7,22 @@ import { privyAppId, privyClientId, solanaRpcUrl } from "./env";
 import { setPrivySignOnly, setPrivyTransactionSigner } from "./privyTx";
 import { formatCaughtSwapError } from "./swapGuard";
 import { isSolanaPubkey } from "./wallets";
+
+type PrivyAuthState = {
+  configured: boolean;
+  ready: boolean;
+  authenticated: boolean;
+};
+
+const PrivyAuthContext = createContext<PrivyAuthState>({
+  configured: false,
+  ready: true,
+  authenticated: true,
+});
+
+export function usePrivyAuthState(): PrivyAuthState {
+  return useContext(PrivyAuthContext);
+}
 
 let logoutPrivyImpl: (() => Promise<void>) | null = null;
 
@@ -27,8 +43,16 @@ function decodeTransaction(transactionB64: string): Transaction | VersionedTrans
 }
 
 function PrivySessionBinder({ children }: { children: ReactNode }) {
-  const { logout } = usePrivy();
+  const { logout, user, isReady } = usePrivy();
   const solana = useEmbeddedSolanaWallet();
+  const authState = useMemo<PrivyAuthState>(
+    () => ({
+      configured: true,
+      ready: isReady,
+      authenticated: Boolean(user),
+    }),
+    [isReady, user],
+  );
 
   useEffect(() => {
     logoutPrivyImpl = logout;
@@ -106,12 +130,22 @@ function PrivySessionBinder({ children }: { children: ReactNode }) {
     };
   }, [solana.wallets]);
 
-  return <>{children}</>;
+  return (
+    <PrivyAuthContext.Provider value={authState}>
+      {children}
+    </PrivyAuthContext.Provider>
+  );
 }
 
 export function OrbitxPrivyProvider({ children }: { children: ReactNode }) {
   if (!privyAppId) {
-    return <>{children}</>;
+    return (
+      <PrivyAuthContext.Provider
+        value={{ configured: false, ready: true, authenticated: true }}
+      >
+        {children}
+      </PrivyAuthContext.Provider>
+    );
   }
 
   return (
