@@ -84,6 +84,7 @@ const KNOWN_TOOLS = [
   "pumpfun-migrations",
   "launch-coin",
   "nft-mint",
+  "nft-execute-sale",
 ];
 
 const cors = {
@@ -108,7 +109,7 @@ type ToolEvent = {
   detail?: string;
 };
 type ChatCard = {
-  kind: "token" | "wallet" | "tx";
+  kind: "token" | "wallet" | "tx" | "launch" | "nft";
   title: string;
   data: Record<string, unknown>;
 };
@@ -368,14 +369,21 @@ function extractMentions(message: string): string[] {
 function wantsTools(message: string, mentions: string[]): boolean {
   if (mentions.length > 0) return true;
   if (ASK_FOR_TOOLS.test(message)) return true;
+  if (CREATE_LAUNCH_VERBS.test(message) || MINT_NFT_VERBS.test(message)) return true;
+  if (/\b(buy|sell|swap|trade|quote|portfolio|holdings|balance|wallet)\b/i.test(message)) {
+    return true;
+  }
   return extractAddresses(message).length > 0;
 }
 
 function wantsFullReport(message: string): boolean {
-  return extractAddresses(message).length > 0 && (
+  if (extractAddresses(message).length === 0) return false;
+  if (/\b(wallet|holdings|portfolio|pnl|balance|my bag)\b/i.test(message)) {
+    return false;
+  }
+  return (
     TELL_ABOUT.test(message) ||
-    /\b(scan|analyze|analyse|report|token|ca\b|mint)\b/i.test(message) ||
-    extractAddresses(message).length > 0
+    /\b(scan|analyze|analyse|report|token|ca\b|mint)\b/i.test(message)
   );
 }
 
@@ -403,7 +411,10 @@ function planTools(message: string, intentHint?: string): string[] {
   if (/\b(launch|pump\.?fun|migrat)/.test(lower) && !CREATE_LAUNCH_VERBS.test(message)) {
     tools.push("pumpfun-migrations", "migration-watch", "token-data");
   }
-  if (addresses.length > 0 || /\b(token|scan|analyze|ca\b|mint|tell me about)\b/.test(lower)) {
+  if (
+    !wallet &&
+    (addresses.length > 0 || /\b(token|scan|ca\b|mint|tell me about)\b/.test(lower))
+  ) {
     tools.push(...FULL_TOKEN_REPORT);
   }
   if (intentHint === "analyze_token") tools.push(...FULL_TOKEN_REPORT);
@@ -594,12 +605,24 @@ function payloadForTool(
     return { wallet, mint };
   }
   if (toolId === "jupiter-quote") {
+    const selling = /\bsell\b/i.test(message);
     const sol = parseSolAmount(message) ?? 0.1;
+    const amount = Math.round(sol * 1_000_000_000);
+    if (selling && mint) {
+      return {
+        inputMint: mint,
+        outputMint: SOL_MINT,
+        amount,
+        slippageBps: 50,
+        side: "sell",
+      };
+    }
     return {
       inputMint: SOL_MINT,
       outputMint: mint ?? SOL_MINT,
-      amount: Math.round(sol * 1_000_000_000),
+      amount,
       slippageBps: 50,
+      side: "buy",
     };
   }
   if (toolId === "jupiter-price") {
@@ -620,7 +643,10 @@ function payloadForTool(
     return { mint: mint ?? message };
   }
   if (toolId === "wallet-manager") {
-    return { action: "get_balance", wallet_address: wallet };
+    return {
+      action: "get_balance",
+      wallet_address: wallet,
+    };
   }
   if (toolId === "solana-tracker") {
     return { wallet_address: wallet };
@@ -926,7 +952,7 @@ function speakFromResults(
     const url = pickStr(launch.openUrl) ?? "https://pump.fun/create";
     return [
       `Launch draft for ${name}${symbol ? ` ($${symbol})` : ""}. Nothing was broadcast.`,
-      `Open ${url} and sign the create tx in Phantom. I still need an image plus optional twitter/telegram if you want the metadata packed.`,
+      `Approve the create card in chat or open Launch. Your OrbitX wallet signs the pump.fun create.`,
       pickStr(launch.note) ?? "A live launch only happens after your wallet signature.",
     ].join(" ");
   }
@@ -935,7 +961,7 @@ function speakFromResults(
     const name = pickStr(nft.name) ?? "your NFT";
     return [
       `NFT mint draft for ${name}. Nothing is minted yet.`,
-      "You sign a Metaplex create in your wallet. I need name, symbol, and a metadata URI (or image) before we can build the unsigned tx.",
+      "Approve the mint card in chat or open NFTs. Your OrbitX wallet signs the 1/1 create.",
       pickStr(nft.openUrl) ?? "Use the OrbitX NFT hub when you're ready to sign.",
     ].join(" ");
   }
@@ -1181,7 +1207,7 @@ Deno.serve(async (req) => {
     const toolEvents: ToolEvent[] = toolIds.map((toolId) => ({
       id: `tool_${toolId}`,
       toolId,
-      label: toolId.replace(/-/g, " "),
+      label: toolId.replace(/-/g, " ").replace(/\b\w/g, (char) => char.toUpperCase()),
       status: "running" as const,
     }));
     const results: unknown[] = new Array(toolIds.length);
@@ -1230,14 +1256,16 @@ Deno.serve(async (req) => {
               note: quote.note,
             };
             cards.push({
-              kind: "tx",
-              title: toolId === "launch-coin" ? "Launch draft" : "NFT mint draft",
+              kind: toolId === "launch-coin" ? "launch" : "nft",
+              title: toolId === "launch-coin" ? "Launch on pump.fun" : "Mint NFT",
               data: {
                 status: "preview",
                 name: draft.name ?? "",
                 symbol: draft.symbol ?? "",
+                description: draft.description ?? "",
                 openUrl,
                 intentId: intentRow?.id ?? "",
+                side: toolId === "launch-coin" ? "launch" : "nft",
               },
             });
           } else {
@@ -1271,8 +1299,9 @@ Deno.serve(async (req) => {
                   route: hops > 0 ? `${hops} hop Jupiter` : "Jupiter",
                   intentId: intentRow?.id ?? "",
                   quoteJson: JSON.stringify(compact(quote)),
-                  inputMint: SOL_MINT,
-                  outputMint: addresses[0] ?? SOL_MINT,
+                  inputMint: String(quote.inputMint ?? payload.inputMint ?? SOL_MINT),
+                  outputMint: String(quote.outputMint ?? payload.outputMint ?? SOL_MINT),
+                  side: String(payload.side ?? "buy"),
                 },
               });
             } else {
