@@ -78,6 +78,7 @@ export function DexScreen() {
         side: nextSide,
         mint: mint.trim(),
         amount: tradeAmount,
+        quote,
       });
       setStatus(`${result.route} ${nextSide} · ${result.signature}`);
     } catch (error) {

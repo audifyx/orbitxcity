@@ -41,6 +41,7 @@ import { readAutoApproveBuys, writeAutoApproveBuys } from "../lib/autoApprove";
 import { quoteDexSwap, quoteFromPreview, SOL_MINT } from "../lib/dexTrade";
 import {
   fetchSwapTransaction,
+  parseQuoteJson,
   signAndSendSwapTransaction,
   waitForSignature,
 } from "../lib/jupiter";
@@ -445,28 +446,28 @@ export function ChatThread({
         setStorageError("Sign in before signing a swap.");
         return;
       }
-      let quote;
+      const previewArgs = {
+        inputMint: String(card.data.inputMint ?? ""),
+        outputMint: String(card.data.outputMint ?? ""),
+        inAmount: String(card.data.inAmount ?? ""),
+        mint: String(card.data.mint ?? card.data.outputMint ?? card.data.inputMint ?? ""),
+        side: String(card.data.side ?? "buy"),
+        amount:
+          typeof card.data.amount === "number" ? card.data.amount : undefined,
+      };
+      let quote = parseQuoteJson(card.data.quoteJson);
+      const usedCardQuote = Boolean(quote);
       try {
-        quote = await quoteFromPreview({
-          inputMint: String(card.data.inputMint ?? ""),
-          outputMint: String(card.data.outputMint ?? ""),
-          inAmount: String(card.data.inAmount ?? ""),
-          mint: String(card.data.mint ?? card.data.outputMint ?? card.data.inputMint ?? ""),
-          side: String(card.data.side ?? "buy"),
-          amount:
-            typeof card.data.amount === "number" ? card.data.amount : undefined,
-        });
+        if (!quote) {
+          quote = await quoteFromPreview(previewArgs);
+        }
       } catch (error) {
         setStorageError(formatSwapError(error));
         return;
       }
-      if (quote.inputMint === SOL_MINT) {
-        try {
-          await assertCanAffordBuy(wallet, Number(quote.inAmount) / 1e9);
-        } catch (error) {
-          setStorageError(formatSwapError(error));
-          return;
-        }
+      if (!quote) {
+        setStorageError("No Jupiter quote to sign.");
+        return;
       }
       const intentId = String(card.data.intentId ?? "");
       const patch = (status: string, extra?: Record<string, string>) => {
@@ -480,10 +481,34 @@ export function ChatThread({
 
       patch("awaiting_signature");
       try {
-        const swapTx = await fetchSwapTransaction({
-          quoteResponse: quote,
-          userPublicKey: wallet,
-        });
+        const buildSwap = async () => {
+          if (!quote) {
+            throw new Error("No Jupiter quote to sign.");
+          }
+          const afford =
+            quote.inputMint === SOL_MINT
+              ? assertCanAffordBuy(wallet, Number(quote.inAmount) / 1e9)
+              : Promise.resolve();
+          const [, swapTx] = await Promise.all([
+            afford,
+            fetchSwapTransaction({
+              quoteResponse: quote,
+              userPublicKey: wallet,
+            }),
+          ]);
+          return swapTx;
+        };
+
+        let swapTx: string;
+        try {
+          swapTx = await buildSwap();
+        } catch (error) {
+          if (!usedCardQuote) {
+            throw error;
+          }
+          quote = await quoteFromPreview(previewArgs);
+          swapTx = await buildSwap();
+        }
         patch("submitted");
         const signature = await signAndSendSwapTransaction(swapTx);
         if (intentId && isUuid(intentId)) {
@@ -492,48 +517,30 @@ export function ChatThread({
             .update({ status: "submitted", signature })
             .eq("id", intentId);
         }
-        patch("confirming", { signature });
-
-        const markOutcome = async (
-          next: "confirmed" | "failed" | "pending",
-        ) => {
-          if (next === "confirmed") {
-            if (intentId && isUuid(intentId)) {
-              await supabase
-                .from("orbitx_ai_transaction_intents")
-                .update({ status: "confirmed" })
-                .eq("id", intentId);
+        patch("confirmed", { signature });
+        if (intentId && isUuid(intentId)) {
+          void supabase
+            .from("orbitx_ai_transaction_intents")
+            .update({ status: "confirmed" })
+            .eq("id", intentId);
+        }
+        void waitForSignature(signature, { attempts: 20, intervalMs: 400 }).then(
+          (outcome) => {
+            if (outcome !== "failed") {
+              return;
             }
-            patch("confirmed", { signature });
-            return;
-          }
-          if (next === "failed") {
+            patch("failed", { signature });
             if (intentId && isUuid(intentId)) {
-              await supabase
+              void supabase
                 .from("orbitx_ai_transaction_intents")
                 .update({ status: "failed", error_code: "rpc_err" })
                 .eq("id", intentId);
             }
-            patch("failed", { signature });
-          }
-        };
-
-        let outcome = await waitForSignature(signature, {
-          attempts: 24,
-          intervalMs: 2000,
-        });
-        await markOutcome(outcome);
-        if (outcome === "pending") {
-          patch("confirming", { signature });
-          void waitForSignature(signature, {
-            attempts: 30,
-            intervalMs: 3000,
-          }).then((later) => {
-            void markOutcome(later);
-          });
-        }
+          },
+        );
       } catch (error) {
         const detail = formatSwapError(error);
+        setStorageError(detail);
         patch("failed");
         if (intentId && isUuid(intentId)) {
           await supabase

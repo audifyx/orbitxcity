@@ -108,11 +108,11 @@ async function fetchJupiterJson(
   init?: RequestInit,
 ): Promise<{ ok: boolean; status: number; json: unknown }> {
   let lastStatus = 0;
-  for (let attempt = 0; attempt < 4; attempt += 1) {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
     const response = await fetch(url, init);
     lastStatus = response.status;
     if (response.status === 429 || response.status === 503) {
-      await sleep(500 * 2 ** attempt);
+      await sleep(200 * 2 ** attempt);
       continue;
     }
     const json: unknown = await response.json().catch(() => null);
@@ -203,7 +203,12 @@ export async function fetchSwapTransaction(params: {
       userPublicKey: params.userPublicKey,
       wrapAndUnwrapSol: true,
       dynamicComputeUnitLimit: true,
-      prioritizationFeeLamports: "auto",
+      prioritizationFeeLamports: {
+        priorityLevelWithMaxLamports: {
+          maxLamports: 2_000_000,
+          priorityLevel: "veryHigh",
+        },
+      },
     }),
   });
   const rec = asRecord(json);
@@ -334,8 +339,8 @@ export async function waitForSignature(
   signature: string,
   options?: { attempts?: number; intervalMs?: number },
 ): Promise<SignatureOutcome> {
-  const attempts = options?.attempts ?? 24;
-  const intervalMs = options?.intervalMs ?? 2000;
+  const attempts = options?.attempts ?? 12;
+  const intervalMs = options?.intervalMs ?? 400;
   if (attempts < 1) {
     return "pending";
   }

@@ -50,7 +50,7 @@ function PrivySessionBinder({ children }: { children: ReactNode }) {
     setPrivyTransactionSigner(async (transactionB64) => {
       try {
         const provider = await wallet.getProvider();
-        const connection = new Connection(solanaRpcUrl, "confirmed");
+        const connection = new Connection(solanaRpcUrl, "processed");
         const result = await provider.request({
           method: "signAndSendTransaction",
           params: {

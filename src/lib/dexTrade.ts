@@ -64,17 +64,27 @@ export async function executeDexSwap(input: {
   side: TradeSide;
   mint: string;
   amount: number;
+  quote?: JupiterQuote;
 }): Promise<ExecutedTrade> {
   if (!isSolanaPubkey(input.wallet)) {
     throw new Error("Sign in before trading.");
   }
-  if (input.side === "buy") {
-    await assertCanAffordBuy(input.wallet, input.amount);
-  }
+
+  const quotePromise = input.quote
+    ? Promise.resolve(input.quote)
+    : quoteDexSwap(input);
 
   let quote: JupiterQuote;
   try {
-    quote = await quoteDexSwap(input);
+    if (input.side === "buy") {
+      const [, nextQuote] = await Promise.all([
+        assertCanAffordBuy(input.wallet, input.amount),
+        quotePromise,
+      ]);
+      quote = nextQuote;
+    } else {
+      quote = await quotePromise;
+    }
   } catch (error) {
     if (input.side === "buy" && isNoRouteError(error)) {
       const signature = await pumpCurveTrade({
@@ -104,13 +114,13 @@ export async function executeDexSwap(input: {
       userPublicKey: input.wallet,
     });
     const signature = await signAndSendSwapTransaction(swapTx);
-    const outcome = await waitForSignature(signature, {
-      attempts: 24,
-      intervalMs: 2000,
-    });
-    if (outcome === "failed") {
-      throw new Error("Jupiter swap landed as failed.");
-    }
+    void waitForSignature(signature, { attempts: 20, intervalMs: 400 }).then(
+      (outcome) => {
+        if (outcome === "failed") {
+          console.warn("swap landed failed", signature);
+        }
+      },
+    );
     return { signature, quote, route: "jupiter" };
   } catch (error) {
     throw new Error(formatSwapError(error));
