@@ -71,6 +71,7 @@ export async function readPrivyDashboardStatus(
   const response = await fetch(
     `https://auth.privy.io/api/v1/apps/${encodeURIComponent(privyAppId)}`,
     {
+      cache: "no-store",
       headers: {
         "privy-app-id": privyAppId,
       },
@@ -97,7 +98,7 @@ export async function readPrivyDashboardStatus(
   );
   const originAllowed = currentOrigin
     ? isOriginListed(allowedDomains, currentOrigin)
-    : requiredOriginsMissing.length === 0;
+    : isOriginListed(allowedDomains, "https://orbitxcity.vercel.app");
   const status: PrivyDashboardStatus = {
     allowedDomains,
     emailAuth: data.email_auth === true,
@@ -109,12 +110,8 @@ export async function readPrivyDashboardStatus(
     message: null,
   };
 
-  if (!originAllowed || requiredOriginsMissing.length > 0) {
+  if (!originAllowed) {
     status.message = formatPrivyOriginBlock(status);
-    if (solanaCreateOnLogin === "off") {
-      status.message +=
-        " Also set Solana embedded wallets → Create on login to all users, or OrbitX cannot create the in-app wallet after the code.";
-    }
   }
 
   return status;
