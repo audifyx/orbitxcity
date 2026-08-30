@@ -12,6 +12,30 @@ const config = getDefaultConfig(__dirname);
 config.resolver.unstable_enablePackageExports = true;
 const resolveRequest = config.resolver.resolveRequest;
 
+const WEB_ONLY_NATIVE_STUB = path.resolve(
+  __dirname,
+  "src/lib/webOnlyNativeStub.js",
+);
+
+function isNativePlatform(platform) {
+  return platform === "android" || platform === "ios" || platform === "native";
+}
+
+function isWebOnlyNativeRequest(moduleName) {
+  if (
+    moduleName === "@privy-io/react-auth" ||
+    moduleName.startsWith("@privy-io/react-auth/")
+  ) {
+    return true;
+  }
+  const clean = moduleName.split("?")[0].replace(/\\/g, "/");
+  return (
+    clean.endsWith("app/wallet-export.web.tsx") ||
+    clean.endsWith("./wallet-export.web.tsx") ||
+    clean.endsWith("/wallet-export.web.tsx")
+  );
+}
+
 const SPL_TOKEN_CJS_ENTRY = {
   "@solana/spl-token": "node_modules/@solana/spl-token/lib/cjs/index.js",
   "@solana/spl-token-group":
@@ -59,6 +83,10 @@ function resolveSplTokenRelative(originModulePath, moduleName) {
 }
 
 config.resolver.resolveRequest = (context, moduleName, platform) => {
+  if (isNativePlatform(platform) && isWebOnlyNativeRequest(moduleName)) {
+    return { type: "sourceFile", filePath: WEB_ONLY_NATIVE_STUB };
+  }
+
   const cjsEntry = SPL_TOKEN_CJS_ENTRY[moduleName];
   if (cjsEntry) {
     const filePath = fileIfExists(path.resolve(__dirname, cjsEntry));
