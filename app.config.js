@@ -28,11 +28,12 @@ module.exports = {
           "PRIVY_APP_KEY",
           "EXPO_PUBLIC_PRIVY_APP_KEY",
         ) || "cmtdqdoj0043z0dlabgpr7l6g",
-      privyClientId: firstEnv(
-        "EXPO_PUBLIC_PRIVY_CLIENT_ID",
-        "PRIVY_CLIENT_ID",
-        "NEXT_PUBLIC_PRIVY_CLIENT_ID",
-      ),
+      privyClientId:
+        firstEnv(
+          "EXPO_PUBLIC_PRIVY_CLIENT_ID",
+          "PRIVY_CLIENT_ID",
+          "NEXT_PUBLIC_PRIVY_CLIENT_ID",
+        ) || "client-WY6d51URNrCLTaW9hz1DP9wfMfug2yHPz1ZAa1YRwwsbN",
     },
   },
 };

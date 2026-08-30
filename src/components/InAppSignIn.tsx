@@ -74,12 +74,12 @@ function friendlyPrivyError(error: unknown): string {
   if (
     lower.includes("app identifier") ||
     lower.includes("application identifier") ||
-    lower.includes("client id") ||
-    lower.includes("client_id") ||
-    lower.includes("allowed_native") ||
-    lower.includes("invalid origin")
+    lower.includes("allowed_native")
   ) {
-    return "Privy is not set up for Expo Go yet. In the Privy dashboard Clients tab, add app identifiers host.exp.Exponent and ai.orbitx.app, URL schemes exp and orbitx, then set EXPO_PUBLIC_PRIVY_CLIENT_ID. Stay in this app.";
+    return "This Expo Go build is not on the OrbitX Privy client yet. Stay in the app and try again.";
+  }
+  if (lower.includes("invalid origin")) {
+    return "Sign-in stays in this app. Reload Expo Go and send the code again.";
   }
   return message;
 }

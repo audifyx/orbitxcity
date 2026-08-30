@@ -26,7 +26,7 @@ In the Privy dashboard, this is one-time mobile setup (not a login redirect):
 - Configuration → App settings → **Clients**: add an Expo app client
 - Allowed app identifiers: `host.exp.Exponent` (Expo Go) and `ai.orbitx.app`
 - Allowed URL schemes: `exp` and `orbitx`
-- Put the public client ID in `EXPO_PUBLIC_PRIVY_CLIENT_ID`
+- Public client ID is already in the app (`client-WY6d51URNrCLTaW9hz1DP9wfMfug2yHPz1ZAa1YRwwsbN`)
 - Email and SMS login on
 - Solana embedded wallets → Create on login → all users
 
