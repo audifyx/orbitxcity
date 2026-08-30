@@ -38,12 +38,13 @@ import {
 } from "../components";
 import { useAuth } from "../lib/auth";
 import { readAutoApproveBuys, writeAutoApproveBuys } from "../lib/autoApprove";
+import { quoteDexSwap, quoteFromPreview } from "../lib/dexTrade";
 import {
   confirmSignature,
   fetchSwapTransaction,
-  parseQuoteJson,
   signAndSendSwapTransaction,
 } from "../lib/jupiter";
+import { isSolanaPubkey } from "../lib/wallets";
 import { mintOrbitxNft } from "../lib/nftMarket";
 import { createPumpToken } from "../lib/pumpfun";
 import {
@@ -438,9 +439,23 @@ export function ChatThread({
         setStorageError("Sign in before signing a swap.");
         return;
       }
-      const quote = parseQuoteJson(card.data.quoteJson);
-      if (!quote) {
-        setStorageError("This preview has no Jupiter quote payload to sign.");
+      let quote;
+      try {
+        quote = await quoteFromPreview({
+          inputMint: String(card.data.inputMint ?? ""),
+          outputMint: String(card.data.outputMint ?? ""),
+          inAmount: String(card.data.inAmount ?? ""),
+          mint: String(card.data.mint ?? card.data.outputMint ?? card.data.inputMint ?? ""),
+          side: String(card.data.side ?? "buy"),
+          amount:
+            typeof card.data.amount === "number" ? card.data.amount : undefined,
+        });
+      } catch (error) {
+        setStorageError(
+          error instanceof Error
+            ? error.message
+            : "Could not fetch a Jupiter quote to sign.",
+        );
         return;
       }
       const intentId = String(card.data.intentId ?? "");
@@ -520,6 +535,58 @@ export function ChatThread({
     [matchTxCard, wallet],
   );
 
+  const handleTokenTrade = useCallback(
+    async (mint: string, side: "buy" | "sell") => {
+      if (!isSolanaPubkey(mint)) {
+        setStorageError("This card has no token mint to swap.");
+        return;
+      }
+      if (!wallet) {
+        setStorageError("Sign in before trading.");
+        return;
+      }
+      setStorageError(null);
+      try {
+        const amount = 0.05;
+        const quote = await quoteDexSwap({ side, mint, amount });
+        const card: MessageCard = {
+          kind: "tx",
+          title: side === "sell" ? "Sell preview" : "Buy preview",
+          data: {
+            status: "preview",
+            side,
+            mint,
+            amount,
+            inputMint: quote.inputMint,
+            outputMint: quote.outputMint,
+            inAmount: quote.inAmount,
+            outAmount: quote.outAmount,
+            slippageBps: quote.slippageBps,
+            route: "Jupiter",
+            quoteJson: JSON.stringify(quote),
+          },
+        };
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `trade-${Date.now()}`,
+            role: "assistant",
+            content:
+              side === "sell"
+                ? `Sell preview for 0.05 of this token. Approve to sign with your OrbitX wallet.`
+                : `Buy preview for 0.05 SOL. Approve to sign with your OrbitX wallet.`,
+            cards: [card],
+          },
+        ]);
+      } catch (error) {
+        setStorageError(
+          error instanceof Error ? error.message : "Could not quote this swap.",
+        );
+      }
+    },
+    [wallet],
+  );
+
   useEffect(() => {
     void readAutoApproveBuys().then(setInstantBuy);
   }, []);
@@ -530,7 +597,14 @@ export function ChatThread({
     }
     for (const message of messages) {
       for (const card of message.cards ?? []) {
-        if (card.kind !== "tx" || !card.data.quoteJson) {
+        if (card.kind !== "tx") {
+          continue;
+        }
+        const canQuote =
+          Boolean(card.data.quoteJson) ||
+          Boolean(card.data.inputMint && card.data.outputMint && card.data.inAmount) ||
+          Boolean(card.data.mint);
+        if (!canQuote) {
           continue;
         }
         const status = String(card.data.status ?? "preview");
@@ -663,10 +737,10 @@ export function ChatThread({
             onConfirmTx={(card) => void handleConfirmTx(card)}
             onCancelTx={(card) => void handleCancelTx(card)}
             onBuyToken={(mint) => {
-              setDraft(`buy 0.05 SOL of ${mint}`);
+              void handleTokenTrade(mint, "buy");
             }}
             onSellToken={(mint) => {
-              setDraft(`sell 0.05 SOL of ${mint}`);
+              void handleTokenTrade(mint, "sell");
             }}
             onOpenCreate={(kind) => {
               router.push(kind === "nft" ? "/nft" : "/launch");

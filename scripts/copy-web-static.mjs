@@ -5,20 +5,24 @@ import { fileURLToPath } from "node:url";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const dist = join(root, "dist");
 mkdirSync(dist, { recursive: true });
+mkdirSync(join(dist, "export"), { recursive: true });
 
 const files = [
-  "privy-host.html",
-  "privy-host.js",
-  "wallet-export.html",
-  "wallet-export.js",
+  ["privy-host.html", "privy-host.html"],
+  ["privy-host.js", "privy-host.js"],
+  ["wallet-export.html", "wallet-export.html"],
+  ["wallet-export.js", "wallet-export.js"],
+  ["export/index.html", "export/index.html"],
+  ["wallet-export.js", "export/wallet-export.js"],
 ];
 
-for (const name of files) {
-  const from = join(root, "public", name);
+for (const [fromName, toName] of files) {
+  const from = join(root, "public", fromName);
   if (!existsSync(from)) {
     continue;
   }
-  const to = join(dist, name);
+  const to = join(dist, toName);
+  mkdirSync(dirname(to), { recursive: true });
   copyFileSync(from, to);
-  console.log(`Copied ${name} → dist/${name}`);
+  console.log(`Copied ${fromName} → dist/${toName}`);
 }

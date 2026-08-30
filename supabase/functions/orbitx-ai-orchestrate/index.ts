@@ -500,7 +500,6 @@ function cardsFromTool(toolId: string, result: unknown): ChatCard[] {
           slippageBps: quote.slippageBps,
           status: "preview",
           route: hops > 0 ? `${hops} hop Jupiter` : "Jupiter",
-          quoteJson: JSON.stringify(compact(quote)),
           inputMint: quote.inputMint,
           outputMint: quote.outputMint,
         },
@@ -1298,10 +1297,10 @@ Deno.serve(async (req) => {
                   status: "preview",
                   route: hops > 0 ? `${hops} hop Jupiter` : "Jupiter",
                   intentId: intentRow?.id ?? "",
-                  quoteJson: JSON.stringify(compact(quote)),
-                  inputMint: String(quote.inputMint ?? payload.inputMint ?? SOL_MINT),
-                  outputMint: String(quote.outputMint ?? payload.outputMint ?? SOL_MINT),
-                  side: String(payload.side ?? "buy"),
+          inputMint: String(quote.inputMint ?? payload.inputMint ?? SOL_MINT),
+          outputMint: String(quote.outputMint ?? payload.outputMint ?? SOL_MINT),
+          inAmount: String(quote.inAmount ?? payload.amount ?? ""),
+          side: String(payload.side ?? "buy"),
                 },
               });
             } else {

@@ -8,6 +8,14 @@
   "rewrites": [
     {
       "source": "/export",
+      "destination": "/export/index.html"
+    },
+    {
+      "source": "/export/",
+      "destination": "/export/index.html"
+    },
+    {
+      "source": "/wallet-export.html",
       "destination": "/wallet-export.html"
     },
     {

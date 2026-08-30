@@ -30,15 +30,19 @@ export function DexScreen() {
       setStatus("Sign in to trade.");
       return;
     }
-    const solAmount = Number(amount);
-    if (!Number.isFinite(solAmount) || solAmount <= 0) {
-      setStatus("Enter a SOL amount.");
+    const tradeAmount = Number(amount);
+    if (!Number.isFinite(tradeAmount) || tradeAmount <= 0) {
+      setStatus(nextSide === "sell" ? "Enter a token amount." : "Enter a SOL amount.");
       return;
     }
     setBusy(true);
     setStatus(null);
     try {
-      const quote = await quoteDexSwap({ side: nextSide, mint: mint.trim(), solAmount });
+      const quote = await quoteDexSwap({
+        side: nextSide,
+        mint: mint.trim(),
+        amount: tradeAmount,
+      });
       setStatus(
         `Quote ready · in ${quote.inAmount} → out ${quote.outAmount}. Signing…`,
       );
@@ -46,7 +50,7 @@ export function DexScreen() {
         wallet,
         side: nextSide,
         mint: mint.trim(),
-        solAmount,
+        amount: tradeAmount,
       });
       setStatus(`${result.route} ${nextSide} · ${result.signature}`);
     } catch (error) {
@@ -98,7 +102,7 @@ export function DexScreen() {
           />
           <TextInput
             style={styles.input}
-            placeholder="SOL amount"
+            placeholder={side === "sell" ? "Token amount" : "SOL amount"}
             placeholderTextColor={colors.mute}
             value={amount}
             onChangeText={setAmount}

@@ -1,3 +1,6 @@
+import * as Linking from "expo-linking";
+import * as WebBrowser from "expo-web-browser";
+
 import { privyAppId, publicAppUrl } from "./env";
 import { isSolanaPubkey } from "./wallets";
 
@@ -16,10 +19,23 @@ export function buildExportPageUrl(address: string, appUrl = publicAppUrl): stri
     throw new Error("Cannot export: wallet address is invalid.");
   }
 
-  const url = new URL("/wallet-export", `${appUrl.replace(/\/+$/, "")}/`);
+  const url = new URL("/export/", `${appUrl.replace(/\/+$/, "")}/`);
   url.searchParams.set("appId", privyAppId);
   url.searchParams.set("address", trimmed);
   return url.toString();
+}
+
+export async function openExportInBrowser(address: string): Promise<string> {
+  const url = buildExportPageUrl(address);
+  try {
+    await Linking.openURL(url);
+  } catch {
+    await WebBrowser.openBrowserAsync(url, {
+      presentationStyle: WebBrowser.WebBrowserPresentationStyle.AUTOMATIC,
+      enableBarCollapsing: false,
+    });
+  }
+  return url;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {

@@ -6,6 +6,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from "react-native";
 import { useRouter } from "expo-router";
@@ -14,7 +15,12 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ExportKeySheet } from "../../src/components/ExportKeySheet";
 import { useAuth } from "../../src/lib/auth";
 import { copyText } from "../../src/lib/clipboard";
+import {
+  executeDexSwap,
+  type TradeSide,
+} from "../../src/lib/dexTrade";
 import type { ExportPageStatus } from "../../src/lib/exportWallet";
+import { ORBITX_MINT } from "../../src/lib/portfolio";
 import {
   formatPnl,
   formatTokenAmount,
@@ -26,12 +32,12 @@ import { colors } from "../../src/theme";
 
 function formatExportResult(status: ExportPageStatus, error?: string): string {
   if (status === "success") {
-    return "Privy closed the export window. OrbitX never received your key.";
+    return "Privy export opened in your browser. OrbitX never receives your key.";
   }
   if (status === "error") {
-    return error ?? "Privy could not export this wallet.";
+    return error ?? "Could not open the Privy export page.";
   }
-  return "Export closed. Your key stayed in Privy.";
+  return "Export opened in your browser. Confirm the same email or phone. OrbitX never sees the key.";
 }
 
 export default function WalletScreen() {
@@ -45,6 +51,11 @@ export default function WalletScreen() {
   const [copied, setCopied] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [exportNote, setExportNote] = useState<string | null>(null);
+  const [tradeMint, setTradeMint] = useState(ORBITX_MINT);
+  const [tradeAmount, setTradeAmount] = useState("0.05");
+  const [tradeSide, setTradeSide] = useState<TradeSide>("buy");
+  const [tradeBusy, setTradeBusy] = useState(false);
+  const [tradeStatus, setTradeStatus] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!wallet) {
@@ -95,7 +106,7 @@ export default function WalletScreen() {
   const confirmExport = useCallback(() => {
     Alert.alert(
       "Export secret key",
-      "Privy will show your encoded secret key. OrbitX never receives it. Anyone with this key can take your funds.",
+      "This opens Privy’s export page in your browser, the same way FOMO does. Confirm the same email or phone. OrbitX never receives the key. Anyone with the key can take your funds.",
       [
         { text: "Cancel", style: "cancel" },
         {
@@ -114,6 +125,43 @@ export default function WalletScreen() {
       setExportNote(formatExportResult(status, exportError));
     },
     [],
+  );
+
+  const runTrade = useCallback(
+    async (side: TradeSide, mint = tradeMint, amountText = tradeAmount) => {
+      if (!wallet) {
+        setTradeStatus("Sign in to trade.");
+        return;
+      }
+      const amount = Number(amountText);
+      if (!Number.isFinite(amount) || amount <= 0) {
+        setTradeStatus(
+          side === "sell" ? "Enter a token amount." : "Enter a SOL amount.",
+        );
+        return;
+      }
+      setTradeBusy(true);
+      setTradeStatus(null);
+      setTradeSide(side);
+      setTradeMint(mint);
+      try {
+        const result = await executeDexSwap({
+          wallet,
+          side,
+          mint: mint.trim(),
+          amount,
+        });
+        setTradeStatus(
+          `${side === "sell" ? "Sold" : "Bought"} on ${result.route} · ${result.signature}`,
+        );
+        await load();
+      } catch (err) {
+        setTradeStatus(err instanceof Error ? err.message : "Trade failed.");
+      } finally {
+        setTradeBusy(false);
+      }
+    },
+    [load, tradeAmount, tradeMint, wallet],
   );
 
   const tokens = snapshot?.tokens ?? [];
@@ -231,16 +279,112 @@ export default function WalletScreen() {
                     <Text style={styles.tokenUsd}>
                       {formatUsd(token.usdValue)}
                     </Text>
+                    <View style={styles.tokenActions}>
+                      <Pressable
+                        style={styles.tinyBtn}
+                        onPress={() => {
+                          setTradeMint(token.mint);
+                          setTradeSide("buy");
+                          setTradeAmount("0.05");
+                        }}
+                      >
+                        <Text style={styles.tinyBtnText}>Buy</Text>
+                      </Pressable>
+                      <Pressable
+                        style={styles.tinyBtn}
+                        onPress={() => {
+                          setTradeMint(token.mint);
+                          setTradeSide("sell");
+                          setTradeAmount(
+                            token.balance > 0
+                              ? String(
+                                  Number(
+                                    token.balance.toPrecision(6),
+                                  ),
+                                )
+                              : "0.05",
+                          );
+                        }}
+                      >
+                        <Text style={styles.tinyBtnText}>Sell</Text>
+                      </Pressable>
+                    </View>
                   </View>
                 </View>
               ))
             )}
           </View>
 
+          <View style={styles.card}>
+            <Text style={styles.cardKicker}>SWAP</Text>
+            <Text style={styles.cardTitle}>Buy or sell</Text>
+            <Text style={styles.cardBody}>
+              Jupiter quote, then your OrbitX wallet signs. Buy amount is SOL.
+              Sell amount is the token.
+            </Text>
+            <TextInput
+              style={styles.input}
+              value={tradeMint}
+              onChangeText={setTradeMint}
+              autoCapitalize="none"
+              autoCorrect={false}
+              placeholder="Token mint"
+              placeholderTextColor={colors.mute}
+            />
+            <TextInput
+              style={styles.input}
+              value={tradeAmount}
+              onChangeText={setTradeAmount}
+              keyboardType="decimal-pad"
+              placeholder={
+                tradeSide === "sell" ? "Token amount" : "SOL amount"
+              }
+              placeholderTextColor={colors.mute}
+            />
+            <View style={styles.tradeRow}>
+              <Pressable
+                style={[
+                  styles.sideBtn,
+                  tradeSide === "buy" && styles.sideBtnLive,
+                ]}
+                onPress={() => setTradeSide("buy")}
+              >
+                <Text style={styles.sideBtnText}>Buy</Text>
+              </Pressable>
+              <Pressable
+                style={[
+                  styles.sideBtn,
+                  tradeSide === "sell" && styles.sideBtnLive,
+                ]}
+                onPress={() => setTradeSide("sell")}
+              >
+                <Text style={styles.sideBtnText}>Sell</Text>
+              </Pressable>
+            </View>
+            <Pressable
+              style={styles.primaryButton}
+              disabled={tradeBusy}
+              onPress={() => void runTrade(tradeSide)}
+            >
+              <Text style={styles.primaryButtonText}>
+                {tradeBusy
+                  ? "Signing…"
+                  : tradeSide === "sell"
+                    ? "Approve & sell"
+                    : "Approve & buy"}
+              </Text>
+            </Pressable>
+            {tradeStatus ? (
+              <Text selectable style={styles.tradeStatus}>
+                {tradeStatus}
+              </Text>
+            ) : null}
+          </View>
+
           <Pressable style={styles.exportButton} onPress={confirmExport}>
             <Text style={styles.exportButtonText}>Export key</Text>
             <Text style={styles.exportButtonHint}>
-              Encoded in Privy. We never see it.
+              Opens Privy in your browser. We never see the key.
             </Text>
           </Pressable>
 
@@ -433,6 +577,62 @@ const styles = StyleSheet.create({
     color: colors.mute,
     fontFamily: "Inter_400Regular",
     fontSize: 12,
+  },
+  tokenActions: {
+    flexDirection: "row",
+    gap: 6,
+    marginTop: 6,
+  },
+  tinyBtn: {
+    minHeight: 28,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.hairline,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  tinyBtnText: {
+    color: colors.ice,
+    fontFamily: "Inter_500Medium",
+    fontSize: 11,
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: colors.hairline,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    color: colors.frost,
+    backgroundColor: colors.ink,
+  },
+  tradeRow: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  sideBtn: {
+    flex: 1,
+    minHeight: 40,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.hairline,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  sideBtnLive: {
+    borderColor: colors.signal,
+    backgroundColor: "rgba(126, 182, 255, 0.12)",
+  },
+  sideBtnText: {
+    color: colors.frost,
+    fontFamily: "Inter_500Medium",
+    fontSize: 14,
+  },
+  tradeStatus: {
+    color: colors.mist,
+    fontFamily: "Inter_400Regular",
+    fontSize: 13,
+    lineHeight: 20,
   },
   exportButton: {
     minHeight: 56,
