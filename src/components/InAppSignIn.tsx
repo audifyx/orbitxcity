@@ -17,7 +17,10 @@ import {
 } from "@privy-io/expo";
 import bs58 from "bs58";
 
+import { applicationId } from "expo-application";
+
 import { useAuth } from "../lib/auth";
+import { privyClientId } from "../lib/env";
 import { isSolanaPubkey, isSolanaSignature } from "../lib/wallets";
 import { colors } from "../theme";
 
@@ -68,18 +71,31 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function nativeAppId(): string {
+  return typeof applicationId === "string" && applicationId.trim()
+    ? applicationId.trim()
+    : "host.exp.Exponent";
+}
+
 function friendlyPrivyError(error: unknown): string {
   const message = error instanceof Error ? error.message : "Sign-in failed.";
   const lower = message.toLowerCase();
   if (
-    lower.includes("app identifier") ||
-    lower.includes("application identifier") ||
-    lower.includes("allowed_native")
+    lower.includes("invalid_native_app_id") ||
+    lower.includes("native app id") ||
+    lower.includes("allowed app identifier") ||
+    lower.includes("application identifier")
   ) {
-    return "This Expo Go build is not on the OrbitX Privy client yet. Stay in the app and try again.";
+    const sent = nativeAppId();
+    return [
+      message,
+      `This phone sent ${sent}.`,
+      `On Privy Clients, open the Expo client ${privyClientId} and add Allowed app identifiers ${sent}, host.exp.Exponent, host.exp.exponent, and ai.orbitx.app, then save and reload Expo Go.`,
+      "Stay in this app.",
+    ].join(" ");
   }
-  if (lower.includes("invalid origin")) {
-    return "Sign-in stays in this app. Reload Expo Go and send the code again.";
+  if (lower.includes("invalid origin") || lower.includes("missing_origin")) {
+    return `${message} Stay in Expo Go. Do not open a website.`;
   }
   return message;
 }
