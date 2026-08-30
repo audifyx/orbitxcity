@@ -183,9 +183,9 @@ export default function WalletScreen() {
           amount,
         });
         setTradeStatus(
-          `${side === "sell" ? "Sold" : "Bought"} on ${result.route} · ${result.signature}`,
+          `${side === "sell" ? "Sold" : "Bought"} on Jupiter · ${result.signature}`,
         );
-        await load();
+        void load();
       } catch (err) {
         setTradeStatus(formatSwapError(err));
       } finally {

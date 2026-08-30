@@ -1,12 +1,17 @@
 import { solanaRpcUrl } from "./env";
-import { invokeFunction } from "./supabase";
-import { signAndSendSwapTransaction } from "./jupiterSign";
+import {
+  signAndSendSwapTransaction,
+  signSwapTransaction,
+} from "./jupiterSign";
 
-export { signAndSendSwapTransaction };
+export { signAndSendSwapTransaction, signSwapTransaction };
 
 export const SOL_MINT = "So11111111111111111111111111111111111111112";
 const JUPITER_LITE_QUOTE = "https://lite-api.jup.ag/swap/v1/quote";
 const JUPITER_LITE_SWAP = "https://lite-api.jup.ag/swap/v1/swap";
+const JUPITER_ULTRA_ORDER = "https://lite-api.jup.ag/ultra/v1/order";
+const JUPITER_ULTRA_EXECUTE = "https://lite-api.jup.ag/ultra/v1/execute";
+const JUPITER_TIMEOUT_MS = 8000;
 
 export type JupiterQuote = {
   inputMint: string;
@@ -103,13 +108,31 @@ export function uiAmountToRaw(amount: number, decimals: number): string {
   return String(raw);
 }
 
+function abortAfter(ms: number): AbortSignal {
+  const controller = new AbortController();
+  setTimeout(() => controller.abort(), ms);
+  return controller.signal;
+}
+
 async function fetchJupiterJson(
   url: string,
   init?: RequestInit,
 ): Promise<{ ok: boolean; status: number; json: unknown }> {
   let lastStatus = 0;
   for (let attempt = 0; attempt < 2; attempt += 1) {
-    const response = await fetch(url, init);
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        ...init,
+        signal: init?.signal ?? abortAfter(JUPITER_TIMEOUT_MS),
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (/abort|timeout/i.test(message)) {
+        throw new Error("Jupiter timed out. Try the buy again.");
+      }
+      throw error;
+    }
     lastStatus = response.status;
     if (response.status === 429 || response.status === 503) {
       await sleep(200 * 2 ** attempt);
@@ -154,41 +177,12 @@ export async function fetchQuote(params: {
 }): Promise<JupiterQuote> {
   const amount = String(params.amount);
   const slippageBps = params.slippageBps ?? 50;
-  try {
-    return await quoteFromLiteApi({
-      inputMint: params.inputMint,
-      outputMint: params.outputMint,
-      amount,
-      slippageBps,
-    });
-  } catch (liteError) {
-    try {
-      const data = await invokeFunction("jupiter-quote", {
-        inputMint: params.inputMint,
-        outputMint: params.outputMint,
-        amount,
-        slippageBps,
-      });
-      const quote = isQuote(data)
-        ? data
-        : isQuote(asRecord(data)?.quote)
-          ? (asRecord(data)?.quote as JupiterQuote)
-          : null;
-      if (quote) {
-        return quote;
-      }
-    } catch {
-      // Prefer the live Jupiter error.
-    }
-    const fallback =
-      liteError instanceof Error ? liteError.message : "No Jupiter quote returned";
-    if (/too many requests|429/i.test(fallback)) {
-      throw new Error("Too Many Requests");
-    }
-    throw liteError instanceof Error
-      ? liteError
-      : new Error("No Jupiter quote returned");
-  }
+  return quoteFromLiteApi({
+    inputMint: params.inputMint,
+    outputMint: params.outputMint,
+    amount,
+    slippageBps,
+  });
 }
 
 export async function fetchSwapTransaction(params: {
@@ -222,6 +216,112 @@ export async function fetchSwapTransaction(params: {
     throw new Error(detail);
   }
   return swapTransaction;
+}
+
+export type UltraOrder = JupiterQuote & {
+  transaction: string;
+  requestId: string;
+};
+
+export async function fetchUltraOrder(params: {
+  inputMint: string;
+  outputMint: string;
+  amount: string;
+  taker: string;
+}): Promise<UltraOrder> {
+  const url = new URL(JUPITER_ULTRA_ORDER);
+  url.searchParams.set("inputMint", params.inputMint);
+  url.searchParams.set("outputMint", params.outputMint);
+  url.searchParams.set("amount", params.amount);
+  url.searchParams.set("taker", params.taker);
+  const { ok, status, json } = await fetchJupiterJson(url.toString());
+  const rec = asRecord(json);
+  const transaction =
+    typeof rec?.transaction === "string" ? rec.transaction : "";
+  const requestId = typeof rec?.requestId === "string" ? rec.requestId : "";
+  if (!ok || !isQuote(json) || !transaction || !requestId) {
+    const detail =
+      typeof rec?.errorMessage === "string"
+        ? rec.errorMessage
+        : typeof rec?.error === "string"
+          ? rec.error
+          : `Jupiter order failed (${status})`;
+    throw new Error(detail);
+  }
+  return {
+    ...(json as JupiterQuote),
+    transaction,
+    requestId,
+  };
+}
+
+export async function executeUltraOrder(params: {
+  signedTransaction: string;
+  requestId: string;
+}): Promise<string> {
+  const { ok, status, json } = await fetchJupiterJson(JUPITER_ULTRA_EXECUTE, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      signedTransaction: params.signedTransaction,
+      requestId: params.requestId,
+    }),
+  });
+  const rec = asRecord(json);
+  const signature = typeof rec?.signature === "string" ? rec.signature : "";
+  const execStatus = typeof rec?.status === "string" ? rec.status : "";
+  if (execStatus.toLowerCase() === "failed" || (!ok && !signature)) {
+    const detail =
+      typeof rec?.error === "string"
+        ? rec.error
+        : `Jupiter execute failed (${status})`;
+    throw new Error(detail);
+  }
+  if (!signature) {
+    throw new Error(`Jupiter execute failed (${status})`);
+  }
+  return signature;
+}
+
+export async function executeJupiterSwap(params: {
+  inputMint: string;
+  outputMint: string;
+  amount: string;
+  userPublicKey: string;
+}): Promise<{ signature: string; quote: JupiterQuote }> {
+  let order: UltraOrder | null = null;
+  try {
+    order = await fetchUltraOrder({
+      inputMint: params.inputMint,
+      outputMint: params.outputMint,
+      amount: params.amount,
+      taker: params.userPublicKey,
+    });
+  } catch {
+    order = null;
+  }
+
+  if (order) {
+    const signed = await signSwapTransaction(order.transaction);
+    const signature = await executeUltraOrder({
+      signedTransaction: signed,
+      requestId: order.requestId,
+    });
+    return { signature, quote: order };
+  }
+
+  const quote = await fetchQuote({
+    inputMint: params.inputMint,
+    outputMint: params.outputMint,
+    amount: params.amount,
+    slippageBps: 100,
+  });
+  const swapTx = await fetchSwapTransaction({
+    quoteResponse: quote,
+    userPublicKey: params.userPublicKey,
+  });
+  const signature = await signAndSendSwapTransaction(swapTx);
+  return { signature, quote };
 }
 
 export type SignatureOutcome = "confirmed" | "failed" | "pending";

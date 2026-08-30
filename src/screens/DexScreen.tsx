@@ -12,7 +12,7 @@ import { WebView } from "react-native-webview";
 
 import { ORBITX_TOKEN_MINT } from "../brain/knowledge";
 import { useAuth } from "../lib/auth";
-import { executeDexSwap, quoteDexSwap, type TradeSide } from "../lib/dexTrade";
+import { executeDexSwap, type TradeSide } from "../lib/dexTrade";
 import {
   formatBuySol,
   formatSwapError,
@@ -65,22 +65,16 @@ export function DexScreen() {
     setBusy(true);
     setStatus(null);
     try {
-      const quote = await quoteDexSwap({
-        side: nextSide,
-        mint: mint.trim(),
-        amount: tradeAmount,
-      });
       setStatus(
-        `Quote ready · in ${quote.inAmount} → out ${quote.outAmount}. Signing…`,
+        nextSide === "sell" ? "Selling on Jupiter…" : "Buying on Jupiter…",
       );
       const result = await executeDexSwap({
         wallet,
         side: nextSide,
         mint: mint.trim(),
         amount: tradeAmount,
-        quote,
       });
-      setStatus(`${result.route} ${nextSide} · ${result.signature}`);
+      setStatus(`Jupiter ${nextSide} · ${result.signature}`);
     } catch (error) {
       setStatus(formatSwapError(error));
     } finally {
@@ -116,9 +110,8 @@ export function DexScreen() {
           <Text style={styles.kicker}>LIVE DESK</Text>
           <Text style={styles.title}>Trade</Text>
           <Text style={styles.subtitle}>
-            Jupiter first. If the pair is still on the pump.fun curve, OrbitX
-            falls back to the pump launch API. Instant buy uses the same wallet
-            approve already on this phone.
+            Jupiter Ultra only. Tap Buy and OrbitX signs with this wallet —
+            same path as the Jupiter app, no AI in the middle.
           </Text>
           <TextInput
             style={styles.input}

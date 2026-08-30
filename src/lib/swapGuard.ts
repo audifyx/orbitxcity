@@ -129,8 +129,34 @@ export async function fetchSolUsdPrice(): Promise<number> {
   return FALLBACK_SOL_USD;
 }
 
+let cachedSolUsd = FALLBACK_SOL_USD;
+let cachedSpendableSol: number | null = null;
+
+export function instantBuySol(usd = DEFAULT_BUY_USD): number {
+  const target = Number((usd / cachedSolUsd).toFixed(6));
+  if (cachedSpendableSol != null && cachedSpendableSol > 0) {
+    return Number(Math.min(target, cachedSpendableSol).toFixed(6));
+  }
+  return target;
+}
+
+export function prefetchBuyAmount(wallet?: string): void {
+  void (async () => {
+    try {
+      cachedSolUsd = await fetchSolUsdPrice();
+      if (wallet && isSolanaPubkey(wallet)) {
+        const have = await getSolLamports(wallet);
+        cachedSpendableSol = (have - FEE_RESERVE_LAMPORTS) / 1e9;
+      }
+    } catch {
+      // Keep the last cached size so Buy stays instant.
+    }
+  })();
+}
+
 export async function solAmountForUsd(usd = DEFAULT_BUY_USD): Promise<number> {
   const price = await fetchSolUsdPrice();
+  cachedSolUsd = price;
   const sol = usd / price;
   return Number(sol.toFixed(6));
 }
@@ -144,5 +170,6 @@ export async function suggestBuySol(wallet: string): Promise<number> {
       `Not enough SOL to buy. Wallet has ${formatSol(have)} SOL. Add SOL or sell something first.`,
     );
   }
+  cachedSpendableSol = spendable;
   return Number(Math.min(target, spendable).toFixed(6));
 }

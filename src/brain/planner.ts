@@ -206,23 +206,10 @@ function pickTools(
       break;
 
     case "trade":
-      add("jupiter-quote");
       add("jupiter-price");
       notes.push(
-        "Trade intent detected: quote-only stage. jupiter-swap and jupiter-order excluded until explicit execute request.",
+        "Trade talk is research only. Buys execute on Jupiter Ultra in the app, not through AI tools.",
       );
-      if (explicitWrite) {
-        notes.push(
-          "User requested execution language — swap/order tools require confirmation before inclusion.",
-        );
-        if (/\border\b/i.test(text)) {
-          add("jupiter-order");
-          notes.push("jupiter-order marked for confirmation gate.");
-        } else {
-          add("jupiter-swap");
-          notes.push("jupiter-swap marked for confirmation gate.");
-        }
-      }
       break;
 
     case "alert":
