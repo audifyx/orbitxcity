@@ -6,7 +6,7 @@ This repository contains the OrbitX mobile app (Expo SDK 54) connected to the ex
 
 ## Product
 
-Sign in with email or phone through Privy. Privy creates an in-app Solana wallet for that account. Privy is not used to connect Phantom or Jupiter.
+OrbitX is an Expo Go app. Sign up and sign in happen **inside the app** with email or phone. Privy creates an in-app Solana wallet for that account. The session logs into the app only. Privy is not used to connect Phantom or Jupiter. Nothing opens a browser or website to log in.
 
 The home screen is the product: a ChatGPT-style intelligence chat. The Brain plans tool calls against existing OrbitX Edge Functions (OG Scan, Jupiter quotes, wallet intel, alerts, and more). Trades are quote → preview → wallet signature only. The model is never the authorization layer.
 
@@ -14,48 +14,25 @@ The home screen is the product: a ChatGPT-style intelligence chat. The Brain pla
 
 ```bash
 npm install
-npx expo start
+npm start
 ```
 
-Use Expo Go on a phone, or:
+Open the project in **Expo Go**. Email/phone OTP, wallet creation, and sign-in stay on that screen.
 
-- iOS: `npx expo start --ios`
-- Android: `npx expo start --android`
-- Web: `npx expo start --web` (email or phone via the isolated Privy host)
+Copy `.env.example` to `.env` if you want to override public values. Never put a service-role key or `PRIVY_APP_SECRET` in the client.
 
-Copy `.env.example` to `.env` if you want to override the public Supabase URL/anon key. Never put a service-role key in the client.
+In the Privy dashboard, this is one-time mobile setup (not a login redirect):
 
-## Vercel (web)
-
-The GitHub project is connected to Vercel at `https://orbitxcity.vercel.app`.
-
-Set these **public** variables on the Vercel project (Production + Preview):
-
-- `EXPO_PUBLIC_SUPABASE_URL`
-- `EXPO_PUBLIC_SUPABASE_ANON_KEY`
-- `EXPO_PUBLIC_SOLANA_RPC_URL` (optional)
-- `EXPO_PUBLIC_APP_URL` (`https://orbitxcity.vercel.app`)
-- `EXPO_PUBLIC_PRIVY_APP_ID` or `PRIVY_APP_ID` (public Privy App ID for email/phone login)
-
-In the Privy dashboard, email and SMS can already be on. The login modal still fails with **Something went wrong / Try again later** until **Allowed origins** match the live site exactly.
-
-Add these **HTTPS** origins under Configuration → App settings → Domains:
-
-- `https://orbitxcity.vercel.app`
-- `https://ogscan.fun`
-- `https://www.ogscan.fun`
-
-Do **not** use `http://orbitx.world` or `http://og-scan.fun`. Those are the values currently on the Orbitx Privy app, and they do not match this site. Also set Solana embedded wallets → Create on login to all users.
+- Configuration → App settings → **Clients**: add an Expo app client
+- Allowed app identifiers: `host.exp.Exponent` (Expo Go) and `ai.orbitx.app`
+- Allowed URL schemes: `exp` and `orbitx`
+- Public client ID is already in the app (`client-WY6d51URNrCLTaW9hz1DP9wfMfug2yHPz1ZAa1YRwwsbN`)
+- Email and SMS login on
+- Solana embedded wallets → Create on login → all users
 
 Never put `PRIVY_APP_SECRET` in `EXPO_PUBLIC_*` or the Expo client.
 
-LLM keys (`NVIDIA_API_KEY`, `GROQ_API_KEY`, `GEMINI_API_KEY`, `OPENROUTER_API_KEY`) and the Supabase service role belong on the **existing Soltools Edge Functions**, not in the Vercel client bundle.
-
-```bash
-npm run build:web
-```
-
-Vercel runs `expo export -p web` and serves `dist` as a single-page app.
+LLM keys (`NVIDIA_API_KEY`, `GROQ_API_KEY`, `GEMINI_API_KEY`, `OPENROUTER_API_KEY`) and the Supabase service role belong on the **existing Soltools Edge Functions**, not in the Expo client.
 
 ## Backend
 
