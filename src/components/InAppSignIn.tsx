@@ -15,13 +15,11 @@ import {
   useLoginWithSMS,
   usePrivy,
 } from "@privy-io/expo";
-import bs58 from "bs58";
-
 import { applicationId } from "expo-application";
 
 import { useAuth } from "../lib/auth";
 import { privyClientId } from "../lib/env";
-import { isSolanaPubkey, isSolanaSignature } from "../lib/wallets";
+import { isSolanaPubkey, toBase58Signature, utf8ToBase64 } from "../lib/wallets";
 import { colors } from "../theme";
 
 type Mode = "email" | "phone";
@@ -40,31 +38,6 @@ function normalizePhone(value: string): string {
 
 function isE164Phone(value: string): boolean {
   return /^\+[1-9]\d{7,14}$/.test(value);
-}
-
-function toBase58Signature(value: unknown): string {
-  if (typeof value === "string" && isSolanaSignature(value)) {
-    return value;
-  }
-  if (value instanceof Uint8Array) {
-    const encoded = bs58.encode(value);
-    if (isSolanaSignature(encoded)) {
-      return encoded;
-    }
-  }
-  if (value && typeof value === "object") {
-    const rec = value as Record<string, unknown>;
-    if (typeof rec.signature === "string" && isSolanaSignature(rec.signature)) {
-      return rec.signature;
-    }
-    if (rec.signature instanceof Uint8Array) {
-      const encoded = bs58.encode(rec.signature);
-      if (isSolanaSignature(encoded)) {
-        return encoded;
-      }
-    }
-  }
-  throw new Error("OrbitX wallet did not return a valid signature.");
 }
 
 function sleep(ms: number): Promise<void> {
@@ -150,7 +123,7 @@ export function InAppSignIn() {
     const provider = await wallet.getProvider();
     const signed = await provider.request({
       method: "signMessage",
-      params: { message },
+      params: { message: utf8ToBase64(message) },
     });
     await signInWithSignature(wallet.address, toBase58Signature(signed));
   }, [requestSignInMessage, signInWithSignature]);
