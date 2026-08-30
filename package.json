@@ -62,10 +62,10 @@
     "typescript": "~5.9.2"
   },
   "scripts": {
-    "start": "EXPO_NO_METRO_LAZY=1 expo start --go",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
-    "web": "expo start --web",
+    "start": "EXPO_NO_METRO_LAZY=1 expo start --go --tunnel --minify",
+    "android": "EXPO_NO_METRO_LAZY=1 expo start --go --android --tunnel --minify",
+    "ios": "EXPO_NO_METRO_LAZY=1 expo start --go --ios --tunnel --minify",
+    "web": "node -e \"console.error('OrbitX is an Android Expo Go app, not a website.'); process.exit(1)\"",
     "build:privy-host": "node scripts/build-privy-host.mjs",
     "build:web": "npm run build:privy-host && EXPO_NO_METRO_LAZY=1 expo export -p web && node scripts/copy-web-static.mjs",
     "deploy:web": "npm run build:web && eas deploy --dev-domain orbitx",

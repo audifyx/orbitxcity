@@ -9,6 +9,8 @@ process.env.EXPO_ROUTER_APP_ROOT = process.env.EXPO_ROUTER_APP_ROOT || "./app";
 
 /** @type {import('expo/metro-config').MetroConfig} */
 const config = getDefaultConfig(__dirname);
+// Native Expo Go only. Do not serve a web app from Metro.
+config.resolver.platforms = ["android", "ios", "native"];
 config.resolver.unstable_enablePackageExports = true;
 const resolveRequest = config.resolver.resolveRequest;
 
