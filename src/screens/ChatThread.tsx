@@ -40,9 +40,9 @@ import { useAuth } from "../lib/auth";
 import { readAutoApproveBuys, writeAutoApproveBuys } from "../lib/autoApprove";
 import { quoteDexSwap, quoteFromPreview } from "../lib/dexTrade";
 import {
-  confirmSignature,
   fetchSwapTransaction,
   signAndSendSwapTransaction,
+  waitForSignature,
 } from "../lib/jupiter";
 import { isSolanaPubkey } from "../lib/wallets";
 import { mintOrbitxNft } from "../lib/nftMarket";
@@ -484,40 +484,43 @@ export function ChatThread({
         }
         patch("confirming", { signature });
 
-        let outcome: "confirmed" | "failed" | "pending" = "pending";
-        for (let attempt = 0; attempt < 8; attempt += 1) {
-          await sleep(2000);
-          outcome = await confirmSignature(signature);
-          if (outcome !== "pending") break;
-        }
+        const markOutcome = async (
+          next: "confirmed" | "failed" | "pending",
+        ) => {
+          if (next === "confirmed") {
+            if (intentId && isUuid(intentId)) {
+              await supabase
+                .from("orbitx_ai_transaction_intents")
+                .update({ status: "confirmed" })
+                .eq("id", intentId);
+            }
+            patch("confirmed", { signature });
+            return;
+          }
+          if (next === "failed") {
+            if (intentId && isUuid(intentId)) {
+              await supabase
+                .from("orbitx_ai_transaction_intents")
+                .update({ status: "failed", error_code: "rpc_err" })
+                .eq("id", intentId);
+            }
+            patch("failed", { signature });
+          }
+        };
 
-        if (outcome === "confirmed") {
-          if (intentId && isUuid(intentId)) {
-            await supabase
-              .from("orbitx_ai_transaction_intents")
-              .update({ status: "confirmed" })
-              .eq("id", intentId);
-          }
-          patch("confirmed", { signature });
-        } else if (outcome === "failed") {
-          if (intentId && isUuid(intentId)) {
-            await supabase
-              .from("orbitx_ai_transaction_intents")
-              .update({ status: "failed", error_code: "rpc_err" })
-              .eq("id", intentId);
-          }
-          patch("failed", { signature });
-        } else {
-          if (intentId && isUuid(intentId)) {
-            await supabase
-              .from("orbitx_ai_transaction_intents")
-              .update({ status: "submitted", signature })
-              .eq("id", intentId);
-          }
-          patch("submitted", { signature });
-          setStorageError(
-            `Swap broadcast (${signature.slice(0, 8)}…). RPC has not confirmed it yet — not marked successful.`,
-          );
+        let outcome = await waitForSignature(signature, {
+          attempts: 24,
+          intervalMs: 2000,
+        });
+        await markOutcome(outcome);
+        if (outcome === "pending") {
+          patch("confirming", { signature });
+          void waitForSignature(signature, {
+            attempts: 30,
+            intervalMs: 3000,
+          }).then((later) => {
+            void markOutcome(later);
+          });
         }
       } catch (error) {
         const detail =

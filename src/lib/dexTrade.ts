@@ -1,11 +1,11 @@
 import {
   SOL_MINT,
-  confirmSignature,
   fetchQuote,
   fetchSwapTransaction,
   getMintDecimals,
   signAndSendSwapTransaction,
   uiAmountToRaw,
+  waitForSignature,
   type JupiterQuote,
 } from "./jupiter";
 import { pumpCurveTrade } from "./pumpfun";
@@ -21,10 +21,6 @@ export type ExecutedTrade = {
   quote: JupiterQuote;
   route: "jupiter" | "pump";
 };
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 function isNoRouteError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
@@ -103,15 +99,12 @@ export async function executeDexSwap(input: {
     userPublicKey: input.wallet,
   });
   const signature = await signAndSendSwapTransaction(swapTx);
-  for (let attempt = 0; attempt < 8; attempt += 1) {
-    await sleep(1500);
-    const outcome = await confirmSignature(signature);
-    if (outcome === "confirmed") {
-      return { signature, quote, route: "jupiter" };
-    }
-    if (outcome === "failed") {
-      throw new Error("Jupiter swap landed as failed.");
-    }
+  const outcome = await waitForSignature(signature, {
+    attempts: 24,
+    intervalMs: 2000,
+  });
+  if (outcome === "failed") {
+    throw new Error("Jupiter swap landed as failed.");
   }
   return { signature, quote, route: "jupiter" };
 }

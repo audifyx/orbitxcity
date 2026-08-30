@@ -196,36 +196,134 @@ export async function fetchSwapTransaction(params: {
   return json.swapTransaction;
 }
 
-export async function confirmSignature(
-  signature: string,
-): Promise<"confirmed" | "failed" | "pending"> {
-  const response = await fetch(solanaRpcUrl, {
+export type SignatureOutcome = "confirmed" | "failed" | "pending";
+
+const RPC_URLS = Array.from(
+  new Set([solanaRpcUrl, "https://api.mainnet-beta.solana.com"]),
+);
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+type SignatureStatus = {
+  confirmationStatus?: string;
+  err?: unknown;
+};
+
+type RpcResponse = {
+  result?: unknown;
+  error?: { message?: string };
+};
+
+async function rpcCall(
+  url: string,
+  method: string,
+  params: unknown[],
+): Promise<unknown> {
+  const response = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       jsonrpc: "2.0",
       id: 1,
-      method: "getSignatureStatuses",
-      params: [[signature], { searchTransactionHistory: true }],
+      method,
+      params,
     }),
   });
-  const json = (await response.json()) as {
-    result?: {
-      value?: Array<{ confirmationStatus?: string; err?: unknown } | null>;
-    };
-  };
-  const status = json.result?.value?.[0];
+  if (!response.ok) {
+    throw new Error(`RPC ${response.status}`);
+  }
+  const json = (await response.json()) as RpcResponse;
+  if (json.error?.message) {
+    throw new Error(json.error.message);
+  }
+  return json.result;
+}
+
+function outcomeFromStatus(status: SignatureStatus | null): SignatureOutcome | null {
   if (!status) {
-    return "pending";
+    return null;
   }
   if (status.err) {
     return "failed";
   }
   if (
+    status.confirmationStatus === "processed" ||
     status.confirmationStatus === "confirmed" ||
     status.confirmationStatus === "finalized"
   ) {
     return "confirmed";
+  }
+  return null;
+}
+
+async function confirmOnRpc(
+  url: string,
+  signature: string,
+): Promise<SignatureOutcome> {
+  const statuses = (await rpcCall(url, "getSignatureStatuses", [
+    [signature],
+    { searchTransactionHistory: true },
+  ])) as { value?: Array<SignatureStatus | null> } | null;
+  const fromStatus = outcomeFromStatus(statuses?.value?.[0] ?? null);
+  if (fromStatus) {
+    return fromStatus;
+  }
+
+  const tx = (await rpcCall(url, "getTransaction", [
+    signature,
+    {
+      encoding: "json",
+      commitment: "confirmed",
+      maxSupportedTransactionVersion: 0,
+    },
+  ])) as { meta?: { err?: unknown } | null; slot?: number } | null;
+  if (tx && typeof tx === "object") {
+    if (tx.meta?.err) {
+      return "failed";
+    }
+    return "confirmed";
+  }
+  return "pending";
+}
+
+export async function confirmSignature(
+  signature: string,
+): Promise<SignatureOutcome> {
+  if (!signature.trim()) {
+    return "pending";
+  }
+  for (const url of RPC_URLS) {
+    try {
+      const outcome = await confirmOnRpc(url, signature);
+      if (outcome !== "pending") {
+        return outcome;
+      }
+    } catch {
+      // Try the next RPC. Public mainnet often 429s mid-poll.
+    }
+  }
+  return "pending";
+}
+
+export async function waitForSignature(
+  signature: string,
+  options?: { attempts?: number; intervalMs?: number },
+): Promise<SignatureOutcome> {
+  const attempts = options?.attempts ?? 24;
+  const intervalMs = options?.intervalMs ?? 2000;
+  if (attempts < 1) {
+    return "pending";
+  }
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    if (attempt > 0) {
+      await sleep(intervalMs);
+    }
+    const outcome = await confirmSignature(signature);
+    if (outcome !== "pending") {
+      return outcome;
+    }
   }
   return "pending";
 }
