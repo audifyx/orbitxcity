@@ -20,13 +20,14 @@ module.exports = {
     ...appJson.expo,
     extra: {
       ...existingExtra,
-      privyAppId: firstEnv(
-        "EXPO_PUBLIC_PRIVY_APP_ID",
-        "PRIVY_APP_ID",
-        "NEXT_PUBLIC_PRIVY_APP_ID",
-        "PRIVY_APP_KEY",
-        "EXPO_PUBLIC_PRIVY_APP_KEY",
-      ),
+      privyAppId:
+        firstEnv(
+          "EXPO_PUBLIC_PRIVY_APP_ID",
+          "PRIVY_APP_ID",
+          "NEXT_PUBLIC_PRIVY_APP_ID",
+          "PRIVY_APP_KEY",
+          "EXPO_PUBLIC_PRIVY_APP_KEY",
+        ) || "cmtdqdoj0043z0dlabgpr7l6g",
       privyClientId: firstEnv(
         "EXPO_PUBLIC_PRIVY_CLIENT_ID",
         "PRIVY_CLIENT_ID",

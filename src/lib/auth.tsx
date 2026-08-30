@@ -21,8 +21,8 @@ import {
   WALLET_PUBKEY_KEY,
 } from "./phantom";
 import { supabase, walletAuth, warmWalletAuth } from "./supabase";
-import { connectWithPrivy, consumePrivyHostResult, isPrivyConfigured } from "./privyConnect";
-import { openHostedAuth } from "./walletOpen";
+import { consumePrivyHostResult } from "./privyConnect";
+import { logoutPrivySession } from "./privyProvider";
 import {
   connectBrowserWallet,
   isSolanaPubkey,
@@ -381,18 +381,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setError(null);
 
       try {
-        if (Platform.OS !== "web") {
-          await openHostedAuth();
-          return;
-        }
-
-        if (isPrivyConfigured()) {
-          await connectWithPrivy();
-          return;
-        }
-
         throw new Error(
-          "OrbitX is missing the Privy App ID on this build. Set PRIVY_APP_ID or EXPO_PUBLIC_PRIVY_APP_ID on Vercel.",
+          "Use email or phone on this screen. OrbitX signs you in inside the app.",
         );
       } catch (connectError) {
         const message = publicAuthError(connectError, "Sign-in failed.");
@@ -503,6 +493,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     await clearPhantomSecureStore();
+    await logoutPrivySession();
     setWallet(null);
     setSession(null);
   }, []);
