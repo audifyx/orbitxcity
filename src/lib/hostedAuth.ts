@@ -143,6 +143,26 @@ export function privyHostUrl(returnTo?: string): string {
   return url.toString();
 }
 
+/**
+ * Public OrbitX web domain. Wallet key export must happen on an HTTPS origin
+ * that is allow-listed in Privy (ogscan.fun is), never on the in-app or a
+ * localhost origin — otherwise Privy's secure export iframe refuses to load
+ * and the user lands on a non-routed/blocked page.
+ */
+export const OGSCAN_ORIGIN = "https://ogscan.fun";
+
+/**
+ * URL of the hosted wallet-export page on ogscan.fun. The `/privy-host` page is
+ * served on this domain and, with `flow=export`, runs Privy's secure export
+ * modal so users can reveal their embedded Solana private key.
+ */
+export function walletExportUrl(): string {
+  const url = new URL("/privy-host", `${OGSCAN_ORIGIN}/`);
+  url.searchParams.set("appId", privyAppId);
+  url.searchParams.set("flow", "export");
+  return url.toString();
+}
+
 export function nativeAuthReturnUrl(): string {
   return Linking.createURL("/auth");
 }

@@ -51,7 +51,7 @@ export function SocialScreen() {
 
   async function saveDraft() {
     if (!userId) {
-      setMessage("Connect Phantom first.");
+      setMessage("Sign in with email or phone first.");
       return;
     }
     if (!draft.trim()) return;

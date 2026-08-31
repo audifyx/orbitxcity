@@ -36,18 +36,36 @@ type NavItem = {
   label: string;
 };
 
+const NAV_LABELS: Record<NavRoute, string> = {
+  home: "Home",
+  trending: "Trending",
+  wallet: "Wallet",
+  tools: "Tools",
+  agents: "Agents",
+  activity: "Activity",
+  alerts: "Alerts",
+  launch: "Launch",
+  nft: "NFT",
+  paper: "Paper",
+  research: "Research",
+  strategy: "Strategy",
+  social: "Social",
+  profile: "Profile",
+  settings: "Settings",
+};
+
 /** Routes stay registered; we unhide them in the sidebar as each surface is finished. */
 export const VISIBLE_NAV_ROUTES: readonly NavRoute[] = [
   "home",
   "wallet",
+  "profile",
   "settings",
 ];
 
-const NAV_ITEMS: NavItem[] = [
-  { route: "home", label: "Home" },
-  { route: "wallet", label: "Wallet" },
-  { route: "settings", label: "Settings" },
-];
+const NAV_ITEMS: NavItem[] = VISIBLE_NAV_ROUTES.map((route) => ({
+  route,
+  label: NAV_LABELS[route],
+}));
 
 export type SidebarProps = {
   conversations?: Conversation[];

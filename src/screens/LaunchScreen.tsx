@@ -25,7 +25,7 @@ export function LaunchScreen() {
 
   async function saveDraft() {
     if (!userId) {
-      setResult("Connect Phantom first.");
+      setResult("Sign in with email or phone first.");
       return;
     }
     if (!name.trim() || !symbol.trim()) {

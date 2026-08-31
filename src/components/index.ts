@@ -29,6 +29,20 @@ export type { ToolProgressProps } from "./ToolProgress";
 export { ToolTerminal } from "./ToolTerminal";
 export type { ToolTerminalProps } from "./ToolTerminal";
 
+export { PortfolioView } from "./PortfolioView";
+export type { PortfolioToken, PortfolioViewProps } from "./PortfolioView";
+
+export { ProfileView } from "./ProfileView";
+export type { ProfileViewProps, ProfileQuickLink } from "./ProfileView";
+
+export { SettingsView } from "./SettingsView";
+export type {
+  SettingsViewProps,
+  SettingsModelOption,
+  SettingsMemoryItem,
+  SettingsPermissionOption,
+} from "./SettingsView";
+
 export { ModelSheet } from "./ModelSheet";
 export type { ModelOption, ModelSheetProps } from "./ModelSheet";
 

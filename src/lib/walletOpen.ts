@@ -50,3 +50,19 @@ export async function openHostedAuth(targetUrl?: string): Promise<void> {
     );
   }
 }
+
+/**
+ * Open an external URL in a new browser tab (web) or the system browser
+ * (native). Used for the hosted wallet-export page and block explorers.
+ */
+export async function openExternalUrl(url: string): Promise<void> {
+  if (
+    Platform.OS === "web" &&
+    typeof window !== "undefined" &&
+    typeof window.open === "function"
+  ) {
+    window.open(url, "_blank", "noopener,noreferrer");
+    return;
+  }
+  await Linking.openURL(url);
+}
