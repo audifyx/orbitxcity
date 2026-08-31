@@ -15,8 +15,10 @@ import { SpaceGrotesk_600SemiBold } from "@expo-google-fonts/space-grotesk";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
-import { AuthProvider, useAuth } from "../src/lib/auth";
+import ConnectScreen from "./(auth)/connect";
+import { AuthProvider } from "../src/lib/auth";
 import { OrbitxPrivyProvider } from "../src/lib/privyProvider";
+import { useUnlockedSession } from "../src/lib/sessionGate";
 import { SplashScreen } from "../src/screens/SplashScreen";
 import { colors } from "../src/theme";
 
@@ -61,32 +63,52 @@ class BootErrorBoundary extends Component<
   }
 }
 
+function LoginLock() {
+  const { unlocked, waiting } = useUnlockedSession();
+  if (unlocked) {
+    return null;
+  }
+  return (
+    <View style={styles.lock} pointerEvents="auto">
+      {waiting ? <View style={styles.boot} /> : <ConnectScreen />}
+    </View>
+  );
+}
+
 function AuthGate({ children }: { children: ReactNode }) {
-  const { session, loading } = useAuth();
+  const { unlocked, waiting } = useUnlockedSession();
   const segments = useSegments();
   const pathname = usePathname();
   const router = useRouter();
 
   useEffect(() => {
+    if (waiting) {
+      return;
+    }
+
     const root = segments[0];
     const isAuthGroup = root === "(auth)";
     const isCallback = root === "onconnect" || root === "onsign" || root === "auth";
+    const isExport = root === "wallet-export" || pathname === "/wallet-export";
+    const onLogin =
+      isAuthGroup || pathname === "/connect" || pathname === "/auth";
 
-    if (session && (isAuthGroup || pathname === "/connect" || pathname === "/auth")) {
+    if (unlocked && onLogin) {
       router.replace("/");
       return;
     }
 
-    if (loading) {
-      return;
-    }
-
-    if (!session && !isAuthGroup && !isCallback) {
+    if (!unlocked && !onLogin && !isCallback && !isExport) {
       router.replace("/connect");
     }
-  }, [loading, session, segments, pathname, router]);
+  }, [waiting, unlocked, segments, pathname, router]);
 
-  return <>{children}</>;
+  return (
+    <>
+      {children}
+      <LoginLock />
+    </>
+  );
 }
 
 function RootLayoutInner() {
@@ -158,6 +180,7 @@ function RootLayoutInner() {
                   <Stack.Screen name="onconnect" />
                   <Stack.Screen name="onsign" />
                   <Stack.Screen name="auth" />
+                  <Stack.Screen name="wallet-export" />
                 </Stack>
                 {showSplash ? (
                   <SplashScreen onComplete={() => setShowSplash(false)} />
@@ -187,6 +210,11 @@ const styles = StyleSheet.create({
   flex: {
     flex: 1,
     backgroundColor: colors.void,
+  },
+  lock: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: colors.void,
+    zIndex: 50,
   },
   crash: {
     flex: 1,

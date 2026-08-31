@@ -9,6 +9,35 @@ function b64ToBytes(b64: string): Uint8Array {
   return bytes;
 }
 
+export async function signSwapTransaction(
+  swapTransactionB64: string,
+): Promise<string> {
+  const provider = getInjectedPhantom();
+  const signer = provider?.signTransaction;
+  if (!signer) {
+    throw new Error(
+      "Phantom is not injected in this session. Open OrbitX in a Phantom-enabled browser to sign the swap.",
+    );
+  }
+  const { VersionedTransaction } = await import("@solana/web3.js");
+  const tx = VersionedTransaction.deserialize(b64ToBytes(swapTransactionB64));
+  const signed = await signer(tx);
+  const bytes =
+    signed && typeof signed === "object" && "serialize" in signed
+      ? (signed as { serialize: () => Uint8Array }).serialize()
+      : signed instanceof Uint8Array
+        ? signed
+        : null;
+  if (!bytes) {
+    throw new Error("Phantom did not return a signed transaction.");
+  }
+  let binary = "";
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+  return globalThis.btoa(binary);
+}
+
 export async function signAndSendSwapTransaction(
   swapTransactionB64: string,
 ): Promise<string> {

@@ -45,3 +45,4 @@ yarn-error.*
 # Privy is bundled separately so Expo web does not ship a 13MB homepage
 public/privy-host.js
 public/privy-host.css
+public/wallet-export.js

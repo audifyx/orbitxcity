@@ -45,6 +45,7 @@ interface PhantomSolanaProvider {
   signAndSendTransaction?: (
     transaction: unknown,
   ) => Promise<{ signature: string } | string>;
+  signTransaction?: (transaction: unknown) => Promise<unknown>;
 }
 
 interface PhantomWindow extends Window {
