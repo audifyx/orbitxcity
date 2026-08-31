@@ -60,5 +60,6 @@ export const privyAppId = (
 
 export const privyClientId = (
   process.env.EXPO_PUBLIC_PRIVY_CLIENT_ID?.trim() ||
-  extraString("privyClientId")
+  extraString("privyClientId") ||
+  "client-WY6d51URNrCLTaW9hz1DP9wfMfug2yHPz1ZAa1YRwwsbN"
 ).trim();

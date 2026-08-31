@@ -4,14 +4,11 @@ import { fileURLToPath } from "node:url";
 import * as esbuild from "esbuild";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const outfile = join(root, "public", "privy-host.js");
 
-mkdirSync(dirname(outfile), { recursive: true });
+mkdirSync(join(root, "public"), { recursive: true });
 
-await esbuild.build({
+const shared = {
   absWorkingDir: root,
-  entryPoints: [join(root, "privy-host", "main.tsx")],
-  outfile,
   bundle: true,
   format: "iife",
   platform: "browser",
@@ -34,6 +31,23 @@ await esbuild.build({
     "@solana-program/system": join(root, "privy-host", "solana-program-stub.js"),
     "@solana-program/memo": join(root, "privy-host", "solana-program-stub.js"),
   },
-});
+};
 
-console.log(`Wrote ${outfile}`);
+const builds = [
+  {
+    entryPoints: [join(root, "privy-host", "main.tsx")],
+    outfile: join(root, "public", "privy-host.js"),
+  },
+  {
+    entryPoints: [join(root, "privy-host", "export.tsx")],
+    outfile: join(root, "public", "wallet-export.js"),
+  },
+];
+
+for (const build of builds) {
+  await esbuild.build({
+    ...shared,
+    ...build,
+  });
+  console.log(`Wrote ${build.outfile}`);
+}

@@ -41,7 +41,7 @@ const FORENSIC_VERBS =
   /\b(forensic|x-?ray|first\s?buyer|sniper|bundle|insider|dev\s?wallet)\b/i;
 
 const EXPLICIT_WRITE_VERBS =
-  /\b(execute|broadcast|send\s?swap|place\s?order|post\s?now|publish|list\s?nft|sell\s?nft)\b/i;
+  /\b(execute|broadcast|send\s?swap|place\s?order|post\s?now|publish|list\s?nft|sell\s?nft|buy\s+\d|sell\s+\d|swap\s+\d|market\s?buy|instant\s?buy)\b/i;
 
 const QUOTE_ONLY_VERBS = /\b(quote|price|how\s?much|estimate)\b/i;
 
@@ -77,8 +77,8 @@ function detectIntent(text: string, addresses: string[]): PlanIntent {
   if (LAUNCH_VERBS.test(text)) {
     return "launch";
   }
-  if (PORTFOLIO_VERBS.test(text)) {
-    return "portfolio";
+  if (WALLET_VERBS.test(text) || PORTFOLIO_VERBS.test(text)) {
+    return "analyze_wallet";
   }
   if (TELL_ABOUT.test(text) && addresses.length > 0) {
     return "analyze_token";
@@ -206,23 +206,10 @@ function pickTools(
       break;
 
     case "trade":
-      add("jupiter-quote");
       add("jupiter-price");
       notes.push(
-        "Trade intent detected: quote-only stage. jupiter-swap and jupiter-order excluded until explicit execute request.",
+        "Trade talk is research only. Buys execute on Jupiter Ultra in the app, not through AI tools.",
       );
-      if (explicitWrite) {
-        notes.push(
-          "User requested execution language — swap/order tools require confirmation before inclusion.",
-        );
-        if (/\border\b/i.test(text)) {
-          add("jupiter-order");
-          notes.push("jupiter-order marked for confirmation gate.");
-        } else {
-          add("jupiter-swap");
-          notes.push("jupiter-swap marked for confirmation gate.");
-        }
-      }
       break;
 
     case "alert":

@@ -1,4 +1,5 @@
 import { useCallback, useState } from "react";
+import { useRouter } from "expo-router";
 import {
   FlatList,
   Platform,
@@ -8,8 +9,11 @@ import {
   View,
 } from "react-native";
 
+import { CreateCard } from "./CreateCard";
+import { OrderCard, type OrderCardStatus } from "./OrderCard";
 import { TokenCard } from "./TokenCard";
 import { ToolProgress } from "./ToolProgress";
+import { TradeReceipt } from "./TradeReceipt";
 import { TxPreview, type TxPreviewStatus } from "./TxPreview";
 import { WalletCard } from "./WalletCard";
 import type { Message, MessageCard } from "./types";
@@ -22,6 +26,11 @@ export type MessageListProps = {
   onRegenerate?: () => void;
   onConfirmTx?: (card: MessageCard) => void;
   onCancelTx?: (card: MessageCard) => void;
+  onCancelOrder?: (orderId: string) => void;
+  onBuyToken?: (mint: string) => void;
+  onSellToken?: (mint: string) => void;
+  onOpenCreate?: (kind: "launch" | "nft", card: MessageCard) => void;
+  onApproveCreate?: (kind: "launch" | "nft", card: MessageCard) => void;
 };
 
 type InlineSegment = {
@@ -166,16 +175,42 @@ function asTxStatus(value: unknown): TxPreviewStatus {
     : "preview";
 }
 
+function asOrderStatus(value: unknown): OrderCardStatus {
+  const statuses: OrderCardStatus[] = [
+    "pending",
+    "triggered",
+    "confirmed",
+    "failed",
+    "cancelled",
+  ];
+  return statuses.includes(value as OrderCardStatus)
+    ? (value as OrderCardStatus)
+    : "pending";
+}
+
 function MessageCardView({
   card,
   onConfirmTx,
   onCancelTx,
+  onCancelOrder,
+  onBuyToken,
+  onSellToken,
+  onOpenCreate,
+  onApproveCreate,
+  onOpenOrders,
 }: {
   card: MessageCard;
   onConfirmTx?: (card: MessageCard) => void;
   onCancelTx?: (card: MessageCard) => void;
+  onCancelOrder?: (orderId: string) => void;
+  onBuyToken?: (mint: string) => void;
+  onSellToken?: (mint: string) => void;
+  onOpenCreate?: (kind: "launch" | "nft", card: MessageCard) => void;
+  onApproveCreate?: (kind: "launch" | "nft", card: MessageCard) => void;
+  onOpenOrders?: () => void;
 }) {
   if (card.kind === "token") {
+    const mint = String(card.data.mint ?? "");
     return (
       <TokenCard
         symbol={String(card.data.symbol ?? card.title)}
@@ -184,6 +219,23 @@ function MessageCardView({
         liquidity={String(card.data.liq ?? card.data.liquidity ?? "—")}
         volume={String(card.data.vol ?? card.data.volume ?? "—")}
         risk={String(card.data.risk ?? "—")}
+        onBuy={() => mint && onBuyToken?.(mint)}
+        onSell={() => mint && onSellToken?.(mint)}
+      />
+    );
+  }
+
+  if (card.kind === "launch" || card.kind === "nft") {
+    return (
+      <CreateCard
+        kind={card.kind}
+        name={String(card.data.name ?? card.title)}
+        symbol={String(card.data.symbol ?? "")}
+        note={String(card.data.note ?? "")}
+        onOpen={() => onOpenCreate?.(card.kind === "nft" ? "nft" : "launch", card)}
+        onApprove={() =>
+          onApproveCreate?.(card.kind === "nft" ? "nft" : "launch", card)
+        }
       />
     );
   }
@@ -198,7 +250,51 @@ function MessageCardView({
     );
   }
 
+  if (card.kind === "order") {
+    return (
+      <OrderCard
+        percent={Number(card.data.percent ?? 0)}
+        triggerType={
+          String(card.data.triggerType) === "price" ? "price" : "mcap"
+        }
+        triggerValue={Number(card.data.triggerValue ?? 0)}
+        symbol={String(card.data.symbol ?? "")}
+        mint={String(card.data.mint ?? "")}
+        status={asOrderStatus(card.data.status)}
+        signature={String(card.data.signature ?? "") || undefined}
+        onCancel={
+          card.data.orderId
+            ? () => onCancelOrder?.(String(card.data.orderId))
+            : undefined
+        }
+        onOpenDashboard={onOpenOrders}
+      />
+    );
+  }
+
   if (card.kind === "tx") {
+    const status = asTxStatus(card.data.status);
+    const side = String(card.data.side ?? "buy") === "sell" ? "sell" : "buy";
+    const compact =
+      card.data.compact === true ||
+      status === "confirmed" ||
+      status === "failed" ||
+      status === "submitted" ||
+      status === "confirming";
+    if (compact) {
+      const amount =
+        typeof card.data.amount === "number"
+          ? `${card.data.amount}${typeof card.data.percent === "number" ? `% (${card.data.percent}%)` : ""}`
+          : undefined;
+      return (
+        <TradeReceipt
+          side={side}
+          status={status}
+          amountLabel={amount}
+          signature={String(card.data.signature ?? card.data.tx ?? "") || undefined}
+        />
+      );
+    }
     const warnings =
       typeof card.data.warnings === "string" && card.data.warnings
         ? card.data.warnings.split(" | ")
@@ -211,6 +307,11 @@ function MessageCardView({
         route={String(card.data.route ?? "Jupiter")}
         warnings={warnings}
         status={asTxStatus(card.data.status)}
+        confirmLabel={
+          String(card.data.side ?? "buy") === "sell"
+            ? "Approve & sell"
+            : "Approve & buy"
+        }
         onConfirm={() => onConfirmTx?.(card)}
         onCancel={() => onCancelTx?.(card)}
       />
@@ -231,6 +332,12 @@ type MessageItemProps = {
   onRegenerate?: () => void;
   onConfirmTx?: (card: MessageCard) => void;
   onCancelTx?: (card: MessageCard) => void;
+  onCancelOrder?: (orderId: string) => void;
+  onBuyToken?: (mint: string) => void;
+  onSellToken?: (mint: string) => void;
+  onOpenCreate?: (kind: "launch" | "nft", card: MessageCard) => void;
+  onApproveCreate?: (kind: "launch" | "nft", card: MessageCard) => void;
+  onOpenOrders?: () => void;
 };
 
 function MessageItem({
@@ -239,6 +346,12 @@ function MessageItem({
   onRegenerate,
   onConfirmTx,
   onCancelTx,
+  onCancelOrder,
+  onBuyToken,
+  onSellToken,
+  onOpenCreate,
+  onApproveCreate,
+  onOpenOrders,
 }: MessageItemProps) {
   const [copied, setCopied] = useState(false);
   const blocks = parseMarkdown(message.content);
@@ -264,6 +377,12 @@ function MessageItem({
 
   return (
     <View style={[styles.messageWrap, isUser && styles.messageWrapUser]}>
+      {!isUser ? (
+        <View style={styles.agentRow}>
+          <View style={styles.agentPulse} />
+          <Text style={styles.agentKicker}>ORBITX CORE</Text>
+        </View>
+      ) : null}
       <View style={[styles.bubble, isUser ? styles.bubbleUser : styles.bubbleAssistant]}>
         {blocks.map((block, blockIndex) => {
           if (block.type === "list") {
@@ -305,6 +424,12 @@ function MessageItem({
               card={card}
               onConfirmTx={onConfirmTx}
               onCancelTx={onCancelTx}
+              onCancelOrder={onCancelOrder}
+              onBuyToken={onBuyToken}
+              onSellToken={onSellToken}
+              onOpenCreate={onOpenCreate}
+              onApproveCreate={onApproveCreate}
+              onOpenOrders={onOpenOrders}
             />
           </View>
         ))}
@@ -342,7 +467,14 @@ export function MessageList({
   onRegenerate,
   onConfirmTx,
   onCancelTx,
+  onCancelOrder,
+  onBuyToken,
+  onSellToken,
+  onOpenCreate,
+  onApproveCreate,
 }: MessageListProps) {
+  const router = useRouter();
+  const openOrders = () => router.push("/orders");
   const lastAssistantId = [...messages]
     .reverse()
     .find((message) => message.role === "assistant")?.id;
@@ -360,6 +492,12 @@ export function MessageList({
           onRegenerate={onRegenerate}
           onConfirmTx={onConfirmTx}
           onCancelTx={onCancelTx}
+          onCancelOrder={onCancelOrder}
+          onBuyToken={onBuyToken}
+          onSellToken={onSellToken}
+          onOpenCreate={onOpenCreate}
+          onApproveCreate={onApproveCreate}
+          onOpenOrders={openOrders}
         />
       )}
     />
@@ -370,29 +508,55 @@ const styles = StyleSheet.create({
   listContent: {
     paddingHorizontal: 16,
     paddingVertical: 20,
-    gap: 18,
+    gap: 22,
   },
   messageWrap: {
-    alignItems: "flex-start",
-    gap: 8,
+    alignItems: "stretch",
+    width: "100%",
+    gap: 10,
   },
   messageWrapUser: {
     alignItems: "flex-end",
   },
+  agentRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingLeft: 2,
+  },
+  agentPulse: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: colors.signal,
+  },
+  agentKicker: {
+    color: colors.signal,
+    fontFamily: "Inter_500Medium",
+    fontSize: 10,
+    letterSpacing: 2.8,
+  },
   bubble: {
-    maxWidth: "92%",
-    borderRadius: 16,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+    width: "100%",
+    maxWidth: "100%",
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
     borderWidth: StyleSheet.hairlineWidth,
   },
   bubbleUser: {
-    backgroundColor: "rgba(126, 182, 255, 0.1)",
-    borderColor: "rgba(126, 182, 255, 0.22)",
+    width: "86%",
+    maxWidth: 420,
+    alignSelf: "flex-end",
+    backgroundColor: "rgba(90, 140, 255, 0.16)",
+    borderColor: "rgba(150, 196, 255, 0.32)",
   },
   bubbleAssistant: {
-    backgroundColor: colors.glass,
-    borderColor: colors.line,
+    alignSelf: "stretch",
+    backgroundColor: "rgba(6, 8, 14, 0.96)",
+    borderColor: "rgba(126, 182, 255, 0.18)",
+    borderLeftWidth: 2,
+    borderLeftColor: colors.signal,
   },
   paragraph: {
     marginBottom: 8,
@@ -438,6 +602,8 @@ const styles = StyleSheet.create({
   },
   toolProgressWrap: {
     marginTop: 10,
+    width: "100%",
+    alignSelf: "stretch",
   },
   cardWrap: {
     marginTop: 12,

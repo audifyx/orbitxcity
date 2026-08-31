@@ -12,6 +12,7 @@
   "exclude": [
     "node_modules",
     "supabase",
-    "privy-host"
+    "privy-host",
+    "og-scan"
   ]
 }
