@@ -1,29 +1,48 @@
-# OrbitX City — Content Studio
+# OrbitX — Content Studio
 
-Self-contained content pack for one week of OrbitX marketing.
+A self-contained, one-week marketing pack for **OrbitX** — the AI-native crypto
+intelligence and trading app in this repo (Solana, mobile-first, non-custodial).
+
+> This pack is about the **OrbitX app**. It is not about "OrbitX City" (a
+> separate product). Every post and screenshot describes real OrbitX features.
+
+## What's inside
+
+- `posts.source.json` — the editable source of truth for all 25 posts.
+- `build-content.mjs` — regenerates every derived file from the source.
+- `posts/post-01.txt … post-25.txt` — **copy-paste-ready** X posts (Unicode styled).
+- `posts/post-01.md … post-25.md` — same posts with metadata + their 3 images.
+- `posts.json` — machine-readable index (title, body, assets, tags).
+- `posts.md` — human-readable master of all 25 posts.
+- `assets/post-01-01.png … post-25-03.png` — **75 images** (3 per post).
+- `asset-index.md` — maps every post to its three images.
+- `weekly-plan.md` — 7-day posting sequence.
+- `POSTING-CHECKLIST.md` — pre-publish checklist.
+- `demo-account.json` / `demo-data.json` — the mock identity + data.
+
+Regenerate text after editing the source:
+
+```bash
+node content-studio/build-content.mjs
+```
 
 ## Safety / demo mode
 
-The content preview uses a local mock account only:
+All visuals use a local mock identity — **`orbitx-content-demo`**:
 
-- `orbitx-content-demo`
-- fictional balances and token activity
-- no private key
-- no wallet connection
-- no Privy session
-- no real authentication
-- no Jupiter transaction
-- no network trade execution
+- auth provider: `none` · session: `null`
+- wallet provider: `mock` · address: `null` · private key: never generated
+- fictional balances only · no network trades · no signatures
 
-Enable the in-app preview with `EXPO_PUBLIC_CONTENT_DEMO=true`.
+The screenshots are captured from the **real OrbitX UI** with mock data, and
+every image carries a visible `CONTENT DEMO · MOCK DATA` badge. Fictional
+symbols only (NOVA, ORBIT, CLAW, CITY). Never present demo values as live
+results, real P&L, real volume, or executed trades.
 
-## Content pack
+A login-less in-app preview lives at the `/content-demo` route (renders the
+`orbitx-content-demo` screen without any wallet or auth).
 
-- `posts.json` — 25 copy/paste-ready X posts
-- `posts/` — one Markdown file per post
-- `weekly-plan.md` — narrative sequence and media order
-- `demo-data.json` — fictional data used by the preview
-- `demo-account.json` — local demo identity definition
-- `AGENT_BRIEF.md` — instructions for the content agent to produce real app screenshots safely
+## Note on handles/links
 
-Never present demo numbers as live market results. Every demo visual should carry a visible CONTENT DEMO / MOCK DATA label.
+Posts link to `ogscan.fun`. Replace or add your X handle before publishing if
+you want an @mention in the copy.

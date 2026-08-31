@@ -1,17 +1,24 @@
-# OrbitX City — 7-day content sequence
+# OrbitX — 7-day content sequence
 
-Use the numbered posts in order so the week reads like one story rather than 25 disconnected ads.
+Post the 25 posts in order so the week reads as one story about the OrbitX app:
+idea → AI chat → token intelligence → OG Scan → safety → wallet & portfolio →
+trading (quote→preview→sign) → alerts → agent transparency → 250 skills →
+agents → discoverability → forensics → risk → paper trading → reports →
+self-custody/export → profile → permissions → non-custodial → mobile → demo →
+invitation.
 
-| Day | Posts | Narrative |
+| Day | Posts | Theme |
 |---|---|---|
-| Mon | 01–04 | Idea → AI-native → token intelligence → OG Scan |
-| Tue | 05–08 | Trading terminal → execution architecture → wallet intel → alerts |
-| Wed | 09–12 | Agent transparency → skills → social layer → trading lobbies |
-| Thu | 13–16 | XP → prediction markets → launchpad → creator economics |
-| Fri | 17–19 | Multi-chain → City metaphor → coin planets |
-| Sat | 20–22 | Clusters → safe demo mode → build philosophy |
-| Sun | 23–25 | Mobile → what’s next → invitation |
+| Mon | 01–04 | Meet OrbitX → AI chat → token report → OG Scan |
+| Tue | 05–08 | Safety checks → wallet/portfolio → wallet intel → quote→preview→sign |
+| Wed | 09–12 | Trade prep → alerts → agent tool terminal → 250 skills |
+| Thu | 13–16 | Specialist agents → @-tools → holder forensics → risk score |
+| Fri | 17–19 | Paper trading → research reports → export your wallet |
+| Sat | 20–22 | Profile → permission modes → non-custodial by design |
+| Sun | 23–25 | Mobile-first → safe demo mode → invitation |
 
-For each post, attach exactly three media items in this order: product/interface view → agent/tooling view → world/social view.
+For each post, attach exactly three images in this order:
+**interface view → agent/tooling view → feature view** (see `asset-index.md`).
 
-Do not use fabricated performance, user counts, revenue, P&L, volume, or transaction claims as if they were real. Demo values must be visibly labeled.
+Do not present demo values as real performance, users, revenue, P&L, volume,
+or executed trades. Every demo image is labeled `CONTENT DEMO · MOCK DATA`.

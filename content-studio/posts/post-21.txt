@@ -1,0 +1,14 @@
+𝗢𝗥𝗕𝗜𝗧𝗫 ◈ 𝗬𝗢𝗨 𝗦𝗘𝗧 𝗧𝗛𝗘 𝗣𝗘𝗥𝗠𝗜𝗦𝗦𝗜𝗢𝗡𝗦
+
+OrbitX puts you in control of what the agent can do.
+
+▸ Read-only: analysis, zero writes.
+▸ Confirm every action: you approve each step.
+▸ Limited automation: pre-approve a safe set.
+
+𝗪𝗵𝘆 𝗶𝘁 𝗺𝗮𝘁𝘁𝗲𝗿𝘀 — Autonomy should be a dial you control — not a default.
+
+As hands-off, or hands-on, as you want.
+
+→ Try it: ogscan.fun   ·   Built on Solana
+#OrbitX #Solana #AIagents

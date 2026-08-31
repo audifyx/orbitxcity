@@ -1,14 +1,23 @@
-# Screenshot production checklist
+# How the images were produced
 
-The content agent should use the actual OrbitX app with `EXPO_PUBLIC_CONTENT_DEMO=true` and capture 75 real screenshots: 3 for each post.
+The 75 images in `assets/` are captured from the **real OrbitX UI components**
+(the same code that ships in the app) rendered with the `orbitx-content-demo`
+mock data — not hand-drawn mockups.
 
-Naming: `post-01-01.png` through `post-25-03.png`.
+Pipeline:
 
-For every post:
-1. Product / market intelligence screen.
-2. Agent terminal / tool-call screen.
-3. OrbitX City / social / world screen.
+1. A React harness renders each OrbitX surface inside a phone frame with a
+   `CONTENT DEMO · MOCK DATA` badge and the post caption.
+2. Scenes reuse the shipping components: `PortfolioView`, `ProfileView`,
+   `SettingsView`, `ToolTerminal`, `TokenCard`, `WalletCard`, `TxPreview`,
+   `AlertCard`, `AgentCard`, `EmptyHome`, `MessageList`, `Composer`, the
+   `ContentDemoScreen`, plus the `SKILLS` registry — bundled for web via
+   `react-native-web`.
+3. Headless Chrome screenshots each scene at 2× into
+   `assets/post-NN-0M.png`.
 
-All screenshots must visibly show `CONTENT DEMO` or `MOCK DATA`. Use fictional assets and balances only. Do not connect Privy, Phantom, Jupiter execution, a private key, or any real authentication session.
+To change the imagery, edit the scene mapping in `posts.source.json`
+(`assets: [interface, agent, feature]` per post) and re-render.
 
-Use 1600×1000 or higher where practical. Keep the UI itself authentic; do not fabricate a screenshot by drawing a fake browser chrome around unrelated content. Store the PNGs under `content-studio/assets/` and add an `asset-index.md` mapping each post to its three images.
+Mock data only: fictional symbols (NOVA, ORBIT, CLAW, CITY), fictional
+balances, no wallet, no auth, no signatures, no network trades.

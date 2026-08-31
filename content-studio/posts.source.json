@@ -1,0 +1,333 @@
+{
+  "brand": "OrbitX",
+  "tagline": "AI-native crypto intelligence and trading for Solana",
+  "link": "ogscan.fun",
+  "note": "All posts are about the OrbitX app (this repo). Not 'OrbitX City'. No fabricated metrics, users, P&L, or executed trades. Demo visuals are labeled CONTENT DEMO / MOCK DATA.",
+  "posts": [
+    {
+      "n": 1, "day": "Mon", "title": "Meet OrbitX",
+      "hook": "Most crypto apps bury you in tabs. OrbitX is one AI you talk to — it does the digging, you make the call.",
+      "points": [
+        "Ask about any token, wallet, or protocol in plain English.",
+        "The agent plans the work, runs live tools, and answers.",
+        "Built for Solana, mobile-first, non-custodial by design."
+      ],
+      "why": "The interface is the conversation — not a wall of dashboards.",
+      "punch": "This is the front door to everything OrbitX can do.",
+      "tags": ["#OrbitX", "#Solana", "#crypto"],
+      "assets": ["home", "terminal", "brand"]
+    },
+    {
+      "n": 2, "day": "Mon", "title": "The home screen is a conversation",
+      "hook": "Open OrbitX and there's no maze of menus. There's a chat.",
+      "points": [
+        "Type like you'd text a sharp trader friend.",
+        "Casual questions get casual answers; a mint gets a full report.",
+        "Type @ to summon a specific tool by name."
+      ],
+      "why": "You shouldn't have to learn an app to use it. You just talk.",
+      "punch": "Say what you want. OrbitX figures out the how.",
+      "tags": ["#OrbitX", "#AI", "#Solana"],
+      "assets": ["home", "chatcasual", "composer"]
+    },
+    {
+      "n": 3, "day": "Mon", "title": "A full token report from one mint",
+      "hook": "Paste a contract address. Get a real briefing — not a number soup.",
+      "points": [
+        "Identity, market, liquidity, and volume in one place.",
+        "Holders, mint/freeze authority, and LP status.",
+        "Sources cited; the chain is the source of truth."
+      ],
+      "why": "Finding a token is easy. Understanding it is the hard part.",
+      "punch": "Context first. Action second.",
+      "tags": ["#OrbitX", "#Solana", "#memecoins"],
+      "assets": ["chatreport", "terminal", "tokencard"]
+    },
+    {
+      "n": 4, "day": "Mon", "title": "OG Scan: the forensic layer",
+      "hook": "OrbitX ships with OG Scan — the investigative side of the app.",
+      "points": [
+        "Risk signals, dev history, and wallet behavior.",
+        "First buyers and sniper clusters surfaced fast.",
+        "Designed to help you investigate before you click."
+      ],
+      "why": "Influencers hype. Narratives lie. The chain doesn't.",
+      "punch": "Investigate before you ape.",
+      "tags": ["#OrbitX", "#OGScan", "#Solana"],
+      "assets": ["chatsecurity", "terminal", "tokencard"]
+    },
+    {
+      "n": 5, "day": "Tue", "title": "Safety checks, before anything else",
+      "hook": "OrbitX runs safety heuristics up front so you see red flags early.",
+      "points": [
+        "Honeypot signals and transfer restrictions.",
+        "Mint authority renounced? Freeze authority live?",
+        "Liquidity locked, or one wallet away from a pull?"
+      ],
+      "why": "The best trade is sometimes the one you don't take.",
+      "punch": "Green candles are optional. Not getting rugged isn't.",
+      "tags": ["#OrbitX", "#Solana", "#DYOR"],
+      "assets": ["chatsecurity", "terminaldone", "tokenlist"]
+    },
+    {
+      "n": 6, "day": "Tue", "title": "Your wallet, finally readable",
+      "hook": "The wallet tab is a real portfolio view — not just an address.",
+      "points": [
+        "Total value, 24h / 7d change, and SOL balance up top.",
+        "Every holding with amount, USD value, and price.",
+        "Allocation % of your bag and % of supply you hold."
+      ],
+      "why": "You can't manage what you can't see.",
+      "punch": "Open the wallet tab and actually understand your bag.",
+      "tags": ["#OrbitX", "#Solana", "#portfolio"],
+      "assets": ["portfolio", "walletcard", "chatreport"]
+    },
+    {
+      "n": 7, "day": "Tue", "title": "Wallet intelligence on any address",
+      "hook": "Paste any wallet and ask OrbitX what it's actually doing.",
+      "points": [
+        "Holdings, behavior, and counterparty exposure.",
+        "PnL hints and activity patterns over time.",
+        "Turn a raw address into a story you can reason about."
+      ],
+      "why": "Smart money leaves footprints. OrbitX reads them.",
+      "punch": "See the signal behind the address.",
+      "tags": ["#OrbitX", "#Solana", "#onchain"],
+      "assets": ["walletcard", "terminal", "chatreport"]
+    },
+    {
+      "n": 8, "day": "Tue", "title": "Quote → preview → sign",
+      "hook": "When it's time to trade, OrbitX never becomes the authorization layer.",
+      "points": [
+        "Jupiter quote first, with route and price impact.",
+        "A clear preview of exactly what you'll sign.",
+        "Nothing broadcasts until your wallet signs it."
+      ],
+      "why": "The model plans. Your wallet authorizes. Always.",
+      "punch": "AI convenience, self-custody safety. No compromise.",
+      "tags": ["#OrbitX", "#Jupiter", "#Solana"],
+      "assets": ["txpreview", "terminal", "chattrade"]
+    },
+    {
+      "n": 9, "day": "Wed", "title": "Trade prep without the tab chaos",
+      "hook": "OrbitX pulls quotes, previews, and checks into one flow.",
+      "points": [
+        "Ask for a quote in the same chat you researched in.",
+        "See slippage, route, and warnings before you commit.",
+        "Confirm in-wallet — or walk away — in one place."
+      ],
+      "why": "Fewer tabs means fewer mistakes.",
+      "punch": "One workflow. Less chaos.",
+      "tags": ["#OrbitX", "#Solana", "#trading"],
+      "assets": ["txpreview", "terminal", "tokencard"]
+    },
+    {
+      "n": 10, "day": "Wed", "title": "Alerts that watch for you",
+      "hook": "Markets move at 3am. You shouldn't have to.",
+      "points": [
+        "Set price, wallet, and migration alerts in plain English.",
+        "Let the agent watch conditions while you sleep.",
+        "Get pinged when something you care about happens."
+      ],
+      "why": "Attention is your scarcest asset. Spend it wisely.",
+      "punch": "Let the agent watch. You decide.",
+      "tags": ["#OrbitX", "#Solana", "#alerts"],
+      "assets": ["alertcard", "terminal", "composer"]
+    },
+    {
+      "n": 11, "day": "Wed", "title": "The agent tool terminal",
+      "hook": "OrbitX isn't a black box. You watch it work.",
+      "points": [
+        "A mini terminal shows every tool the agent calls, live.",
+        "See what ran, what's running, and what failed.",
+        "If a tool fails, OrbitX tells you — it never fakes results."
+      ],
+      "why": "Trust comes from transparency, not vibes.",
+      "punch": "No black box. See the work.",
+      "tags": ["#OrbitX", "#AIagents", "#Solana"],
+      "assets": ["terminal", "terminaldone", "chatreport"]
+    },
+    {
+      "n": 12, "day": "Wed", "title": "250 skills, one command layer",
+      "hook": "OrbitX now ships with a library of 250 built-in skills.",
+      "points": [
+        "Trading, DeFi, intelligence, security, wallet, and knowledge.",
+        "Each skill maps to real tools the agent can run.",
+        "Discover them by name — no memorizing commands."
+      ],
+      "why": "Power is useless if you can't find it.",
+      "punch": "Tools should be discoverable. Now they are.",
+      "tags": ["#OrbitX", "#Solana", "#AI"],
+      "assets": ["skills", "terminal", "composer"]
+    },
+    {
+      "n": 13, "day": "Thu", "title": "Specialist agents on tap",
+      "hook": "Behind the chat is a bench of specialist agents.",
+      "points": [
+        "Token analyst, security guard, wallet analyst, trading desk.",
+        "The right specialist is picked for the job.",
+        "Each one is scoped to a safe set of tools."
+      ],
+      "why": "One generalist can't beat the right specialist.",
+      "punch": "A whole desk of analysts in your pocket.",
+      "tags": ["#OrbitX", "#AIagents", "#Solana"],
+      "assets": ["agents", "skills", "terminal"]
+    },
+    {
+      "n": 14, "day": "Thu", "title": "Type @ to pick a tool",
+      "hook": "Want a specific tool? Just type @ and it appears.",
+      "points": [
+        "Mentions autocomplete as you type.",
+        "Fire a single tool or let the agent orchestrate many.",
+        "The command palette makes everything one tap away."
+      ],
+      "why": "Great tools disappear until you need them.",
+      "punch": "Discoverable by design.",
+      "tags": ["#OrbitX", "#Solana", "#UX"],
+      "assets": ["composer", "skills", "home"]
+    },
+    {
+      "n": 15, "day": "Thu", "title": "Holder & first-buyer forensics",
+      "hook": "Who's actually holding this — and who got in first?",
+      "points": [
+        "Holder concentration and smart-money overlap.",
+        "First buyers and sniper wallets with timestamps.",
+        "Bundle and cluster detection to spot coordination."
+      ],
+      "why": "The cap table tells you who's really in control.",
+      "punch": "Follow the wallets, not the hype.",
+      "tags": ["#OrbitX", "#Solana", "#onchain"],
+      "assets": ["chatreport", "terminal", "tokencard"]
+    },
+    {
+      "n": 16, "day": "Thu", "title": "One composite risk score",
+      "hook": "Dozens of signals, distilled into one honest read.",
+      "points": [
+        "Safety, liquidity, and holder data combined.",
+        "Transparent factors — you see why the score is what it is.",
+        "Built to warn early, not to shill."
+      ],
+      "why": "A single number you can actually trust — because you can see inside it.",
+      "punch": "Risk you can read at a glance.",
+      "tags": ["#OrbitX", "#Solana", "#DYOR"],
+      "assets": ["chatsecurity", "tokencard", "terminaldone"]
+    },
+    {
+      "n": 17, "day": "Fri", "title": "Paper trade before you commit",
+      "hook": "Test an idea with live quotes and zero risk.",
+      "points": [
+        "Simulate entries and exits against real prices.",
+        "No on-chain execution, no funds at stake.",
+        "Kept strictly separate from your live wallet."
+      ],
+      "why": "Conviction is cheaper to build in simulation.",
+      "punch": "Practice the trade before you take it.",
+      "tags": ["#OrbitX", "#Solana", "#trading"],
+      "assets": ["portfolio", "txpreview", "chattrade"]
+    },
+    {
+      "n": 18, "day": "Fri", "title": "Research you can keep",
+      "hook": "OrbitX can turn a scan into a shareable brief.",
+      "points": [
+        "Structured reports for a token or a wallet.",
+        "The facts, the risks, and the links — organized.",
+        "Great for your own notes or your group chat."
+      ],
+      "why": "Good research compounds when you can save and share it.",
+      "punch": "From scan to report in one ask.",
+      "tags": ["#OrbitX", "#Solana", "#research"],
+      "assets": ["chatreport", "terminaldone", "portfolio"]
+    },
+    {
+      "n": 19, "day": "Fri", "title": "Your keys, your coins",
+      "hook": "OrbitX creates an in-app wallet — and you can export it anytime.",
+      "points": [
+        "Export runs on a secure page at ogscan.fun.",
+        "Your private key loads in an isolated environment.",
+        "OrbitX never sees it. Move to any wallet you want."
+      ],
+      "why": "Self-custody isn't a feature — it's the whole point.",
+      "punch": "Not your keys? Not with OrbitX.",
+      "tags": ["#OrbitX", "#Solana", "#selfcustody"],
+      "assets": ["exportcard", "settings", "profile"]
+    },
+    {
+      "n": 20, "day": "Sat", "title": "Your account, at a glance",
+      "hook": "The profile tab pulls your identity together.",
+      "points": [
+        "Display name, wallet address, and network.",
+        "Copy your address or open it in Solscan.",
+        "Quick links to wallet, settings, and export."
+      ],
+      "why": "Everything you need, one tap from the chat.",
+      "punch": "Clean, fast, and yours.",
+      "tags": ["#OrbitX", "#Solana", "#UX"],
+      "assets": ["profile", "portfolio", "settings"]
+    },
+    {
+      "n": 21, "day": "Sat", "title": "You set the permissions",
+      "hook": "OrbitX puts you in control of what the agent can do.",
+      "points": [
+        "Read-only: analysis, zero writes.",
+        "Confirm every action: you approve each step.",
+        "Limited automation: pre-approve a safe set."
+      ],
+      "why": "Autonomy should be a dial you control — not a default.",
+      "punch": "As hands-off, or hands-on, as you want.",
+      "tags": ["#OrbitX", "#Solana", "#AIagents"],
+      "assets": ["settings", "profile", "terminal"]
+    },
+    {
+      "n": 22, "day": "Sat", "title": "Non-custodial by design",
+      "hook": "Convenience shouldn't cost you custody.",
+      "points": [
+        "Every swap, launch, or mint needs your signature.",
+        "Private keys stay in a secure environment — never in OrbitX.",
+        "The app can never move funds on its own."
+      ],
+      "why": "AI should assist you, never replace your consent.",
+      "punch": "The agent proposes. You dispose.",
+      "tags": ["#OrbitX", "#Solana", "#selfcustody"],
+      "assets": ["exportcard", "settings", "walletcard"]
+    },
+    {
+      "n": 23, "day": "Sun", "title": "Serious tooling, in your pocket",
+      "hook": "OrbitX is built mobile-first with Expo.",
+      "points": [
+        "Real market tooling that feels native on a phone.",
+        "Not a desktop terminal crammed onto a screen.",
+        "Research, watch, and trade from anywhere."
+      ],
+      "why": "The market doesn't wait for you to get to a desk.",
+      "punch": "Your trading desk fits in your hand.",
+      "tags": ["#OrbitX", "#Solana", "#mobile"],
+      "assets": ["home", "portfolio", "profile"]
+    },
+    {
+      "n": 24, "day": "Sun", "title": "A safe demo, real UI",
+      "hook": "Want to look before you connect anything? There's a demo mode.",
+      "points": [
+        "Fictional balances and mock tokens — clearly labeled.",
+        "No wallet, no auth, no network trades.",
+        "Explore the real interface with zero risk."
+      ],
+      "why": "You should be able to kick the tires without a login.",
+      "punch": "Zero real funds. Zero real auth. Just the product.",
+      "tags": ["#OrbitX", "#Solana", "#demo"],
+      "assets": ["demo", "portfolio", "terminal"]
+    },
+    {
+      "n": 25, "day": "Sun", "title": "Come build with us",
+      "hook": "OrbitX is early, and that's the best time to show up.",
+      "points": [
+        "An AI that researches, watches, and preps trades.",
+        "Self-custody, transparency, and safety baked in.",
+        "New capabilities landing every week."
+      ],
+      "why": "The best tools are shaped by the people who use them early.",
+      "punch": "Talk to your markets. Try OrbitX.",
+      "tags": ["#OrbitX", "#Solana", "#crypto"],
+      "assets": ["brand", "home", "skills"]
+    }
+  ]
+}

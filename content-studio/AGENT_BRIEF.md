@@ -1,82 +1,55 @@
-# OrbitX City Content Agent — execution brief
+# OrbitX content agent — execution brief
 
-You are the OrbitX City content-production agent. Work inside `audifyx/orbitxcity`.
+You are the OrbitX content-production agent. Work inside `audifyx/orbitxcity`.
+
+> Scope: the content is about the **OrbitX app** (AI-native crypto intelligence
+> and trading on Solana) — **not** "OrbitX City", which is a separate product.
 
 ## Objective
 
-Create a safe, polished one-week marketing package: **25 X posts + 3 screenshots/images per post = 75 media assets**. The media must show the actual OrbitX City interface wherever possible, using a dedicated content-demo mode. Do not connect a real wallet, create a real authentication session, sign transactions, spend SOL, call a real trading execution endpoint, or expose credentials.
+Produce a safe, polished one-week marketing package: **25 X posts + 3 images
+per post = 75 media assets**. Media must show the actual OrbitX interface using
+a dedicated content-demo identity. Never connect a real wallet, create a real
+auth session, sign a transaction, spend SOL, call a real execution endpoint, or
+expose credentials.
 
-## Demo account requirements
+## Demo identity (`orbitx-content-demo`)
 
-Create a local deterministic identity:
+- auth provider: `none` · session: `null`
+- wallet provider: `mock` · address: `null` · private key: never generated
+- fictional balances only · execution/network trades: disabled
 
-`orbitx-content-demo`
-
-It must have:
-- auth provider: `none`
-- session/JWT: `null`
-- wallet provider: `mock`
-- wallet address: `null`
-- private key: never generated
-- connected: `false`
-- fictional balance only
-- execution/network trades: disabled
-
-The content-demo switch must be opt-in, e.g. `EXPO_PUBLIC_CONTENT_DEMO=true`, and the normal production path must remain unchanged when false.
+A login-less preview is exposed at the `/content-demo` route. The normal
+production paths are unchanged.
 
 ## Mock data
 
-Use obviously fictional symbols/data such as NOVA, ORBIT, CLAW and CITY. Use believable UI values for visual richness, but **always label the screenshots `CONTENT DEMO` or `MOCK DATA`**. Never imply the numbers are live performance, real P&L, real volume, real users, or executed trades.
+Use fictional symbols only (NOVA, ORBIT, CLAW, CITY) and believable-but-fake
+values. Every image must visibly carry `CONTENT DEMO · MOCK DATA`. Never imply
+demo numbers are live performance, real P&L, real volume, real users, or
+executed trades.
 
-## Screenshot production
+## Screenshots
 
-Run the app locally with the content-demo flag. Capture clean, high-resolution screenshots from the actual app UI—not hand-drawn replicas—covering:
+Capture from the real OrbitX components (see `asset-generation.md`). Three
+images per post, in order: interface view → agent/tooling view → feature view.
+Files: `assets/post-01-01.png` … `assets/post-25-03.png`, mapped in
+`asset-index.md`.
 
-1. Market/intelligence dashboard
-2. Agent tool terminal / tool calls
-3. OrbitX City / world / social view
+## Copy
 
-Produce three distinct media assets for every numbered post. Keep the visual language consistent: dark premium UI, restrained blue/ice accents, crisp typography, generous spacing, minimal clutter.
+Posts live in `posts.source.json` and are compiled by `build-content.mjs`.
+Keep Unicode styling on headers only; body stays readable. Strong hooks, short
+paragraphs, intentional whitespace, 1–3 hashtags. No fake scarcity, traction,
+partnerships, user counts, revenue, or guaranteed-profit language.
 
-File naming:
+## Regenerate
 
-`content-studio/assets/post-01-01.png` through `post-25-03.png`
+```bash
+node content-studio/build-content.mjs
+```
 
-Also create a contact sheet or index mapping every post to its three assets.
+## Status
 
-## Post sequence
-
-Use `posts.json` and `weekly-plan.md`. The 25 posts are deliberately sequenced so the account tells one continuous product story: idea → intelligence → trading → agents → social → prediction/launching → City/world → safe demo → mobile → vision.
-
-## X-ready copy
-
-Keep each post in Unicode styling where useful, but do not turn every character into exotic Unicode. Preserve readability. Use strong hooks, short paragraphs, intentional whitespace, and 1–3 relevant hashtags. Avoid fake scarcity, fake traction, fake partnerships, fake user counts, fake revenue, fake trading results, and guaranteed-profit language.
-
-## Final repository structure
-
-`content-studio/`
-
-- `README.md`
-- `AGENT_BRIEF.md`
-- `demo-account.json`
-- `demo-data.json`
-- `posts.json`
-- `posts/post-01.md` … `post-25.md`
-- `assets/post-01-01.png` … `post-25-03.png`
-- `asset-index.md`
-- `weekly-plan.md`
-
-## Verification before commit
-
-1. `npm install`
-2. `EXPO_PUBLIC_CONTENT_DEMO=true npx expo start --web` (or the project’s normal preview command)
-3. Confirm the demo screen works without login.
-4. Confirm no wallet modal appears.
-5. Confirm no transaction/signature can execute in demo mode.
-6. Confirm all 75 images exist and open.
-7. Confirm every post has exactly three images.
-8. Confirm all demo screenshots visibly identify mock/demo data.
-9. Run the project’s available TypeScript/lint/build checks.
-10. Commit everything to `main` with a clear message such as `feat(content): add safe demo mode and 25-post OrbitX content pack`.
-
-Do not overwrite unrelated product work. Preserve the existing OrbitX agent/tool-terminal changes.
+Fulfilled: 25 OrbitX posts + 75 labeled mock-data screenshots + login-less
+demo route. Do not overwrite unrelated product work.

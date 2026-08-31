@@ -70,7 +70,11 @@ function AuthGate({ children }: { children: ReactNode }) {
   useEffect(() => {
     const root = segments[0];
     const isAuthGroup = root === "(auth)";
-    const isCallback = root === "onconnect" || root === "onsign" || root === "auth";
+    const isCallback =
+      root === "onconnect" ||
+      root === "onsign" ||
+      root === "auth" ||
+      root === "content-demo";
 
     if (session && (isAuthGroup || pathname === "/connect" || pathname === "/auth")) {
       router.replace("/");
@@ -158,6 +162,7 @@ function RootLayoutInner() {
                   <Stack.Screen name="onconnect" />
                   <Stack.Screen name="onsign" />
                   <Stack.Screen name="auth" />
+                  <Stack.Screen name="content-demo" />
                 </Stack>
                 {showSplash ? (
                   <SplashScreen onComplete={() => setShowSplash(false)} />
