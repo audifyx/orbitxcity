@@ -121,7 +121,7 @@ export function Composer({
           >
             <Text style={styles.chipIcon}>{instantBuy ? "●" : "○"}</Text>
             <Text style={styles.chipLabel}>
-              {instantBuy ? "Instant buy" : "Approve buys"}
+              {instantBuy ? "Auto-sign" : "Manual sign"}
             </Text>
           </Pressable>
         ) : null}
