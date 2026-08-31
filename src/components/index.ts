@@ -14,4 +14,5 @@ export * from "./TokenCard";
 export * from "./ToolSheet";
 export * from "./PerformancePanel";
 export * from "./SimpleBarChart";
+export * from "./DexChart";
 export * from "./types";

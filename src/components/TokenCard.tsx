@@ -15,6 +15,8 @@ export type TokenCardProps = {
   onTrack?: () => void;
   /** Present only when the caller has a real numeric market cap to build a ladder from. */
   onLadder?: () => void;
+  /** Present only when a real DexScreener pair/chart is available for this token. */
+  onChart?: () => void;
 };
 
 function Metric({ label, value }: { label: string; value: string }) {
@@ -71,6 +73,7 @@ export function TokenCard({
   onAnalyze,
   onTrack,
   onLadder,
+  onChart,
 }: TokenCardProps) {
   return (
     <View style={styles.root}>
@@ -99,6 +102,7 @@ export function TokenCard({
         <ActionButton label="Sell" onPress={onSell} />
         <ActionButton label="Analyze" onPress={onAnalyze} />
         <ActionButton label="Track" onPress={onTrack} />
+        {onChart ? <ActionButton label="Chart" onPress={onChart} /> : null}
         {onLadder ? <ActionButton label="Ladder" onPress={onLadder} /> : null}
       </View>
     </View>

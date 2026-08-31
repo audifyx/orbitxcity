@@ -25,6 +25,8 @@ type TokenItem = {
   liquidity: string;
   volume: string;
   risk: string;
+  /** DexScreener pair address, when known — needed to embed a real chart. */
+  pairAddress?: string;
 };
 
 type SectionKey =
@@ -62,6 +64,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function str(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() !== "" ? value.trim() : undefined;
+}
+
 function pairToToken(pair: unknown): TokenItem | null {
   if (!isRecord(pair)) {
     return null;
@@ -76,6 +82,7 @@ function pairToToken(pair: unknown): TokenItem | null {
   const volume = isRecord(pair.volume) ? pair.volume.h24 : undefined;
   const change = isRecord(pair.priceChange) ? Number(pair.priceChange.h24) : NaN;
   const rawMc = Number(pair.marketCap ?? pair.fdv);
+  const pairAddress = str(pair.pairAddress);
   return {
     mint: mint || symbol,
     symbol,
@@ -87,6 +94,7 @@ function pairToToken(pair: unknown): TokenItem | null {
     risk: Number.isFinite(change)
       ? `${change >= 0 ? "+" : ""}${change.toFixed(1)}% 24h`
       : "—",
+    pairAddress,
   };
 }
 
@@ -280,6 +288,26 @@ export default function TrendingScreen() {
               }
               onLadder={
                 token.marketCapValue != null ? () => setLadderToken(token) : undefined
+              }
+              onChart={
+                token.pairAddress
+                  ? () =>
+                      router.push({
+                        pathname: "/token/[mint]",
+                        params: {
+                          mint: token.mint,
+                          symbol: token.symbol,
+                          price: token.price,
+                          marketCap: token.marketCap,
+                          marketCapValue:
+                            token.marketCapValue != null ? String(token.marketCapValue) : undefined,
+                          liquidity: token.liquidity,
+                          volume: token.volume,
+                          risk: token.risk,
+                          pairAddress: token.pairAddress,
+                        },
+                      })
+                  : undefined
               }
             />
           ))
