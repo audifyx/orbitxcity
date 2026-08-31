@@ -10,6 +10,8 @@ if (typeof globalThis.Buffer === "undefined") {
 
 const FUNCTION_TIMEOUT_MS = 60_000;
 const FUNCTION_RETRIES = 3;
+const WALLET_AUTH_TIMEOUT_MS = 12_000;
+const WALLET_AUTH_RETRIES = 5;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -48,12 +50,13 @@ export async function fetchWithRetry(
   input: RequestInfo | URL,
   init: RequestInit = {},
   attempts = FUNCTION_RETRIES,
+  timeoutMs = FUNCTION_TIMEOUT_MS,
 ): Promise<Response> {
   let lastError: Error = new Error("Request failed");
 
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), FUNCTION_TIMEOUT_MS);
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
       const response = await fetch(requestUrl(input), {
@@ -239,13 +242,26 @@ export async function walletAuth(
   action: "nonce" | "verify",
   payload: Record<string, string>,
 ): Promise<Record<string, unknown>> {
-  const response = await fetchWithRetry(`${supabaseUrl}/functions/v1/wallet-auth`, {
-    method: "POST",
-    headers: functionHeaders,
-    body: JSON.stringify({ action, ...payload }),
-  });
+  const response = await fetchWithRetry(
+    `${supabaseUrl}/functions/v1/wallet-auth`,
+    {
+      method: "POST",
+      headers: functionHeaders,
+      body: JSON.stringify({ action, ...payload }),
+    },
+    WALLET_AUTH_RETRIES,
+    WALLET_AUTH_TIMEOUT_MS,
+  );
 
-  const data = (await response.json()) as Record<string, unknown>;
+  const text = await response.text();
+  let data: Record<string, unknown> = {};
+  if (text.trim()) {
+    try {
+      data = JSON.parse(text) as Record<string, unknown>;
+    } catch {
+      throw new Error(`wallet-auth ${action} failed (${response.status})`);
+    }
+  }
 
   if (!response.ok) {
     const message =
@@ -258,14 +274,4 @@ export async function walletAuth(
   }
 
   return data;
-}
-
-export async function warmWalletAuth(): Promise<void> {
-  try {
-    await walletAuth("nonce", {
-      pubkey: "11111111111111111111111111111111",
-    });
-  } catch {
-    // Warm-up only. The next user-facing call retries.
-  }
 }

@@ -63,6 +63,13 @@ function friendlyPrivyError(error: unknown): string {
   if (/no nonce/i.test(message)) {
     return "Sign-in expired. Tap Enter OrbitX to request a new sign-in.";
   }
+  if (
+    /503|504|schema cache|could not query the database|timed out|timeout|failed to fetch|network request failed|can't reach|busy/i.test(
+      message,
+    )
+  ) {
+    return "OrbitX sign-in is busy. Tap Enter OrbitX again.";
+  }
   const lower = message.toLowerCase();
   if (
     lower.includes("invalid_native_app_id") ||

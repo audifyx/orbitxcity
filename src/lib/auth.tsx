@@ -17,8 +17,8 @@ import {
   handleNativeSignRedirect,
   WALLET_PUBKEY_KEY,
 } from "./phantom";
-import { isMissingNonceError, withSiwsLock } from "./siws";
-import { supabase, walletAuth, warmWalletAuth } from "./supabase";
+import { isMissingNonceError, isTransientAuthError, withSiwsLock } from "./siws";
+import { supabase, walletAuth } from "./supabase";
 import { logoutPrivySession } from "./privyProvider";
 import {
   connectBrowserWallet,
@@ -139,13 +139,22 @@ function publicAuthError(error: unknown, fallback: string): string {
   const message = error instanceof Error ? error.message : fallback;
   const lower = message.toLowerCase();
   if (
+    isTransientAuthError(error) ||
+    lower.includes("503") ||
+    lower.includes("504") ||
+    lower.includes("schema cache") ||
+    lower.includes("could not query the database")
+  ) {
+    return "OrbitX sign-in is busy. Tap Enter OrbitX again.";
+  }
+  if (
     lower.includes("failed to fetch") ||
     lower.includes("network request failed") ||
     lower.includes("timed out") ||
     lower.includes("timeout") ||
     lower.includes("aborted")
   ) {
-    return "Can't reach OrbitX sign-in. Check your connection and try again.";
+    return "OrbitX sign-in is busy. Tap Enter OrbitX again.";
   }
   if (
     lower.includes("declined") ||
@@ -292,7 +301,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     prepareWalletStandard();
-    void warmWalletAuth();
   }, []);
 
   useEffect(() => {
@@ -324,7 +332,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       if (sessionError) {
-        setError(publicAuthError(sessionError, "Session restore failed."));
         setLoading(false);
         return;
       }
@@ -437,7 +444,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           try {
             await attempt();
           } catch (verifyError) {
-            if (!isMissingNonceError(verifyError)) {
+            if (
+              !isMissingNonceError(verifyError) &&
+              !isTransientAuthError(verifyError)
+            ) {
               throw verifyError;
             }
             await attempt();
