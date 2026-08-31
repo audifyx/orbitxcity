@@ -1,16 +1,25 @@
 import {
   SOL_MINT,
   executeJupiterSwap,
-  executeUltraOrder,
   fetchQuote,
-  fetchUltraOrder,
   getMintDecimals,
-  signSwapTransaction,
   uiAmountToRaw,
   type JupiterQuote,
 } from "./jupiter";
+import { getPrivyWalletAddress } from "./privyTx";
 import { assertCanAffordBuy, formatSwapError, instantBuySol } from "./swapGuard";
 import { isSolanaPubkey } from "./wallets";
+
+function signingWallet(preferred?: string): string {
+  const privy = getPrivyWalletAddress();
+  if (privy && isSolanaPubkey(privy)) {
+    return privy;
+  }
+  if (preferred && isSolanaPubkey(preferred)) {
+    return preferred;
+  }
+  throw new Error("Sign in before trading.");
+}
 
 export { SOL_MINT };
 export type { JupiterQuote };
@@ -97,9 +106,7 @@ export async function executeDexSwap(input: {
   amount: number;
   quote?: JupiterQuote;
 }): Promise<ExecutedTrade> {
-  if (!isSolanaPubkey(input.wallet)) {
-    throw new Error("Sign in before trading.");
-  }
+  const wallet = signingWallet(input.wallet);
   const mint = input.mint.trim();
   if (!isSolanaPubkey(mint) || mint === SOL_MINT) {
     throw new Error("Enter a token mint to buy or sell.");
@@ -117,29 +124,13 @@ export async function executeDexSwap(input: {
 
   try {
     if (input.side === "buy") {
-      const [order] = await Promise.all([
-        fetchUltraOrder({
-          inputMint,
-          outputMint,
-          amount: amountRaw,
-          taker: input.wallet,
-        }).catch(() => null),
-        assertCanAffordBuy(input.wallet, input.amount),
-      ]);
-      if (order) {
-        const signed = await signSwapTransaction(order.transaction);
-        const signature = await executeUltraOrder({
-          signedTransaction: signed,
-          requestId: order.requestId,
-        });
-        return { signature, quote: order, route: "jupiter" };
-      }
+      await assertCanAffordBuy(wallet, input.amount);
     }
     const result = await executeJupiterSwap({
       inputMint,
       outputMint,
       amount: amountRaw,
-      userPublicKey: input.wallet,
+      userPublicKey: wallet,
     });
     return { signature: result.signature, quote: result.quote, route: "jupiter" };
   } catch (error) {

@@ -1,7 +1,10 @@
 type PrivyTxSigner = (transactionB64: string) => Promise<string>;
+type WalletAddressListener = (address: string | null) => void;
 
 let sendSigner: PrivyTxSigner | null = null;
 let signOnly: PrivyTxSigner | null = null;
+let walletAddress: string | null = null;
+const addressListeners = new Set<WalletAddressListener>();
 
 export function setPrivyTransactionSigner(next: PrivyTxSigner | null): void {
   sendSigner = next;
@@ -9,6 +12,31 @@ export function setPrivyTransactionSigner(next: PrivyTxSigner | null): void {
 
 export function setPrivySignOnly(next: PrivyTxSigner | null): void {
   signOnly = next;
+}
+
+export function setPrivyWalletAddress(next: string | null): void {
+  const address = next && next.trim() ? next.trim() : null;
+  if (address === walletAddress) {
+    return;
+  }
+  walletAddress = address;
+  for (const listener of addressListeners) {
+    listener(walletAddress);
+  }
+}
+
+export function getPrivyWalletAddress(): string | null {
+  return walletAddress;
+}
+
+export function subscribePrivyWalletAddress(
+  listener: WalletAddressListener,
+): () => void {
+  addressListeners.add(listener);
+  listener(walletAddress);
+  return () => {
+    addressListeners.delete(listener);
+  };
 }
 
 export async function signAndSendWithPrivy(

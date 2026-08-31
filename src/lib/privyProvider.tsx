@@ -4,8 +4,12 @@ import { Connection, Transaction, VersionedTransaction } from "@solana/web3.js";
 import { PrivyProvider, useEmbeddedSolanaWallet, usePrivy } from "@privy-io/expo";
 
 import { privyAppId, privyClientId, solanaRpcUrl } from "./env";
-import { setPrivySignOnly, setPrivyTransactionSigner } from "./privyTx";
-import { formatCaughtSwapError } from "./swapGuard";
+import {
+  setPrivySignOnly,
+  setPrivyTransactionSigner,
+  setPrivyWalletAddress,
+} from "./privyTx";
+import { formatCaughtSwapError, missingSignerPubkey } from "./swapGuard";
 import { isSolanaPubkey } from "./wallets";
 
 type PrivyAuthState = {
@@ -68,8 +72,10 @@ function PrivySessionBinder({ children }: { children: ReactNode }) {
     if (!wallet) {
       setPrivyTransactionSigner(null);
       setPrivySignOnly(null);
+      setPrivyWalletAddress(null);
       return;
     }
+    setPrivyWalletAddress(wallet.address);
 
     setPrivyTransactionSigner(async (transactionB64) => {
       try {
@@ -91,6 +97,11 @@ function PrivySessionBinder({ children }: { children: ReactNode }) {
         }
         return signature;
       } catch (error) {
+        const other = missingSignerPubkey(error);
+        if (other) {
+          setPrivyWalletAddress(other);
+          throw error;
+        }
         throw new Error(await formatCaughtSwapError(error));
       }
     });
@@ -98,10 +109,19 @@ function PrivySessionBinder({ children }: { children: ReactNode }) {
     setPrivySignOnly(async (transactionB64) => {
       const provider = await wallet.getProvider();
       const decoded = decodeTransaction(transactionB64);
-      const result = await provider.request({
-        method: "signTransaction",
-        params: { transaction: decoded },
-      });
+      let result: unknown;
+      try {
+        result = await provider.request({
+          method: "signTransaction",
+          params: { transaction: decoded },
+        });
+      } catch (error) {
+        const other = missingSignerPubkey(error);
+        if (other) {
+          setPrivyWalletAddress(other);
+        }
+        throw error;
+      }
       const signed: unknown =
         result && typeof result === "object" && "signedTransaction" in result
           ? result.signedTransaction
@@ -127,6 +147,7 @@ function PrivySessionBinder({ children }: { children: ReactNode }) {
     return () => {
       setPrivyTransactionSigner(null);
       setPrivySignOnly(null);
+      setPrivyWalletAddress(null);
     };
   }, [solana.wallets]);
 

@@ -20,6 +20,7 @@ import {
 import { isMissingNonceError, isTransientAuthError, withSiwsLock } from "./siws";
 import { supabase, walletAuth } from "./supabase";
 import { logoutPrivySession } from "./privyProvider";
+import { getPrivyWalletAddress, subscribePrivyWalletAddress } from "./privyTx";
 import {
   connectBrowserWallet,
   isSolanaPubkey,
@@ -249,11 +250,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const persisted = await readPersistedWallet();
     try {
+      const privyWallet = getPrivyWalletAddress();
       const resolvedWallet = await resolveWalletForUser(nextSession.user.id);
       const nextWallet =
-        resolvedWallet && isSolanaPubkey(resolvedWallet)
-          ? resolvedWallet
-          : persisted;
+        privyWallet && isSolanaPubkey(privyWallet)
+          ? privyWallet
+          : resolvedWallet && isSolanaPubkey(resolvedWallet)
+            ? resolvedWallet
+            : persisted;
       setWallet(nextWallet);
       persistWallet(nextWallet);
       setError(null);
@@ -302,6 +306,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
     [applySession],
   );
+
+  useEffect(() => {
+    return subscribePrivyWalletAddress((privyWallet) => {
+      if (privyWallet && isSolanaPubkey(privyWallet)) {
+        setWallet(privyWallet);
+        persistWallet(privyWallet);
+      }
+    });
+  }, []);
 
   useEffect(() => {
     prepareWalletStandard();

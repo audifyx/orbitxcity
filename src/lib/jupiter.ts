@@ -3,6 +3,9 @@ import {
   signAndSendSwapTransaction,
   signSwapTransaction,
 } from "./jupiterSign";
+import { getPrivyWalletAddress, setPrivyWalletAddress } from "./privyTx";
+import { missingSignerPubkey } from "./swapGuard";
+import { isSolanaPubkey } from "./wallets";
 
 export { signAndSendSwapTransaction, signSwapTransaction };
 
@@ -283,31 +286,67 @@ export async function executeUltraOrder(params: {
   return signature;
 }
 
+function signingPubkey(preferred: string): string {
+  const privy = getPrivyWalletAddress();
+  if (privy && isSolanaPubkey(privy)) {
+    return privy;
+  }
+  return preferred;
+}
+
+function rememberSigner(pubkey: string): string {
+  if (isSolanaPubkey(pubkey)) {
+    setPrivyWalletAddress(pubkey);
+  }
+  return pubkey;
+}
+
 export async function executeJupiterSwap(params: {
   inputMint: string;
   outputMint: string;
   amount: string;
   userPublicKey: string;
 }): Promise<{ signature: string; quote: JupiterQuote }> {
+  const taker = signingPubkey(params.userPublicKey);
   let order: UltraOrder | null = null;
   try {
     order = await fetchUltraOrder({
       inputMint: params.inputMint,
       outputMint: params.outputMint,
       amount: params.amount,
-      taker: params.userPublicKey,
+      taker,
     });
   } catch {
     order = null;
   }
 
   if (order) {
-    const signed = await signSwapTransaction(order.transaction);
-    const signature = await executeUltraOrder({
-      signedTransaction: signed,
-      requestId: order.requestId,
-    });
-    return { signature, quote: order };
+    try {
+      const signed = await signSwapTransaction(order.transaction);
+      const signature = await executeUltraOrder({
+        signedTransaction: signed,
+        requestId: order.requestId,
+      });
+      return { signature, quote: order };
+    } catch (error) {
+      const other = missingSignerPubkey(error);
+      if (!other || other === taker) {
+        throw error;
+      }
+      const retryTaker = rememberSigner(other);
+      const retry = await fetchUltraOrder({
+        inputMint: params.inputMint,
+        outputMint: params.outputMint,
+        amount: params.amount,
+        taker: retryTaker,
+      });
+      const signed = await signSwapTransaction(retry.transaction);
+      const signature = await executeUltraOrder({
+        signedTransaction: signed,
+        requestId: retry.requestId,
+      });
+      return { signature, quote: retry };
+    }
   }
 
   const quote = await fetchQuote({
@@ -316,12 +355,26 @@ export async function executeJupiterSwap(params: {
     amount: params.amount,
     slippageBps: 100,
   });
-  const swapTx = await fetchSwapTransaction({
-    quoteResponse: quote,
-    userPublicKey: params.userPublicKey,
-  });
-  const signature = await signAndSendSwapTransaction(swapTx);
-  return { signature, quote };
+  try {
+    const swapTx = await fetchSwapTransaction({
+      quoteResponse: quote,
+      userPublicKey: taker,
+    });
+    const signature = await signAndSendSwapTransaction(swapTx);
+    return { signature, quote };
+  } catch (error) {
+    const other = missingSignerPubkey(error);
+    if (!other || other === taker) {
+      throw error;
+    }
+    const retryTaker = rememberSigner(other);
+    const swapTx = await fetchSwapTransaction({
+      quoteResponse: quote,
+      userPublicKey: retryTaker,
+    });
+    const signature = await signAndSendSwapTransaction(swapTx);
+    return { signature, quote };
+  }
 }
 
 export type SignatureOutcome = "confirmed" | "failed" | "pending";

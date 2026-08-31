@@ -43,7 +43,19 @@ export function formatSwapError(error: unknown): string {
   if (/simulation failed/i.test(message)) {
     return "Swap simulation failed. Check your SOL balance and try a smaller amount.";
   }
+  if (/does not contain public key/i.test(message)) {
+    return "This swap was built for a different wallet. Stay signed in and tap Buy again.";
+  }
   return message;
+}
+
+export function missingSignerPubkey(error: unknown): string | null {
+  const message = error instanceof Error ? error.message : String(error);
+  const match = message.match(
+    /does not contain public key\s+([1-9A-HJ-NP-Za-km-z]{32,44})/i,
+  );
+  const pubkey = match?.[1] ?? "";
+  return isSolanaPubkey(pubkey) ? pubkey : null;
 }
 
 export async function formatCaughtSwapError(error: unknown): Promise<string> {
