@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
-import { Platform, StyleSheet, Text, View } from "react-native";
+import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { PortfolioView, type PortfolioToken } from "../../src/components";
+import { LimitLadder, PortfolioView, type LadderOrder, type PortfolioToken } from "../../src/components";
 import { useAuth } from "../../src/lib/auth";
 import { walletExportUrl } from "../../src/lib/hostedAuth";
 import { invokeFunction } from "../../src/lib/supabase";
@@ -77,6 +77,24 @@ function normalizeSnapshot(raw: unknown): WalletSnapshot {
       num(token.valueUsd) ??
       num(token.value) ??
       (priceUsd != null ? priceUsd * amount : undefined);
+    const avgEntryUsd =
+      num(token.avgEntryUsd) ??
+      num(token.avgEntry) ??
+      num(token.averageEntryPrice) ??
+      num(token.costBasisUsd);
+    const pnlUsd =
+      num(token.pnlUsd) ??
+      num(token.unrealizedPnlUsd) ??
+      (avgEntryUsd != null && priceUsd != null
+        ? (priceUsd - avgEntryUsd) * amount
+        : undefined);
+    const pnlPct =
+      num(token.pnlPct) ??
+      num(token.unrealizedPnlPct) ??
+      (avgEntryUsd != null && avgEntryUsd > 0 && priceUsd != null
+        ? ((priceUsd - avgEntryUsd) / avgEntryUsd) * 100
+        : undefined);
+    const marketCapUsd = num(token.marketCapUsd) ?? num(token.marketCap) ?? num(token.fdv);
     return {
       mint: str(token.mint) ?? str(token.address) ?? str(token.id) ?? `token-${index}`,
       symbol: str(token.symbol) ?? str(token.ticker) ?? "—",
@@ -84,6 +102,10 @@ function normalizeSnapshot(raw: unknown): WalletSnapshot {
       amount,
       usdValue,
       priceUsd,
+      avgEntryUsd,
+      pnlUsd,
+      pnlPct,
+      marketCapUsd,
       supplyPct:
         num(token.supplyPct) ??
         num(token.supplyPercent) ??
@@ -180,6 +202,7 @@ export default function WalletScreen() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [ladderToken, setLadderToken] = useState<PortfolioToken | null>(null);
 
   const load = useCallback(async () => {
     if (!wallet) {
@@ -238,6 +261,56 @@ export default function WalletScreen() {
     void openExternalUrl(walletExportUrl());
   }, []);
 
+  const buyToken = useCallback(
+    (token: PortfolioToken) => {
+      router.push({
+        pathname: "/",
+        params: {
+          context: `Quote buying more ${token.symbol} (${token.mint}). Do not execute.`,
+        },
+      });
+    },
+    [router],
+  );
+
+  const sellToken = useCallback(
+    (token: PortfolioToken) => {
+      router.push({
+        pathname: "/",
+        params: {
+          context: `Quote selling my ${token.symbol} (${token.mint}) position back to SOL. Do not execute.`,
+        },
+      });
+    },
+    [router],
+  );
+
+  const placeLadder = useCallback(
+    (orders: LadderOrder[], context: { mint: string; symbol: string; currentMc: number }) => {
+      // Draft only — the agent still has to run the existing jupiter-order
+      // tool (confirmationRequired: true) and the user still signs in their
+      // wallet. This never executes anything directly.
+      const lines = orders
+        .map(
+          (o) =>
+            `${o.side} ${o.allocationPct}% of my ${context.symbol} position when MC ${
+              o.targetChangePct >= 0 ? "reaches" : "drops to"
+            } ~$${Math.round(o.targetMc).toLocaleString()} (${o.targetChangePct >= 0 ? "+" : ""}${o.targetChangePct.toFixed(1)}% from current MC $${Math.round(
+              context.currentMc,
+            ).toLocaleString()})`,
+        )
+        .join("; ");
+      router.push({
+        pathname: "/",
+        params: {
+          context: `Set up this limit ladder for ${context.symbol} (${context.mint}): ${lines}. Confirm each order with me before submitting.`,
+        },
+      });
+      setLadderToken(null);
+    },
+    [router],
+  );
+
   return (
     <View style={[styles.root, { paddingBottom: insets.bottom }]}>
       <View style={styles.header}>
@@ -267,9 +340,34 @@ export default function WalletScreen() {
             onAskOrbitX={askOrbitX}
             onExport={exportWallet}
             onLogout={() => void disconnect()}
+            onBuyToken={buyToken}
+            onSellToken={sellToken}
+            onLadderToken={setLadderToken}
           />
         </View>
       )}
+
+      {ladderToken && ladderToken.marketCapUsd != null ? (
+        <View style={styles.ladderOverlay}>
+          <Pressable
+            style={styles.ladderBackdrop}
+            onPress={() => setLadderToken(null)}
+            accessibilityRole="button"
+            accessibilityLabel="Close ladder"
+          />
+          <View style={styles.ladderSheet}>
+            <LimitLadder
+              mint={ladderToken.mint}
+              symbol={ladderToken.symbol}
+              currentMc={ladderToken.marketCapUsd}
+              onPlace={placeLadder}
+            />
+            <Pressable style={styles.ladderClose} onPress={() => setLadderToken(null)}>
+              <Text style={styles.ladderCloseText}>Close</Text>
+            </Pressable>
+          </View>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -306,5 +404,40 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 22,
     padding: 20,
+  },
+  ladderOverlay: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    justifyContent: "flex-end",
+  },
+  ladderBackdrop: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    backgroundColor: "rgba(0,0,0,0.55)",
+  },
+  ladderSheet: {
+    padding: 16,
+    paddingBottom: 28,
+    gap: 10,
+    backgroundColor: colors.abyss,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    borderWidth: 1,
+    borderColor: colors.hairline,
+  },
+  ladderClose: {
+    alignItems: "center",
+    paddingVertical: 10,
+  },
+  ladderCloseText: {
+    color: colors.mute,
+    fontFamily: "Inter_500Medium",
+    fontSize: 13,
   },
 });

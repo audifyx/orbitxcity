@@ -23,6 +23,14 @@ export type PortfolioToken = {
   allocationPct?: number;
   /** Share of the token's circulating supply this wallet holds (0–100). */
   supplyPct?: number;
+  /** Average entry price in USD, if the backend has cost-basis data for this wallet. */
+  avgEntryUsd?: number;
+  /** Unrealized P&L in USD versus avgEntryUsd, if known. */
+  pnlUsd?: number;
+  /** Unrealized P&L in percent versus avgEntryUsd, if known. */
+  pnlPct?: number;
+  /** Token's current market cap in USD, if known — required to open a limit ladder for it. */
+  marketCapUsd?: number;
 };
 
 export type PortfolioViewProps = {
@@ -41,6 +49,10 @@ export type PortfolioViewProps = {
   onAskOrbitX?: () => void;
   onExport?: () => void;
   onLogout?: () => void;
+  onBuyToken?: (token: PortfolioToken) => void;
+  onSellToken?: (token: PortfolioToken) => void;
+  /** Only called for tokens where marketCapUsd is present — never fabricate a target. */
+  onLadderToken?: (token: PortfolioToken) => void;
 };
 
 function truncateAddress(address: string): string {
@@ -94,7 +106,17 @@ function pnlColor(value?: number): string {
   return value >= 0 ? colors.success : colors.danger;
 }
 
-function TokenRow({ token }: { token: PortfolioToken }) {
+function TokenRow({
+  token,
+  onBuy,
+  onSell,
+  onLadder,
+}: {
+  token: PortfolioToken;
+  onBuy?: () => void;
+  onSell?: () => void;
+  onLadder?: () => void;
+}) {
   const letter = (token.symbol || token.mint || "?").slice(0, 1).toUpperCase();
   const allocation = Math.max(0, Math.min(100, token.allocationPct ?? 0));
   return (
@@ -118,6 +140,13 @@ function TokenRow({ token }: { token: PortfolioToken }) {
         <Text style={styles.tokenAmount} numberOfLines={1}>
           {formatAmount(token.amount)} {token.symbol}
         </Text>
+        {token.pnlUsd != null ? (
+          <Text style={[styles.tokenPnl, { color: pnlColor(token.pnlUsd) }]}>
+            {token.pnlUsd >= 0 ? "+" : ""}
+            {formatUsd(token.pnlUsd)}
+            {token.pnlPct != null ? ` (${formatPct(token.pnlPct, true)})` : ""}
+          </Text>
+        ) : null}
       </View>
 
       <View style={styles.tokenFooter}>
@@ -136,7 +165,29 @@ function TokenRow({ token }: { token: PortfolioToken }) {
           {token.priceUsd != null ? (
             <Text style={styles.tokenTag}>@ {formatUsd(token.priceUsd)}</Text>
           ) : null}
+          {token.avgEntryUsd != null ? (
+            <Text style={styles.tokenTag}>avg {formatUsd(token.avgEntryUsd)}</Text>
+          ) : null}
         </View>
+        {onBuy || onSell || onLadder ? (
+          <View style={styles.tokenActions}>
+            {onBuy ? (
+              <Pressable style={styles.tokenActionBtn} onPress={onBuy} accessibilityRole="button">
+                <Text style={styles.tokenActionText}>Buy</Text>
+              </Pressable>
+            ) : null}
+            {onSell ? (
+              <Pressable style={styles.tokenActionBtn} onPress={onSell} accessibilityRole="button">
+                <Text style={styles.tokenActionText}>Sell</Text>
+              </Pressable>
+            ) : null}
+            {onLadder ? (
+              <Pressable style={styles.tokenActionBtn} onPress={onLadder} accessibilityRole="button">
+                <Text style={styles.tokenActionText}>Ladder</Text>
+              </Pressable>
+            ) : null}
+          </View>
+        ) : null}
       </View>
     </View>
   );
@@ -158,6 +209,9 @@ export function PortfolioView({
   onAskOrbitX,
   onExport,
   onLogout,
+  onBuyToken,
+  onSellToken,
+  onLadderToken,
 }: PortfolioViewProps) {
   return (
     <View style={styles.root}>
@@ -275,7 +329,17 @@ export function PortfolioView({
           showsVerticalScrollIndicator={false}
         >
           {tokens.map((token) => (
-            <TokenRow key={token.mint} token={token} />
+            <TokenRow
+              key={token.mint}
+              token={token}
+              onBuy={onBuyToken ? () => onBuyToken(token) : undefined}
+              onSell={onSellToken ? () => onSellToken(token) : undefined}
+              onLadder={
+                onLadderToken && token.marketCapUsd != null
+                  ? () => onLadderToken(token)
+                  : undefined
+              }
+            />
           ))}
         </ScrollView>
       )}
@@ -487,6 +551,11 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_400Regular",
     fontSize: 12,
   },
+  tokenPnl: {
+    fontFamily: "Inter_600SemiBold",
+    fontSize: 12,
+    marginTop: 2,
+  },
   tokenFooter: {
     gap: 8,
   },
@@ -510,6 +579,25 @@ const styles = StyleSheet.create({
     color: colors.dim,
     fontFamily: "Inter_500Medium",
     fontSize: 11,
+  },
+  tokenActions: {
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 2,
+  },
+  tokenActionBtn: {
+    flex: 1,
+    minHeight: 34,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.hairline,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  tokenActionText: {
+    color: colors.ice,
+    fontFamily: "Inter_500Medium",
+    fontSize: 12,
   },
   centered: {
     paddingVertical: 32,
