@@ -1,4 +1,5 @@
 import { useCallback, useState } from "react";
+import { useRouter } from "expo-router";
 import {
   FlatList,
   Platform,
@@ -9,8 +10,10 @@ import {
 } from "react-native";
 
 import { CreateCard } from "./CreateCard";
+import { OrderCard, type OrderCardStatus } from "./OrderCard";
 import { TokenCard } from "./TokenCard";
 import { ToolProgress } from "./ToolProgress";
+import { TradeReceipt } from "./TradeReceipt";
 import { TxPreview, type TxPreviewStatus } from "./TxPreview";
 import { WalletCard } from "./WalletCard";
 import type { Message, MessageCard } from "./types";
@@ -23,6 +26,7 @@ export type MessageListProps = {
   onRegenerate?: () => void;
   onConfirmTx?: (card: MessageCard) => void;
   onCancelTx?: (card: MessageCard) => void;
+  onCancelOrder?: (orderId: string) => void;
   onBuyToken?: (mint: string) => void;
   onSellToken?: (mint: string) => void;
   onOpenCreate?: (kind: "launch" | "nft", card: MessageCard) => void;
@@ -171,22 +175,39 @@ function asTxStatus(value: unknown): TxPreviewStatus {
     : "preview";
 }
 
+function asOrderStatus(value: unknown): OrderCardStatus {
+  const statuses: OrderCardStatus[] = [
+    "pending",
+    "triggered",
+    "confirmed",
+    "failed",
+    "cancelled",
+  ];
+  return statuses.includes(value as OrderCardStatus)
+    ? (value as OrderCardStatus)
+    : "pending";
+}
+
 function MessageCardView({
   card,
   onConfirmTx,
   onCancelTx,
+  onCancelOrder,
   onBuyToken,
   onSellToken,
   onOpenCreate,
   onApproveCreate,
+  onOpenOrders,
 }: {
   card: MessageCard;
   onConfirmTx?: (card: MessageCard) => void;
   onCancelTx?: (card: MessageCard) => void;
+  onCancelOrder?: (orderId: string) => void;
   onBuyToken?: (mint: string) => void;
   onSellToken?: (mint: string) => void;
   onOpenCreate?: (kind: "launch" | "nft", card: MessageCard) => void;
   onApproveCreate?: (kind: "launch" | "nft", card: MessageCard) => void;
+  onOpenOrders?: () => void;
 }) {
   if (card.kind === "token") {
     const mint = String(card.data.mint ?? "");
@@ -229,7 +250,51 @@ function MessageCardView({
     );
   }
 
+  if (card.kind === "order") {
+    return (
+      <OrderCard
+        percent={Number(card.data.percent ?? 0)}
+        triggerType={
+          String(card.data.triggerType) === "price" ? "price" : "mcap"
+        }
+        triggerValue={Number(card.data.triggerValue ?? 0)}
+        symbol={String(card.data.symbol ?? "")}
+        mint={String(card.data.mint ?? "")}
+        status={asOrderStatus(card.data.status)}
+        signature={String(card.data.signature ?? "") || undefined}
+        onCancel={
+          card.data.orderId
+            ? () => onCancelOrder?.(String(card.data.orderId))
+            : undefined
+        }
+        onOpenDashboard={onOpenOrders}
+      />
+    );
+  }
+
   if (card.kind === "tx") {
+    const status = asTxStatus(card.data.status);
+    const side = String(card.data.side ?? "buy") === "sell" ? "sell" : "buy";
+    const compact =
+      card.data.compact === true ||
+      status === "confirmed" ||
+      status === "failed" ||
+      status === "submitted" ||
+      status === "confirming";
+    if (compact) {
+      const amount =
+        typeof card.data.amount === "number"
+          ? `${card.data.amount}${typeof card.data.percent === "number" ? `% (${card.data.percent}%)` : ""}`
+          : undefined;
+      return (
+        <TradeReceipt
+          side={side}
+          status={status}
+          amountLabel={amount}
+          signature={String(card.data.signature ?? card.data.tx ?? "") || undefined}
+        />
+      );
+    }
     const warnings =
       typeof card.data.warnings === "string" && card.data.warnings
         ? card.data.warnings.split(" | ")
@@ -267,10 +332,12 @@ type MessageItemProps = {
   onRegenerate?: () => void;
   onConfirmTx?: (card: MessageCard) => void;
   onCancelTx?: (card: MessageCard) => void;
+  onCancelOrder?: (orderId: string) => void;
   onBuyToken?: (mint: string) => void;
   onSellToken?: (mint: string) => void;
   onOpenCreate?: (kind: "launch" | "nft", card: MessageCard) => void;
   onApproveCreate?: (kind: "launch" | "nft", card: MessageCard) => void;
+  onOpenOrders?: () => void;
 };
 
 function MessageItem({
@@ -279,10 +346,12 @@ function MessageItem({
   onRegenerate,
   onConfirmTx,
   onCancelTx,
+  onCancelOrder,
   onBuyToken,
   onSellToken,
   onOpenCreate,
   onApproveCreate,
+  onOpenOrders,
 }: MessageItemProps) {
   const [copied, setCopied] = useState(false);
   const blocks = parseMarkdown(message.content);
@@ -355,10 +424,12 @@ function MessageItem({
               card={card}
               onConfirmTx={onConfirmTx}
               onCancelTx={onCancelTx}
+              onCancelOrder={onCancelOrder}
               onBuyToken={onBuyToken}
               onSellToken={onSellToken}
               onOpenCreate={onOpenCreate}
               onApproveCreate={onApproveCreate}
+              onOpenOrders={onOpenOrders}
             />
           </View>
         ))}
@@ -396,11 +467,14 @@ export function MessageList({
   onRegenerate,
   onConfirmTx,
   onCancelTx,
+  onCancelOrder,
   onBuyToken,
   onSellToken,
   onOpenCreate,
   onApproveCreate,
 }: MessageListProps) {
+  const router = useRouter();
+  const openOrders = () => router.push("/orders");
   const lastAssistantId = [...messages]
     .reverse()
     .find((message) => message.role === "assistant")?.id;
@@ -418,10 +492,12 @@ export function MessageList({
           onRegenerate={onRegenerate}
           onConfirmTx={onConfirmTx}
           onCancelTx={onCancelTx}
+          onCancelOrder={onCancelOrder}
           onBuyToken={onBuyToken}
           onSellToken={onSellToken}
           onOpenCreate={onOpenCreate}
           onApproveCreate={onApproveCreate}
+          onOpenOrders={openOrders}
         />
       )}
     />

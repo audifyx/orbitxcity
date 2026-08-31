@@ -40,13 +40,14 @@ import { useAuth } from "../lib/auth";
 import { readAutoApproveBuys, writeAutoApproveBuys } from "../lib/autoApprove";
 import {
   executeDexSwap,
-  parseInstantTrade,
+  resolveTradeAmount,
   SOL_MINT,
 } from "../lib/dexTrade";
+import { cancelLimitOrder, createLimitOrder } from "../lib/limitOrders";
+import { parseTradeIntent } from "../lib/tradeIntent";
+import { voiceForLimitOrder, voiceForMarketTrade } from "../lib/tradeVoice";
 import {
-  DEFAULT_BUY_USD,
   formatSwapError,
-  instantBuySol,
   prefetchBuyAmount,
   suggestBuySol,
 } from "../lib/swapGuard";
@@ -298,6 +299,7 @@ export function ChatThread({
       mint: string;
       side: "buy" | "sell";
       amount?: number;
+      percent?: number;
       card?: MessageCard;
     }) => {
       if (!isSolanaPubkey(input.mint) || input.mint === SOL_MINT) {
@@ -312,33 +314,47 @@ export function ChatThread({
         return;
       }
       tradeBusy.current = true;
-      const amount =
-        typeof input.amount === "number" && input.amount > 0
-          ? input.amount
-          : input.side === "buy"
-            ? instantBuySol()
-            : 0.05;
+
+      let amount = 0;
+      try {
+        amount = await resolveTradeAmount({
+          wallet,
+          side: input.side,
+          mint: input.mint,
+          amount: input.amount,
+          percent: input.percent,
+        });
+      } catch (error) {
+        setStorageError(formatSwapError(error));
+        tradeBusy.current = false;
+        return;
+      }
+
       const localId = `trade-${Date.now()}`;
+      const startVoice = voiceForMarketTrade({
+        side: input.side,
+        phase: "start",
+        percent: input.percent,
+      });
       if (!input.card) {
         setMessages((prev) => [
           ...prev,
           {
             id: localId,
             role: "assistant",
-            content:
-              input.side === "sell"
-                ? "Selling on Jupiter…"
-                : `Buying $${DEFAULT_BUY_USD.toFixed(2)} on Jupiter…`,
+            content: startVoice,
             cards: [
               {
                 kind: "tx",
-                title: input.side === "sell" ? "Jupiter sell" : "Jupiter buy",
+                title: input.side === "sell" ? "Sell" : "Buy",
                 data: {
                   status: "submitted",
                   side: input.side,
                   mint: input.mint,
                   amount,
+                  percent: input.percent,
                   route: "Jupiter",
+                  compact: true,
                 },
               },
             ],
@@ -355,7 +371,7 @@ export function ChatThread({
               String(card.data.status) === "awaiting_signature");
       const patch = (
         status: string,
-        extra?: Record<string, string | number>,
+        extra?: Record<string, string | number | boolean | undefined>,
       ) => {
         setMessages((prev) => patchCardStatus(prev, matches, { status, ...extra }));
       };
@@ -375,14 +391,18 @@ export function ChatThread({
           tx: result.signature,
           inAmount: result.quote.inAmount,
           outAmount: result.quote.outAmount,
+          compact: true,
+        });
+        const successVoice = voiceForMarketTrade({
+          side: input.side,
+          phase: "success",
+          percent: input.percent,
+          signature: result.signature,
         });
         setMessages((prev) =>
           prev.map((message) =>
             message.cards?.some(matches)
-              ? {
-                  ...message,
-                  content: `${input.side === "sell" ? "Sold" : "Bought"} on Jupiter · ${result.signature.slice(0, 8)}…`,
-                }
+              ? { ...message, content: successVoice }
               : message,
           ),
         );
@@ -390,11 +410,73 @@ export function ChatThread({
         const detail = formatSwapError(error);
         setStorageError(detail);
         patch("failed");
+        setMessages((prev) =>
+          prev.map((message) =>
+            message.cards?.some(matches)
+              ? {
+                  ...message,
+                  content: voiceForMarketTrade({
+                    side: input.side,
+                    phase: "fail",
+                  }),
+                }
+              : message,
+          ),
+        );
       } finally {
         tradeBusy.current = false;
       }
     },
     [matchTxCard, wallet],
+  );
+
+  const placeLimitOrder = useCallback(
+    async (input: {
+      mint: string;
+      percent: number;
+      triggerType: "mcap" | "price";
+      triggerValue: number;
+    }) => {
+      if (!wallet) {
+        setStorageError("Sign in before trading.");
+        return;
+      }
+      try {
+        const order = await createLimitOrder({
+          wallet,
+          mint: input.mint,
+          percent: input.percent,
+          triggerType: input.triggerType,
+          triggerValue: input.triggerValue,
+        });
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `limit-${order.id}`,
+            role: "assistant",
+            content: voiceForLimitOrder(order, "create"),
+            cards: [
+              {
+                kind: "order",
+                title: "Limit sell",
+                data: {
+                  orderId: order.id,
+                  percent: order.percent,
+                  triggerType: order.triggerType,
+                  triggerValue: order.triggerValue,
+                  mint: order.mint,
+                  status: order.status,
+                },
+              },
+            ],
+          },
+        ]);
+        setStorageError(null);
+      } catch (error) {
+        setStorageError(formatSwapError(error));
+      }
+    },
+    [wallet],
   );
 
   const handleSend = useCallback(async () => {
@@ -403,8 +485,8 @@ export function ChatThread({
       return;
     }
 
-    const instant = parseInstantTrade(text);
-    if (instant) {
+    const intent = parseTradeIntent(text);
+    if (intent) {
       const userMessage: Message = {
         id: `local-${Date.now()}`,
         role: "user",
@@ -413,10 +495,20 @@ export function ChatThread({
       setMessages((prev) => [...prev, userMessage]);
       setDraft("");
       setStorageError(null);
+      if (intent.kind === "limit") {
+        await placeLimitOrder({
+          mint: intent.mint,
+          percent: intent.percent,
+          triggerType: intent.triggerType,
+          triggerValue: intent.triggerValue,
+        });
+        return;
+      }
       await runJupiterTrade({
-        mint: instant.mint,
-        side: instant.side,
-        amount: instant.amount,
+        mint: intent.mint,
+        side: intent.side,
+        amount: intent.amount,
+        percent: intent.percent,
       });
       return;
     }
@@ -543,6 +635,7 @@ export function ChatThread({
     wallet,
     onConversationCreated,
     runJupiterTrade,
+    placeLimitOrder,
   ]);
 
   const handleCancelTx = useCallback(
@@ -569,22 +662,25 @@ export function ChatThread({
         card.data.mint ?? card.data.outputMint ?? card.data.inputMint ?? "",
       );
       const side = String(card.data.side ?? "buy") === "sell" ? "sell" : "buy";
-      const amount =
-        typeof card.data.amount === "number"
-          ? card.data.amount
-          : side === "buy" &&
-              typeof card.data.inAmount === "string" &&
-              /^\d+$/.test(card.data.inAmount)
-            ? Number(card.data.inAmount) / 1e9
-            : undefined;
-      await runJupiterTrade({ mint, side, amount, card });
+      const percent =
+        typeof card.data.percent === "number" ? card.data.percent : undefined;
+      let amount =
+        typeof card.data.amount === "number" ? card.data.amount : undefined;
+      if (amount === undefined && side === "buy" && typeof card.data.inAmount === "string" && /^\d+$/.test(card.data.inAmount)) {
+        amount = Number(card.data.inAmount) / 1e9;
+      }
+      await runJupiterTrade({ mint, side, amount, percent, card });
     },
     [runJupiterTrade],
   );
 
   const handleTokenTrade = useCallback(
     async (mint: string, side: "buy" | "sell") => {
-      await runJupiterTrade({ mint, side });
+      await runJupiterTrade({
+        mint,
+        side,
+        percent: side === "sell" ? 100 : undefined,
+      });
     },
     [runJupiterTrade],
   );
@@ -614,8 +710,12 @@ export function ChatThread({
           continue;
         }
         const status = String(card.data.status ?? "preview");
+        const side = String(card.data.side ?? "buy");
         const key = String(card.data.intentId ?? card.data.quoteJson);
         if (status !== "preview" || autoFired.current.has(key)) {
+          continue;
+        }
+        if (side === "sell") {
           continue;
         }
         autoFired.current.add(key);
@@ -742,6 +842,9 @@ export function ChatThread({
             messages={messages}
             onConfirmTx={(card) => void handleConfirmTx(card)}
             onCancelTx={(card) => void handleCancelTx(card)}
+            onCancelOrder={(orderId) => {
+              void cancelLimitOrder(orderId);
+            }}
             onBuyToken={(mint) => {
               void handleTokenTrade(mint, "buy");
             }}

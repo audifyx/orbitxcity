@@ -14,6 +14,8 @@ import {
 } from "react-native-safe-area-context";
 
 import { Sidebar, type NavRoute } from "../../src/components";
+import { useAuth } from "../../src/lib/auth";
+import { startLimitOrderMonitor, stopLimitOrderMonitor } from "../../src/lib/limitOrders";
 import { useUnlockedSession } from "../../src/lib/sessionGate";
 import { supabase } from "../../src/lib/supabase";
 import { colors } from "../../src/theme";
@@ -65,6 +67,7 @@ export default function AppLayout() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { unlocked, waiting } = useUnlockedSession();
+  const { wallet } = useAuth();
   const isDesktop = width >= DESKTOP_BREAKPOINT;
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [conversations, setConversations] = useState<
@@ -76,6 +79,15 @@ export default function AppLayout() {
       router.replace("/connect");
     }
   }, [waiting, router, unlocked]);
+
+  useEffect(() => {
+    if (wallet && unlocked) {
+      startLimitOrderMonitor(wallet);
+      return () => stopLimitOrderMonitor();
+    }
+    stopLimitOrderMonitor();
+    return undefined;
+  }, [wallet, unlocked]);
 
   useEffect(() => {
     let cancelled = false;

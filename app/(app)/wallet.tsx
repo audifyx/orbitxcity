@@ -17,6 +17,7 @@ import { useAuth } from "../../src/lib/auth";
 import { copyText } from "../../src/lib/clipboard";
 import {
   executeDexSwap,
+  resolveTradeAmount,
   type TradeSide,
 } from "../../src/lib/dexTrade";
 import {
@@ -176,11 +177,20 @@ export default function WalletScreen() {
       setTradeSide(side);
       setTradeMint(mint);
       try {
+        const resolved =
+          side === "sell"
+            ? await resolveTradeAmount({
+                wallet,
+                side,
+                mint: mint.trim(),
+                amount,
+              })
+            : amount;
         const result = await executeDexSwap({
           wallet,
           side,
           mint: mint.trim(),
-          amount,
+          amount: resolved,
         });
         setTradeStatus(
           `${side === "sell" ? "Sold" : "Bought"} on Jupiter · ${result.signature}`,
@@ -211,6 +221,13 @@ export default function WalletScreen() {
         Email or phone created this Solana wallet in Privy. OrbitX only stores
         the public address. The secret key never comes to our servers.
       </Text>
+      <Pressable
+        style={styles.ordersLink}
+        onPress={() => router.push("/orders")}
+        accessibilityRole="button"
+      >
+        <Text style={styles.ordersLinkText}>Limit order desk →</Text>
+      </Pressable>
 
       {!wallet ? (
         <View style={styles.card}>
@@ -474,6 +491,16 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 20,
     marginBottom: 4,
+  },
+  ordersLink: {
+    alignSelf: "flex-start",
+    marginTop: -8,
+    marginBottom: 4,
+  },
+  ordersLinkText: {
+    color: colors.signal,
+    fontFamily: "Inter_500Medium",
+    fontSize: 13,
   },
   card: {
     backgroundColor: colors.surface,

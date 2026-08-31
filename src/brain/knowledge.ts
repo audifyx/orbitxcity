@@ -69,7 +69,7 @@ Sidebar currently shows Home, Wallet, Settings only. Other OrbitX pages (trendin
 
 export const AGENT_CAPABILITY_CHIPS = [
   "hey tell me about 13H4WJvGEg4xrrBwWn2vsQgz7xhmhxgNdw19i1QsxPX9",
-  "launch a coin named Orbit ticker ORB",
-  "mint an NFT called Orbit Pass",
+  "sell 50% 13H4WJvGEg4xrrBwWn2vsQgz7xhmhxgNdw19i1QsxPX9",
+  "sell 25% when mcap hits 500k 13H4WJvGEg4xrrBwWn2vsQgz7xhmhxgNdw19i1QsxPX9",
   "buy $0.25 of 13H4WJvGEg4xrrBwWn2vsQgz7xhmhxgNdw19i1QsxPX9",
 ] as const;

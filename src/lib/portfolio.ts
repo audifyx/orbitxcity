@@ -126,6 +126,66 @@ function parseTokenAccounts(value: unknown): PortfolioToken[] {
   return tokens;
 }
 
+export async function getTokenBalance(wallet: string, mint: string): Promise<number> {
+  if (!isSolanaPubkey(wallet) || !isSolanaPubkey(mint)) {
+    return 0;
+  }
+  const [spl, token2022] = await Promise.all([
+    solanaRpc<unknown>("getParsedTokenAccountsByOwner", [
+      wallet,
+      { mint },
+      { encoding: "jsonParsed" },
+    ]).catch(() => ({ value: [] })),
+    solanaRpc<unknown>("getParsedTokenAccountsByOwner", [
+      wallet,
+      { programId: TOKEN_2022_PROGRAM },
+      { encoding: "jsonParsed" },
+    ]).catch(() => ({ value: [] })),
+  ]);
+
+  let total = 0;
+  for (const token of [...parseTokenAccounts(spl), ...parseTokenAccounts(token2022)]) {
+    if (token.mint === mint) {
+      total += token.balance;
+    }
+  }
+  return total;
+}
+
+export async function resolveSellAmount(
+  wallet: string,
+  mint: string,
+  input: { amount?: number; percent?: number },
+): Promise<number> {
+  const balance = await getTokenBalance(wallet, mint);
+  if (balance <= 0) {
+    throw new Error("You do not hold this token.");
+  }
+
+  if (typeof input.percent === "number" && Number.isFinite(input.percent)) {
+    const pct = Math.min(Math.max(input.percent, 0), 100);
+    if (pct <= 0) {
+      throw new Error("Enter a sell percent greater than 0.");
+    }
+    const amount = balance * (pct / 100);
+    if (amount <= 0) {
+      throw new Error("Sell amount is too small.");
+    }
+    return Number(amount.toPrecision(9));
+  }
+
+  if (typeof input.amount === "number" && Number.isFinite(input.amount) && input.amount > 0) {
+    if (input.amount > balance) {
+      throw new Error(
+        `Not enough tokens. You hold ${balance.toPrecision(6)} but tried to sell ${input.amount}.`,
+      );
+    }
+    return input.amount;
+  }
+
+  return Number(balance.toPrecision(9));
+}
+
 async function fetchTokenPrices(
   mints: string[],
 ): Promise<Record<string, number>> {

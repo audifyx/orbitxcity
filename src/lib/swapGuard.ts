@@ -46,6 +46,9 @@ export function formatSwapError(error: unknown): string {
   if (/does not contain public key/i.test(message)) {
     return "This swap was built for a different wallet. Stay signed in and tap Buy again.";
   }
+  if (/do not hold this token|not enough tokens/i.test(message)) {
+    return message;
+  }
   return message;
 }
 

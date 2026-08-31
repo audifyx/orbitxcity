@@ -7,7 +7,9 @@ import {
   type JupiterQuote,
 } from "./jupiter";
 import { getPrivyWalletAddress } from "./privyTx";
-import { assertCanAffordBuy, formatSwapError, instantBuySol } from "./swapGuard";
+import { getTokenBalance, resolveSellAmount } from "./portfolio";
+import { parseInstantTrade as parseTradeText } from "./tradeIntent";
+import { assertCanAffordBuy, formatSwapError, getSolLamports, instantBuySol } from "./swapGuard";
 import { isSolanaPubkey } from "./wallets";
 
 function signingWallet(preferred?: string): string {
@@ -36,36 +38,28 @@ export function parseInstantTrade(text: string): {
   side: TradeSide;
   mint: string;
   amount?: number;
+  percent?: number;
 } | null {
-  const trimmed = text.trim();
-  if (!trimmed) {
-    return null;
+  return parseTradeText(text);
+}
+
+export async function resolveTradeAmount(input: {
+  wallet: string;
+  side: TradeSide;
+  mint: string;
+  amount?: number;
+  percent?: number;
+}): Promise<number> {
+  if (input.side === "buy") {
+    if (typeof input.amount === "number" && input.amount > 0) {
+      return input.amount;
+    }
+    return instantBuySol();
   }
-  const side: TradeSide | null = /^(buy|snipe|ape)\b/i.test(trimmed)
-    ? "buy"
-    : /^(sell|dump)\b/i.test(trimmed)
-      ? "sell"
-      : null;
-  if (!side) {
-    return null;
-  }
-  const tokens = trimmed.split(/\s+/);
-  const mint = tokens.find(
-    (token) => isSolanaPubkey(token) && token !== SOL_MINT,
-  );
-  if (!mint) {
-    return null;
-  }
-  const rawAmount = tokens.find((token) => /^\d+(?:\.\d+)?$/.test(token));
-  const amount = rawAmount ? Number(rawAmount) : undefined;
-  return {
-    side,
-    mint,
-    amount:
-      typeof amount === "number" && Number.isFinite(amount) && amount > 0
-        ? amount
-        : undefined,
-  };
+  return resolveSellAmount(input.wallet, input.mint, {
+    amount: input.amount,
+    percent: input.percent ?? 100,
+  });
 }
 
 export async function quoteDexSwap(input: {
@@ -125,6 +119,20 @@ export async function executeDexSwap(input: {
   try {
     if (input.side === "buy") {
       await assertCanAffordBuy(wallet, input.amount);
+    } else {
+      const balance = await getTokenBalance(wallet, mint);
+      if (balance <= 0) {
+        throw new Error("You do not hold this token.");
+      }
+      if (input.amount > balance) {
+        throw new Error(
+          `Not enough tokens. You hold ${balance.toPrecision(6)} but tried to sell ${input.amount}.`,
+        );
+      }
+      const sol = await getSolLamports(wallet);
+      if (sol < 2_000_000) {
+        throw new Error("Not enough SOL for sell fees. Keep a little SOL in the wallet.");
+      }
     }
     const result = await executeJupiterSwap({
       inputMint,
