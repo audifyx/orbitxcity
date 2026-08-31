@@ -1,0 +1,43 @@
+{
+  "version": "2026-08-31",
+  "repo": "https://github.com/audifyx/og-scan",
+  "mobileRepo": "https://github.com/audifyx/orbitxcity",
+  "sources": [
+    {
+      "knowledge": "00-core/identity-and-brand.md",
+      "ogScan": "README.md, web/api/orbitx/orbitx-telegram-knowledge.js"
+    },
+    {
+      "knowledge": "00-core/iron-laws.md",
+      "ogScan": "supabase/functions/_shared/grim_base.ts, orbitx-faq-training.js"
+    },
+    {
+      "knowledge": "00-core/token-utility.md",
+      "ogScan": "web/api/orbitx/orbitx-faq-training.js ORBITX_FAQ_CORE"
+    },
+    {
+      "knowledge": "01-product/platform-surfaces.md",
+      "ogScan": "docs/ORBITX_PLATFORM.md"
+    },
+    {
+      "knowledge": "01-product/mobile-app.md",
+      "ogScan": "orbitxcity src/brain/knowledge.ts"
+    },
+    {
+      "knowledge": "02-telegram/official-bot.md",
+      "ogScan": "web/api/orbitx/orbitx-telegram-knowledge.js OFFICIAL_ORBITX_TELEGRAM_SYSTEM"
+    },
+    {
+      "knowledge": "02-telegram/faq-core.md",
+      "ogScan": "web/api/orbitx/orbitx-faq-training.js ORBITX_FAQ_CORE"
+    },
+    {
+      "knowledge": "03-personas/mobile-orbitx.md",
+      "ogScan": "orbitxcity src/brain/knowledgeBundle.ts"
+    },
+    {
+      "knowledge": "03-personas/grim-reference.md",
+      "ogScan": "supabase/functions/enhanced-intelligence/index.ts"
+    }
+  ]
+}

@@ -1041,7 +1041,7 @@ function buildSpeakMessages(
     user += `\n\n[You just looked this up. If this is a mint or they asked for a report, write the FULL advanced briefing. Do not mention tool counts. Never invent numbers.]\n${JSON.stringify(results).slice(0, 7000)}`;
   }
   return [
-    { role: "system", content: knowledge.slice(0, 2400) },
+    { role: "system", content: knowledge.slice(0, 8000) },
     ...history,
     { role: "user", content: user },
   ];
@@ -1123,7 +1123,7 @@ Deno.serve(async (req) => {
     const intent = String(incomingPlan.intent || "");
     const knowledge =
       typeof body.knowledge === "string" && body.knowledge.length > 0
-        ? body.knowledge.slice(0, 2400)
+        ? body.knowledge.slice(0, 8000)
         : CHAT_SYSTEM;
 
     let conversationId =
