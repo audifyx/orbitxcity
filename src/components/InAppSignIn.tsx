@@ -17,7 +17,7 @@ import {
 } from "@privy-io/expo";
 import { applicationId } from "expo-application";
 
-import { clearManualLogout, shouldSkipPrivyResume, useAuth } from "../lib/auth";
+import { clearManualLogout, useAuth } from "../lib/auth";
 import { privyClientId } from "../lib/env";
 import { isSolanaPubkey, toBase58Signature, utf8ToBase64 } from "../lib/wallets";
 import { colors } from "../theme";
@@ -50,8 +50,16 @@ function nativeAppId(): string {
     : "host.exp.Exponent";
 }
 
+function isAlreadyLoggedInError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /already logged in|uselinkwith/i.test(message);
+}
+
 function friendlyPrivyError(error: unknown): string {
   const message = error instanceof Error ? error.message : "Sign-in failed.";
+  if (isAlreadyLoggedInError(error)) {
+    return "This phone is already signed into Privy. Enter OrbitX with that account, or use a different email or phone.";
+  }
   const lower = message.toLowerCase();
   if (
     lower.includes("invalid_native_app_id") ||
@@ -74,7 +82,7 @@ function friendlyPrivyError(error: unknown): string {
 }
 
 export function InAppSignIn() {
-  const { isReady, user, error: privyError } = usePrivy();
+  const { isReady, user, logout, error: privyError } = usePrivy();
   const emailLogin = useLoginWithEmail();
   const smsLogin = useLoginWithSMS();
   const solana = useEmbeddedSolanaWallet();
@@ -128,11 +136,30 @@ export function InAppSignIn() {
     await signInWithSignature(wallet.address, toBase58Signature(signed));
   }, [requestSignInMessage, signInWithSignature]);
 
+  const continueExisting = useCallback(async () => {
+    clearManualLogout();
+    setLocalError(null);
+    setBusy(true);
+    setStatus("Signing you into OrbitX…");
+    try {
+      await finishWalletSession();
+    } catch (error) {
+      setLocalError(friendlyPrivyError(error));
+      setStatus(null);
+    } finally {
+      setBusy(false);
+    }
+  }, [finishWalletSession]);
+
   const sendCode = useCallback(async () => {
     setLocalError(null);
     setBusy(true);
     clearManualLogout();
     try {
+      if (user) {
+        await finishWalletSession();
+        return;
+      }
       if (mode === "email") {
         const email = identifier.trim().toLowerCase();
         if (!looksLikeEmail(email)) {
@@ -149,17 +176,31 @@ export function InAppSignIn() {
       setCodeSent(true);
       setStatus("Enter the code we sent you.");
     } catch (error) {
+      if (isAlreadyLoggedInError(error)) {
+        try {
+          await finishWalletSession();
+          return;
+        } catch (resumeError) {
+          setLocalError(friendlyPrivyError(resumeError));
+          setStatus(null);
+          return;
+        }
+      }
       setLocalError(friendlyPrivyError(error));
       setStatus(null);
     } finally {
       setBusy(false);
     }
-  }, [emailLogin, identifier, mode, smsLogin]);
+  }, [emailLogin, finishWalletSession, identifier, mode, smsLogin, user]);
 
   const verifyCode = useCallback(async () => {
     setLocalError(null);
     setBusy(true);
     try {
+      if (user) {
+        await finishWalletSession();
+        return;
+      }
       const otp = code.trim();
       if (!/^\d{4,8}$/.test(otp)) {
         throw new Error("Enter the code from your email or texts.");
@@ -178,20 +219,48 @@ export function InAppSignIn() {
       }
       await finishWalletSession();
     } catch (error) {
+      if (isAlreadyLoggedInError(error)) {
+        try {
+          await finishWalletSession();
+          return;
+        } catch (resumeError) {
+          setLocalError(friendlyPrivyError(resumeError));
+          setStatus(null);
+          return;
+        }
+      }
       setLocalError(friendlyPrivyError(error));
       setStatus(null);
     } finally {
       setBusy(false);
     }
-  }, [code, emailLogin, finishWalletSession, identifier, mode, smsLogin]);
+  }, [code, emailLogin, finishWalletSession, identifier, mode, smsLogin, user]);
+
+  const switchAccount = useCallback(async () => {
+    setLocalError(null);
+    setBusy(true);
+    setStatus("Switching account…");
+    try {
+      await logout();
+      setCodeSent(false);
+      setCode("");
+      setStatus("Enter a different email or phone.");
+    } catch (error) {
+      setLocalError(friendlyPrivyError(error));
+      setStatus(null);
+    } finally {
+      setBusy(false);
+    }
+  }, [logout]);
 
   useEffect(() => {
-    if (!isReady || !user || resumed.current || shouldSkipPrivyResume()) {
+    if (!isReady || !user || resumed.current) {
       return;
     }
     resumed.current = true;
+    clearManualLogout();
     setBusy(true);
-    setStatus("Finishing your OrbitX wallet…");
+    setStatus("Signing you into OrbitX…");
     void finishWalletSession()
       .catch((error) => {
         setLocalError(friendlyPrivyError(error));
@@ -281,21 +350,37 @@ export function InAppSignIn() {
           pressed && styles.primaryButtonPressed,
           working && styles.primaryButtonDisabled,
         ]}
-        onPress={() => void (codeSent ? verifyCode() : sendCode())}
+        onPress={() =>
+          void (user
+            ? continueExisting()
+            : codeSent
+              ? verifyCode()
+              : sendCode())
+        }
         disabled={working}
         accessibilityRole="button"
-        accessibilityLabel={codeSent ? "Verify code" : "Send code"}
+        accessibilityLabel={
+          user
+            ? "Enter OrbitX"
+            : codeSent
+              ? "Verify code"
+              : "Send code"
+        }
       >
         {working ? (
           <ActivityIndicator color={colors.frost} />
         ) : (
           <Text style={styles.primaryButtonText}>
-            {codeSent ? "Verify and enter OrbitX" : "Send code"}
+            {user
+              ? "Enter OrbitX"
+              : codeSent
+                ? "Verify and enter OrbitX"
+                : "Send code"}
           </Text>
         )}
       </Pressable>
 
-      {codeSent ? (
+      {codeSent && !user ? (
         <Pressable
           onPress={() => void sendCode()}
           disabled={working}
@@ -308,24 +393,11 @@ export function InAppSignIn() {
 
       {user && !working ? (
         <Pressable
-          onPress={() => {
-            clearManualLogout();
-            setLocalError(null);
-            setBusy(true);
-            setStatus("Finishing your OrbitX wallet…");
-            void finishWalletSession()
-              .catch((error) => {
-                setLocalError(friendlyPrivyError(error));
-                setStatus(null);
-              })
-              .finally(() => {
-                setBusy(false);
-              });
-          }}
+          onPress={() => void switchAccount()}
           accessibilityRole="button"
-          accessibilityLabel="Continue with this account"
+          accessibilityLabel="Use a different email or phone"
         >
-          <Text style={styles.resend}>Continue with this account</Text>
+          <Text style={styles.resend}>Use a different email or phone</Text>
         </Pressable>
       ) : null}
     </KeyboardAvoidingView>
