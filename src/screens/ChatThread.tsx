@@ -60,6 +60,13 @@ import { mintOrbitxNft, buyOrbitxNft } from "../lib/nftMarket";
 import { parseNftBuyIntent } from "../lib/nftBuyIntent";
 import { createPumpToken } from "../lib/pumpfun";
 import { getPrivyWalletAddress } from "../lib/privyTx";
+import { parsePortfolioIntent } from "../lib/portfolioIntent";
+import {
+  formatPortfolioSummary,
+  snapshotToCardData,
+  voiceForPortfolio,
+} from "../lib/portfolioVoice";
+import { loadWalletSnapshot } from "../lib/portfolio";
 import { parseSocialPostIntent } from "../lib/socialPostIntent";
 import { postToX } from "../lib/xPost";
 import {
@@ -774,6 +781,80 @@ export function ChatThread({
     [userId],
   );
 
+  const runPortfolioAction = useCallback(async () => {
+    const signingWallet = getPrivyWalletAddress() ?? wallet;
+    if (!signingWallet) {
+      setStorageError("Stay signed in — your OrbitX wallet is still loading.");
+      return;
+    }
+    if (tradeBusy.current) {
+      return;
+    }
+    tradeBusy.current = true;
+    setStorageError(null);
+    const localId = `portfolio-${Date.now()}`;
+
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: localId,
+        role: "assistant",
+        content: voiceForPortfolio("start"),
+        cards: [
+          {
+            kind: "wallet",
+            title: "Holdings",
+            data: { status: "loading", address: signingWallet },
+          },
+        ],
+      },
+    ]);
+
+    try {
+      const snapshot = await loadWalletSnapshot(signingWallet);
+      const summary = formatPortfolioSummary(signingWallet, snapshot);
+      const cardData = snapshotToCardData(signingWallet, snapshot);
+      setStorageError(null);
+      setMessages((prev) =>
+        prev.map((message) =>
+          message.id === localId
+            ? {
+                ...message,
+                content: summary,
+                cards: [
+                  {
+                    kind: "wallet",
+                    title: "Holdings",
+                    data: { ...cardData, status: "ready" },
+                  },
+                ],
+              }
+            : message,
+        ),
+      );
+    } catch (error) {
+      const failure =
+        error instanceof Error ? error.message : "Could not load holdings.";
+      setStorageError(failure);
+      setMessages((prev) =>
+        prev.map((message) =>
+          message.id === localId
+            ? {
+                ...message,
+                content: `${failure} Open Wallet → Holdings for the on-chain view.`,
+                cards: message.cards?.map((card) => ({
+                  ...card,
+                  data: { ...card.data, status: "failed" },
+                })),
+              }
+            : message,
+        ),
+      );
+    } finally {
+      tradeBusy.current = false;
+    }
+  }, [wallet]);
+
   const runClaimAction = useCallback(
     async (input?: { card?: MessageCard }) => {
       const signingWallet = getPrivyWalletAddress() ?? wallet;
@@ -1007,6 +1088,20 @@ export function ChatThread({
       return;
     }
 
+    const portfolioIntent = parsePortfolioIntent(text);
+    if (portfolioIntent) {
+      const userMessage: Message = {
+        id: `local-${Date.now()}`,
+        role: "user",
+        content: text,
+      };
+      setMessages((prev) => [...prev, userMessage]);
+      setDraft("");
+      setStorageError(null);
+      await runPortfolioAction();
+      return;
+    }
+
     const nftBuyIntent = parseNftBuyIntent(text);
     if (nftBuyIntent) {
       const userMessage: Message = {
@@ -1181,6 +1276,7 @@ export function ChatThread({
     runClaimAction,
     runNftBuyAction,
     runPostAction,
+    runPortfolioAction,
   ]);
 
   const handleCancelTx = useCallback(

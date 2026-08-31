@@ -9,6 +9,7 @@ import {
   View,
 } from "react-native";
 
+import { HoldingsCard } from "./HoldingsCard";
 import { CreateCard } from "./CreateCard";
 import { ClaimCard } from "./ClaimCard";
 import { OrbitXMark } from "./OrbitXMark";
@@ -202,6 +203,7 @@ function MessageCardView({
   onOpenCreate,
   onApproveCreate,
   onOpenOrders,
+  onOpenWallet,
   onClaimFees,
   onBuyNft,
 }: {
@@ -214,6 +216,7 @@ function MessageCardView({
   onOpenCreate?: (kind: "launch" | "nft", card: MessageCard) => void;
   onApproveCreate?: (kind: "launch" | "nft", card: MessageCard) => void;
   onOpenOrders?: () => void;
+  onOpenWallet?: () => void;
   onClaimFees?: (card: MessageCard) => void;
   onBuyNft?: (card: MessageCard) => void;
 }) {
@@ -287,6 +290,73 @@ function MessageCardView({
   }
 
   if (card.kind === "wallet") {
+    const status = String(card.data.status ?? "ready");
+    const holdingsRaw = String(card.data.holdingsJson ?? "");
+    let holdings: {
+      mint: string;
+      symbol: string;
+      balance: number;
+      usdValue?: number;
+    }[] = [];
+    if (holdingsRaw) {
+      try {
+        const parsed: unknown = JSON.parse(holdingsRaw);
+        if (Array.isArray(parsed)) {
+          holdings = parsed
+            .map((item) => {
+              const row =
+                typeof item === "object" && item !== null
+                  ? (item as Record<string, unknown>)
+                  : null;
+              if (!row || typeof row.mint !== "string") {
+                return null;
+              }
+              const balance = Number(row.balance);
+              if (!Number.isFinite(balance)) {
+                return null;
+              }
+              return {
+                mint: row.mint,
+                symbol:
+                  typeof row.symbol === "string" ? row.symbol : row.mint.slice(0, 4),
+                balance,
+                usdValue:
+                  typeof row.usdValue === "number" ? row.usdValue : undefined,
+              };
+            })
+            .filter((row): row is NonNullable<typeof row> => row !== null);
+        }
+      } catch {
+        holdings = [];
+      }
+    }
+
+    if (status === "loading") {
+      return (
+        <View style={styles.genericCard}>
+          <Text style={styles.genericCardKind}>HOLDINGS</Text>
+          <Text style={styles.socialPending}>Loading from Solana…</Text>
+        </View>
+      );
+    }
+
+    if (holdings.length > 0 || card.data.solBalance !== undefined) {
+      return (
+        <HoldingsCard
+          address={String(card.data.address ?? card.title)}
+          portfolio={String(card.data.portfolio ?? "—")}
+          pnl={String(card.data.pnl ?? "") || undefined}
+          solBalance={
+            typeof card.data.solBalance === "number"
+              ? card.data.solBalance
+              : undefined
+          }
+          holdings={holdings}
+          onOpenWallet={onOpenWallet}
+        />
+      );
+    }
+
     return (
       <WalletCard
         address={String(card.data.address ?? card.title)}
@@ -448,6 +518,7 @@ type MessageItemProps = {
   onOpenCreate?: (kind: "launch" | "nft", card: MessageCard) => void;
   onApproveCreate?: (kind: "launch" | "nft", card: MessageCard) => void;
   onOpenOrders?: () => void;
+  onOpenWallet?: () => void;
   onClaimFees?: (card: MessageCard) => void;
   onBuyNft?: (card: MessageCard) => void;
 };
@@ -464,6 +535,7 @@ function MessageItem({
   onOpenCreate,
   onApproveCreate,
   onOpenOrders,
+  onOpenWallet,
   onClaimFees,
   onBuyNft,
 }: MessageItemProps) {
@@ -550,6 +622,7 @@ function MessageItem({
               onOpenCreate={onOpenCreate}
               onApproveCreate={onApproveCreate}
               onOpenOrders={onOpenOrders}
+              onOpenWallet={onOpenWallet}
               onClaimFees={onClaimFees}
               onBuyNft={onBuyNft}
             />
@@ -599,6 +672,7 @@ export function MessageList({
 }: MessageListProps) {
   const router = useRouter();
   const openOrders = () => router.push("/orders");
+  const openWallet = () => router.push("/wallet");
   const lastAssistantId = [...messages]
     .reverse()
     .find((message) => message.role === "assistant")?.id;
@@ -622,6 +696,7 @@ export function MessageList({
           onOpenCreate={onOpenCreate}
           onApproveCreate={onApproveCreate}
           onOpenOrders={openOrders}
+          onOpenWallet={openWallet}
           onClaimFees={onClaimFees}
           onBuyNft={onBuyNft}
         />
