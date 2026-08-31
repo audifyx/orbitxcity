@@ -3,7 +3,7 @@ import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { LimitLadder, PortfolioView, type LadderOrder, type PortfolioToken } from "../../src/components";
+import { LimitLadder, PerformancePanel, PortfolioView, type LadderOrder, type PortfolioToken } from "../../src/components";
 import { useAuth } from "../../src/lib/auth";
 import { walletExportUrl } from "../../src/lib/hostedAuth";
 import { invokeFunction } from "../../src/lib/supabase";
@@ -203,6 +203,7 @@ export default function WalletScreen() {
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [ladderToken, setLadderToken] = useState<PortfolioToken | null>(null);
+  const [activeTab, setActiveTab] = useState<"portfolio" | "performance">("portfolio");
 
   const load = useCallback(async () => {
     if (!wallet) {
@@ -323,28 +324,55 @@ export default function WalletScreen() {
           Sign in with email or phone and OrbitX creates this wallet for you.
         </Text>
       ) : (
-        <View style={styles.portfolio}>
-          <PortfolioView
-            address={wallet}
-            totalUsd={snapshot?.totalUsd}
-            solBalance={snapshot?.solBalance}
-            pnl24h={snapshot?.pnl24h}
-            pnl7d={snapshot?.pnl7d}
-            tokens={snapshot?.tokens ?? []}
-            loading={loading}
-            error={error}
-            copied={copied}
-            onCopyAddress={() => void copyAddress()}
-            onOpenExplorer={openExplorer}
-            onRefresh={() => void load()}
-            onAskOrbitX={askOrbitX}
-            onExport={exportWallet}
-            onLogout={() => void disconnect()}
-            onBuyToken={buyToken}
-            onSellToken={sellToken}
-            onLadderToken={setLadderToken}
-          />
-        </View>
+        <>
+          <View style={styles.tabRow}>
+            <Pressable
+              style={[styles.tab, activeTab === "portfolio" && styles.tabActive]}
+              onPress={() => setActiveTab("portfolio")}
+            >
+              <Text style={[styles.tabText, activeTab === "portfolio" && styles.tabTextActive]}>
+                Portfolio
+              </Text>
+            </Pressable>
+            <Pressable
+              style={[styles.tab, activeTab === "performance" && styles.tabActive]}
+              onPress={() => setActiveTab("performance")}
+            >
+              <Text style={[styles.tabText, activeTab === "performance" && styles.tabTextActive]}>
+                Performance
+              </Text>
+            </Pressable>
+          </View>
+
+          {activeTab === "portfolio" ? (
+            <View style={styles.portfolio}>
+              <PortfolioView
+                address={wallet}
+                totalUsd={snapshot?.totalUsd}
+                solBalance={snapshot?.solBalance}
+                pnl24h={snapshot?.pnl24h}
+                pnl7d={snapshot?.pnl7d}
+                tokens={snapshot?.tokens ?? []}
+                loading={loading}
+                error={error}
+                copied={copied}
+                onCopyAddress={() => void copyAddress()}
+                onOpenExplorer={openExplorer}
+                onRefresh={() => void load()}
+                onAskOrbitX={askOrbitX}
+                onExport={exportWallet}
+                onLogout={() => void disconnect()}
+                onBuyToken={buyToken}
+                onSellToken={sellToken}
+                onLadderToken={setLadderToken}
+              />
+            </View>
+          ) : (
+            <View style={styles.portfolio}>
+              <PerformancePanel />
+            </View>
+          )}
+        </>
       )}
 
       {ladderToken && ladderToken.marketCapUsd != null ? (
@@ -387,6 +415,32 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: 20,
     paddingBottom: 12,
+  },
+  tabRow: {
+    flexDirection: "row",
+    gap: 8,
+    paddingHorizontal: 20,
+    paddingBottom: 10,
+  },
+  tab: {
+    flex: 1,
+    paddingVertical: 9,
+    borderRadius: 10,
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.hairline,
+  },
+  tabActive: {
+    borderColor: colors.signal,
+  },
+  tabText: {
+    color: colors.mute,
+    fontFamily: "Inter_500Medium",
+    fontSize: 13,
+  },
+  tabTextActive: {
+    color: colors.frost,
   },
   title: {
     color: colors.frost,

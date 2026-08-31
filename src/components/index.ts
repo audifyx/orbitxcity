@@ -12,4 +12,6 @@ export * from "./ProfileView";
 export * from "./SettingsView";
 export * from "./TokenCard";
 export * from "./ToolSheet";
+export * from "./PerformancePanel";
+export * from "./SimpleBarChart";
 export * from "./types";
