@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Platform,
@@ -34,7 +34,7 @@ export default function AuthScreen() {
     signature?: string | string[];
     return?: string | string[];
   }>();
-  const { signInWithSignature, session, connecting, error } = useAuth();
+  const { session, connecting, error } = useAuth();
   const [localError, setLocalError] = useState<string | null>(null);
   const [status, setStatus] = useState("Preparing OrbitX sign-in…");
   const started = useRef(false);
@@ -46,12 +46,11 @@ export default function AuthScreen() {
     `https://orbitx.local/auth?pubkey=${encodeURIComponent(pubkey)}&signature=${encodeURIComponent(signature)}`,
   );
 
-  const finishInApp = useCallback(
-    async (nextPubkey: string, nextSignature: string) => {
-      await signInWithSignature(nextPubkey, nextSignature);
-    },
-    [signInWithSignature],
-  );
+  useEffect(() => {
+    if (Platform.OS !== "web") {
+      router.replace("/connect");
+    }
+  }, [router]);
 
   useEffect(() => {
     if (session) {
@@ -64,19 +63,13 @@ export default function AuthScreen() {
   }, [callback, returnTo, router, session]);
 
   useEffect(() => {
-    if (!callback) {
+    if (!callback || started.current) {
       return;
     }
-    setStatus("Connecting your OrbitX wallet…");
-    if (Platform.OS !== "web" || started.current) {
-      return;
-    }
+    // Hosted signatures have no matching nonce. Sign in inside the app instead.
     started.current = true;
-    void finishInApp(callback.pubkey, callback.signature).catch((err) => {
-      setLocalError(err instanceof Error ? err.message : "Sign-in failed.");
-      setStatus("");
-    });
-  }, [callback, finishInApp]);
+    router.replace("/connect");
+  }, [callback, router]);
 
   useEffect(() => {
     if (callback || started.current || Platform.OS !== "web") {

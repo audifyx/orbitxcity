@@ -1,4 +1,5 @@
 import { useCallback, useState } from "react";
+import { useRouter } from "expo-router";
 import {
   FlatList,
   Platform,
@@ -8,8 +9,13 @@ import {
   View,
 } from "react-native";
 
+import { CreateCard } from "./CreateCard";
+import { ClaimCard } from "./ClaimCard";
+import { OrbitXMark } from "./OrbitXMark";
+import { OrderCard, type OrderCardStatus } from "./OrderCard";
 import { TokenCard } from "./TokenCard";
 import { ToolProgress } from "./ToolProgress";
+import { TradeReceipt } from "./TradeReceipt";
 import { TxPreview, type TxPreviewStatus } from "./TxPreview";
 import { WalletCard } from "./WalletCard";
 import type { Message, MessageCard } from "./types";
@@ -22,6 +28,13 @@ export type MessageListProps = {
   onRegenerate?: () => void;
   onConfirmTx?: (card: MessageCard) => void;
   onCancelTx?: (card: MessageCard) => void;
+  onCancelOrder?: (orderId: string) => void;
+  onBuyToken?: (mint: string) => void;
+  onSellToken?: (mint: string) => void;
+  onOpenCreate?: (kind: "launch" | "nft", card: MessageCard) => void;
+  onApproveCreate?: (kind: "launch" | "nft", card: MessageCard) => void;
+  onClaimFees?: (card: MessageCard) => void;
+  onBuyNft?: (card: MessageCard) => void;
 };
 
 type InlineSegment = {
@@ -166,16 +179,46 @@ function asTxStatus(value: unknown): TxPreviewStatus {
     : "preview";
 }
 
+function asOrderStatus(value: unknown): OrderCardStatus {
+  const statuses: OrderCardStatus[] = [
+    "pending",
+    "triggered",
+    "confirmed",
+    "failed",
+    "cancelled",
+  ];
+  return statuses.includes(value as OrderCardStatus)
+    ? (value as OrderCardStatus)
+    : "pending";
+}
+
 function MessageCardView({
   card,
   onConfirmTx,
   onCancelTx,
+  onCancelOrder,
+  onBuyToken,
+  onSellToken,
+  onOpenCreate,
+  onApproveCreate,
+  onOpenOrders,
+  onClaimFees,
+  onBuyNft,
 }: {
   card: MessageCard;
   onConfirmTx?: (card: MessageCard) => void;
   onCancelTx?: (card: MessageCard) => void;
+  onCancelOrder?: (orderId: string) => void;
+  onBuyToken?: (mint: string) => void;
+  onSellToken?: (mint: string) => void;
+  onOpenCreate?: (kind: "launch" | "nft", card: MessageCard) => void;
+  onApproveCreate?: (kind: "launch" | "nft", card: MessageCard) => void;
+  onOpenOrders?: () => void;
+  onClaimFees?: (card: MessageCard) => void;
+  onBuyNft?: (card: MessageCard) => void;
 }) {
   if (card.kind === "token") {
+    const mint = String(card.data.mint ?? "");
     return (
       <TokenCard
         symbol={String(card.data.symbol ?? card.title)}
@@ -184,7 +227,62 @@ function MessageCardView({
         liquidity={String(card.data.liq ?? card.data.liquidity ?? "—")}
         volume={String(card.data.vol ?? card.data.volume ?? "—")}
         risk={String(card.data.risk ?? "—")}
+        onBuy={() => mint && onBuyToken?.(mint)}
+        onSell={() => mint && onSellToken?.(mint)}
       />
+    );
+  }
+
+  if (card.kind === "launch" || card.kind === "nft") {
+    const status = String(card.data.status ?? "preview");
+    return (
+      <CreateCard
+        kind={card.kind}
+        name={String(card.data.name ?? card.title)}
+        symbol={String(card.data.symbol ?? "")}
+        note={String(card.data.note ?? "")}
+        status={
+          status === "signing" ||
+          status === "confirmed" ||
+          status === "failed"
+            ? status
+            : "preview"
+        }
+        mint={String(card.data.mint ?? "") || undefined}
+        signature={String(card.data.signature ?? "") || undefined}
+        onOpen={() => onOpenCreate?.(card.kind === "nft" ? "nft" : "launch", card)}
+        onApprove={
+          status === "preview"
+            ? () =>
+                onApproveCreate?.(card.kind === "nft" ? "nft" : "launch", card)
+            : undefined
+        }
+      />
+    );
+  }
+
+  if (card.kind === "social") {
+    const status = String(card.data.status ?? "preview");
+    const text = String(card.data.text ?? card.title);
+    const url = String(card.data.url ?? "");
+    return (
+      <View style={styles.genericCard}>
+        <Text style={styles.genericCardKind}>POST TO X</Text>
+        <Text style={styles.genericCardTitle} numberOfLines={4}>
+          {text}
+        </Text>
+        {status === "posting" ? (
+          <Text style={styles.socialPending}>Posting…</Text>
+        ) : null}
+        {status === "confirmed" ? (
+          <Text style={styles.nftBuySuccess}>
+            {url ? `Live · ${url}` : "Posted on X."}
+          </Text>
+        ) : null}
+        {status === "failed" ? (
+          <Text style={styles.socialFailed}>Post failed — connect X in Social tab.</Text>
+        ) : null}
+      </View>
     );
   }
 
@@ -198,7 +296,115 @@ function MessageCardView({
     );
   }
 
+  if (card.kind === "claim") {
+    const status = String(card.data.status ?? "preview");
+    return (
+      <ClaimCard
+        claimableSol={
+          typeof card.data.claimableSol === "number"
+            ? card.data.claimableSol
+            : undefined
+        }
+        status={
+          status === "claiming" ||
+          status === "confirmed" ||
+          status === "failed"
+            ? status
+            : "preview"
+        }
+        signature={String(card.data.signature ?? "") || undefined}
+        onClaim={
+          status === "preview" ? () => onClaimFees?.(card) : undefined
+        }
+      />
+    );
+  }
+
+  if (card.kind === "nft_buy") {
+    const status = String(card.data.status ?? "preview");
+    return (
+      <View style={styles.genericCard}>
+        <Text style={styles.genericCardKind}>NFT BUY</Text>
+        <Text style={styles.genericCardTitle}>
+          {String(card.data.name ?? card.title)}
+        </Text>
+        <Text style={styles.nftBuyMeta}>
+          {typeof card.data.priceSol === "number"
+            ? `${card.data.priceSol} SOL`
+            : "Listed NFT"}
+        </Text>
+        {status === "preview" && onBuyNft ? (
+          <Pressable
+            style={({ pressed }) => [
+              styles.nftBuyButton,
+              pressed && styles.actionPressed,
+            ]}
+            onPress={() => onBuyNft(card)}
+            accessibilityRole="button"
+          >
+            <Text style={styles.nftBuyButtonText}>Buy with OrbitX wallet</Text>
+          </Pressable>
+        ) : null}
+        {status === "confirmed" ? (
+          <Text style={styles.nftBuySuccess}>Purchased on chain.</Text>
+        ) : null}
+      </View>
+    );
+  }
+
+  if (card.kind === "order") {
+    return (
+      <OrderCard
+        side={String(card.data.side) === "buy" ? "buy" : "sell"}
+        percent={
+          typeof card.data.percent === "number" ? card.data.percent : undefined
+        }
+        amountSol={
+          typeof card.data.amountSol === "number"
+            ? card.data.amountSol
+            : undefined
+        }
+        triggerType={
+          String(card.data.triggerType) === "price" ? "price" : "mcap"
+        }
+        triggerValue={Number(card.data.triggerValue ?? 0)}
+        symbol={String(card.data.symbol ?? "")}
+        mint={String(card.data.mint ?? "")}
+        status={asOrderStatus(card.data.status)}
+        signature={String(card.data.signature ?? "") || undefined}
+        onCancel={
+          card.data.orderId
+            ? () => onCancelOrder?.(String(card.data.orderId))
+            : undefined
+        }
+        onOpenDashboard={onOpenOrders}
+      />
+    );
+  }
+
   if (card.kind === "tx") {
+    const status = asTxStatus(card.data.status);
+    const side = String(card.data.side ?? "buy") === "sell" ? "sell" : "buy";
+    const compact =
+      card.data.compact === true ||
+      status === "confirmed" ||
+      status === "failed" ||
+      status === "submitted" ||
+      status === "confirming";
+    if (compact) {
+      const amount =
+        typeof card.data.amount === "number"
+          ? `${card.data.amount}${typeof card.data.percent === "number" ? `% (${card.data.percent}%)` : ""}`
+          : undefined;
+      return (
+        <TradeReceipt
+          side={side}
+          status={status}
+          amountLabel={amount}
+          signature={String(card.data.signature ?? card.data.tx ?? "") || undefined}
+        />
+      );
+    }
     const warnings =
       typeof card.data.warnings === "string" && card.data.warnings
         ? card.data.warnings.split(" | ")
@@ -211,6 +417,11 @@ function MessageCardView({
         route={String(card.data.route ?? "Jupiter")}
         warnings={warnings}
         status={asTxStatus(card.data.status)}
+        confirmLabel={
+          String(card.data.side ?? "buy") === "sell"
+            ? "Approve & sell"
+            : "Approve & buy"
+        }
         onConfirm={() => onConfirmTx?.(card)}
         onCancel={() => onCancelTx?.(card)}
       />
@@ -231,6 +442,14 @@ type MessageItemProps = {
   onRegenerate?: () => void;
   onConfirmTx?: (card: MessageCard) => void;
   onCancelTx?: (card: MessageCard) => void;
+  onCancelOrder?: (orderId: string) => void;
+  onBuyToken?: (mint: string) => void;
+  onSellToken?: (mint: string) => void;
+  onOpenCreate?: (kind: "launch" | "nft", card: MessageCard) => void;
+  onApproveCreate?: (kind: "launch" | "nft", card: MessageCard) => void;
+  onOpenOrders?: () => void;
+  onClaimFees?: (card: MessageCard) => void;
+  onBuyNft?: (card: MessageCard) => void;
 };
 
 function MessageItem({
@@ -239,6 +458,14 @@ function MessageItem({
   onRegenerate,
   onConfirmTx,
   onCancelTx,
+  onCancelOrder,
+  onBuyToken,
+  onSellToken,
+  onOpenCreate,
+  onApproveCreate,
+  onOpenOrders,
+  onClaimFees,
+  onBuyNft,
 }: MessageItemProps) {
   const [copied, setCopied] = useState(false);
   const blocks = parseMarkdown(message.content);
@@ -264,6 +491,18 @@ function MessageItem({
 
   return (
     <View style={[styles.messageWrap, isUser && styles.messageWrapUser]}>
+      {!isUser ? (
+        <View style={styles.agentRow}>
+          <View style={styles.agentAvatar}>
+            <OrbitXMark size={16} />
+          </View>
+          <View style={styles.agentMeta}>
+            <Text style={styles.agentKicker}>ORBITX CORE</Text>
+            <Text style={styles.agentSub}>Auto-sign · Jupiter · pump.fun</Text>
+          </View>
+          <View style={styles.agentPulse} />
+        </View>
+      ) : null}
       <View style={[styles.bubble, isUser ? styles.bubbleUser : styles.bubbleAssistant]}>
         {blocks.map((block, blockIndex) => {
           if (block.type === "list") {
@@ -305,6 +544,14 @@ function MessageItem({
               card={card}
               onConfirmTx={onConfirmTx}
               onCancelTx={onCancelTx}
+              onCancelOrder={onCancelOrder}
+              onBuyToken={onBuyToken}
+              onSellToken={onSellToken}
+              onOpenCreate={onOpenCreate}
+              onApproveCreate={onApproveCreate}
+              onOpenOrders={onOpenOrders}
+              onClaimFees={onClaimFees}
+              onBuyNft={onBuyNft}
             />
           </View>
         ))}
@@ -342,7 +589,16 @@ export function MessageList({
   onRegenerate,
   onConfirmTx,
   onCancelTx,
+  onCancelOrder,
+  onBuyToken,
+  onSellToken,
+  onOpenCreate,
+  onApproveCreate,
+  onClaimFees,
+  onBuyNft,
 }: MessageListProps) {
+  const router = useRouter();
+  const openOrders = () => router.push("/orders");
   const lastAssistantId = [...messages]
     .reverse()
     .find((message) => message.role === "assistant")?.id;
@@ -360,6 +616,14 @@ export function MessageList({
           onRegenerate={onRegenerate}
           onConfirmTx={onConfirmTx}
           onCancelTx={onCancelTx}
+          onCancelOrder={onCancelOrder}
+          onBuyToken={onBuyToken}
+          onSellToken={onSellToken}
+          onOpenCreate={onOpenCreate}
+          onApproveCreate={onApproveCreate}
+          onOpenOrders={openOrders}
+          onClaimFees={onClaimFees}
+          onBuyNft={onBuyNft}
         />
       )}
     />
@@ -370,29 +634,80 @@ const styles = StyleSheet.create({
   listContent: {
     paddingHorizontal: 16,
     paddingVertical: 20,
-    gap: 18,
+    gap: 22,
   },
   messageWrap: {
-    alignItems: "flex-start",
-    gap: 8,
+    alignItems: "stretch",
+    width: "100%",
+    gap: 10,
   },
   messageWrapUser: {
     alignItems: "flex-end",
   },
+  agentRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingLeft: 2,
+    marginBottom: 2,
+  },
+  agentAvatar: {
+    width: 30,
+    height: 30,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(126, 182, 255, 0.1)",
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "rgba(126, 182, 255, 0.24)",
+  },
+  agentMeta: {
+    flex: 1,
+    gap: 1,
+  },
+  agentPulse: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: colors.success,
+  },
+  agentKicker: {
+    color: colors.signal,
+    fontFamily: "Inter_600SemiBold",
+    fontSize: 10,
+    letterSpacing: 2.4,
+  },
+  agentSub: {
+    color: colors.dim,
+    fontFamily: "Inter_400Regular",
+    fontSize: 10,
+  },
   bubble: {
-    maxWidth: "92%",
-    borderRadius: 16,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+    width: "100%",
+    maxWidth: "100%",
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
     borderWidth: StyleSheet.hairlineWidth,
   },
   bubbleUser: {
-    backgroundColor: "rgba(126, 182, 255, 0.1)",
-    borderColor: "rgba(126, 182, 255, 0.22)",
+    width: "86%",
+    maxWidth: 420,
+    alignSelf: "flex-end",
+    backgroundColor: "rgba(90, 140, 255, 0.16)",
+    borderColor: "rgba(150, 196, 255, 0.32)",
   },
   bubbleAssistant: {
-    backgroundColor: colors.glass,
-    borderColor: colors.line,
+    alignSelf: "stretch",
+    backgroundColor: "rgba(4, 7, 14, 0.98)",
+    borderColor: "rgba(126, 182, 255, 0.2)",
+    borderLeftWidth: 3,
+    borderLeftColor: colors.signal,
+    shadowColor: colors.signal,
+    shadowOpacity: 0.08,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 2,
   },
   paragraph: {
     marginBottom: 8,
@@ -438,6 +753,8 @@ const styles = StyleSheet.create({
   },
   toolProgressWrap: {
     marginTop: 10,
+    width: "100%",
+    alignSelf: "stretch",
   },
   cardWrap: {
     marginTop: 12,
@@ -497,5 +814,42 @@ const styles = StyleSheet.create({
     color: colors.frost,
     fontFamily: "Inter_500Medium",
     fontSize: 14,
+  },
+  nftBuyMeta: {
+    color: colors.mist,
+    fontFamily: "Inter_400Regular",
+    fontSize: 13,
+  },
+  nftBuyButton: {
+    marginTop: 8,
+    alignSelf: "flex-start",
+    minHeight: 34,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    justifyContent: "center",
+    backgroundColor: colors.signal,
+  },
+  nftBuyButtonText: {
+    color: colors.void,
+    fontFamily: "Inter_600SemiBold",
+    fontSize: 12,
+  },
+  nftBuySuccess: {
+    marginTop: 6,
+    color: colors.success,
+    fontFamily: "Inter_500Medium",
+    fontSize: 12,
+  },
+  socialPending: {
+    marginTop: 6,
+    color: colors.signal,
+    fontFamily: "Inter_500Medium",
+    fontSize: 12,
+  },
+  socialFailed: {
+    marginTop: 6,
+    color: colors.danger,
+    fontFamily: "Inter_500Medium",
+    fontSize: 12,
   },
 });

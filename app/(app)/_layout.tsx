@@ -14,6 +14,9 @@ import {
 } from "react-native-safe-area-context";
 
 import { Sidebar, type NavRoute } from "../../src/components";
+import { useAuth } from "../../src/lib/auth";
+import { startLimitOrderMonitor, stopLimitOrderMonitor } from "../../src/lib/limitOrders";
+import { useUnlockedSession } from "../../src/lib/sessionGate";
 import { supabase } from "../../src/lib/supabase";
 import { colors } from "../../src/theme";
 
@@ -23,6 +26,7 @@ const ROUTE_MAP: Record<NavRoute, string> = {
   home: "/",
   trending: "/trending",
   wallet: "/wallet",
+  orders: "/orders",
   tools: "/tools",
   agents: "/agents",
   activity: "/activity",
@@ -63,11 +67,28 @@ export default function AppLayout() {
   const pathname = usePathname();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { unlocked, waiting } = useUnlockedSession();
+  const { wallet } = useAuth();
   const isDesktop = width >= DESKTOP_BREAKPOINT;
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [conversations, setConversations] = useState<
     { id: string; title: string }[]
   >([]);
+
+  useEffect(() => {
+    if (!waiting && !unlocked) {
+      router.replace("/connect");
+    }
+  }, [waiting, router, unlocked]);
+
+  useEffect(() => {
+    if (wallet && unlocked) {
+      startLimitOrderMonitor(wallet);
+      return () => stopLimitOrderMonitor();
+    }
+    stopLimitOrderMonitor();
+    return undefined;
+  }, [wallet, unlocked]);
 
   useEffect(() => {
     let cancelled = false;
@@ -121,6 +142,10 @@ export default function AppLayout() {
       }}
     />
   );
+
+  if (waiting || !unlocked) {
+    return <View style={styles.root} />;
+  }
 
   if (isDesktop) {
     return (

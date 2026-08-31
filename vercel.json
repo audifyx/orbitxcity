@@ -7,7 +7,19 @@
   "framework": null,
   "rewrites": [
     {
-      "source": "/((?!_expo/|favicon.ico|privy-host).*)",
+      "source": "/export",
+      "destination": "/export/index.html"
+    },
+    {
+      "source": "/export/",
+      "destination": "/export/index.html"
+    },
+    {
+      "source": "/wallet-export.html",
+      "destination": "/wallet-export.html"
+    },
+    {
+      "source": "/((?!_expo/|favicon.ico|privy-host|wallet-export|export).*)",
       "destination": "/"
     }
   ]

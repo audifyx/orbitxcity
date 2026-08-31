@@ -1,7 +1,7 @@
 import { resolveModelId } from "./models";
 import { planFromUtterance } from "./planner";
 import { AGENTS } from "./agents";
-import { CHAT_SYSTEM } from "./knowledge";
+import { CHAT_SYSTEM, buildAgentKnowledge } from "./knowledge";
 import { TOOLS } from "./tools";
 
 export type ChatCard = {
@@ -169,7 +169,7 @@ function buildOrchestrateBody(req: OrchestrateRequest): {
       page: req.page,
       tokenMint: req.tokenMint,
       walletAddress: req.walletAddress,
-      knowledge: CHAT_SYSTEM,
+      knowledge: buildAgentKnowledge(),
       specialists,
       plan: {
         agentIds: plan.agentIds,

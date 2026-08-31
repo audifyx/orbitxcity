@@ -1,31 +1,9 @@
 import { Platform } from "react-native";
-import * as Linking from "expo-linking";
 
-import {
-  appOrigin,
-  hostedAuthPageUrl,
-  nativeAuthReturnUrl,
-} from "./hostedAuth";
 import { type WalletId } from "./wallets";
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-export { appOrigin };
-
-export function connectPageUrl(): string {
-  return hostedAuthPageUrl(nativeAuthReturnUrl());
-}
-
 export function isMobileDevice(): boolean {
-  if (Platform.OS !== "web") {
-    return true;
-  }
-  if (typeof navigator === "undefined") {
-    return false;
-  }
-  return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+  return Platform.OS !== "web";
 }
 
 export function isInsideWalletBrowser(_walletId?: WalletId): boolean {
@@ -34,19 +12,15 @@ export function isInsideWalletBrowser(_walletId?: WalletId): boolean {
 
 export async function openWalletInAppBrowser(
   _walletId: WalletId,
-  targetUrl?: string,
+  _targetUrl?: string,
 ): Promise<void> {
-  await openHostedAuth(targetUrl);
+  throw new Error(
+    "Use email or phone in the OrbitX app. Sign-in does not open a browser.",
+  );
 }
 
-export async function openHostedAuth(targetUrl?: string): Promise<void> {
-  const target = targetUrl ?? connectPageUrl();
-  try {
-    await Linking.openURL(target);
-    await sleep(300);
-  } catch {
-    throw new Error(
-      "Could not open OrbitX sign-in. Check your connection and try again.",
-    );
-  }
+export async function openHostedAuth(_targetUrl?: string): Promise<void> {
+  throw new Error(
+    "Use email or phone in the OrbitX app. Sign-in does not open a browser.",
+  );
 }
