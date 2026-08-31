@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Platform, ScrollView, StyleSheet, Text } from "react-native";
+import { Platform, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -99,7 +99,15 @@ function normalizeSnapshot(raw: unknown): WalletSnapshot {
   const explicitTotal =
     num(data.totalUsd) ?? num(data.totalValueUsd) ?? num(data.netWorth);
   const summedTokens = tokens.reduce((sum, t) => sum + (t.usdValue ?? 0), 0);
-  const solUsd = num(data.solUsdValue) ?? num(data.solValueUsd);
+  // Only add a separate SOL value if native SOL isn't already a token entry,
+  // otherwise the headline total double-counts it.
+  const WRAPPED_SOL = "So11111111111111111111111111111111111111112";
+  const hasSolToken = tokens.some(
+    (t) => t.symbol.toUpperCase() === "SOL" || t.mint === WRAPPED_SOL,
+  );
+  const solUsd = hasSolToken
+    ? undefined
+    : num(data.solUsdValue) ?? num(data.solValueUsd);
   const totalUsd =
     explicitTotal ?? (summedTokens > 0 ? summedTokens + (solUsd ?? 0) : undefined);
 
@@ -231,37 +239,38 @@ export default function WalletScreen() {
   }, []);
 
   return (
-    <ScrollView
-      style={styles.root}
-      contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 24 }]}
-    >
-      <Text style={styles.title}>Wallet</Text>
-      <Text style={styles.subtitle}>Your OrbitX in-app wallet</Text>
+    <View style={[styles.root, { paddingBottom: insets.bottom }]}>
+      <View style={styles.header}>
+        <Text style={styles.title}>Wallet</Text>
+        <Text style={styles.subtitle}>Your OrbitX in-app wallet</Text>
+      </View>
 
       {!wallet ? (
         <Text style={styles.empty}>
           Sign in with email or phone and OrbitX creates this wallet for you.
         </Text>
       ) : (
-        <PortfolioView
-          address={wallet}
-          totalUsd={snapshot?.totalUsd}
-          solBalance={snapshot?.solBalance}
-          pnl24h={snapshot?.pnl24h}
-          pnl7d={snapshot?.pnl7d}
-          tokens={snapshot?.tokens ?? []}
-          loading={loading}
-          error={error}
-          copied={copied}
-          onCopyAddress={() => void copyAddress()}
-          onOpenExplorer={openExplorer}
-          onRefresh={() => void load()}
-          onAskOrbitX={askOrbitX}
-          onExport={exportWallet}
-          onLogout={() => void disconnect()}
-        />
+        <View style={styles.portfolio}>
+          <PortfolioView
+            address={wallet}
+            totalUsd={snapshot?.totalUsd}
+            solBalance={snapshot?.solBalance}
+            pnl24h={snapshot?.pnl24h}
+            pnl7d={snapshot?.pnl7d}
+            tokens={snapshot?.tokens ?? []}
+            loading={loading}
+            error={error}
+            copied={copied}
+            onCopyAddress={() => void copyAddress()}
+            onOpenExplorer={openExplorer}
+            onRefresh={() => void load()}
+            onAskOrbitX={askOrbitX}
+            onExport={exportWallet}
+            onLogout={() => void disconnect()}
+          />
+        </View>
       )}
-    </ScrollView>
+    </View>
   );
 }
 
@@ -270,10 +279,16 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.abyss,
   },
-  content: {
-    padding: 20,
-    gap: 8,
-    flexGrow: 1,
+  header: {
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 8,
+    gap: 2,
+  },
+  portfolio: {
+    flex: 1,
+    paddingHorizontal: 20,
+    paddingBottom: 12,
   },
   title: {
     color: colors.frost,
@@ -284,13 +299,12 @@ const styles = StyleSheet.create({
     color: colors.mute,
     fontFamily: "Inter_400Regular",
     fontSize: 14,
-    marginBottom: 8,
   },
   empty: {
     color: colors.mute,
     fontFamily: "Inter_400Regular",
     fontSize: 15,
     lineHeight: 22,
-    marginTop: 8,
+    padding: 20,
   },
 });
