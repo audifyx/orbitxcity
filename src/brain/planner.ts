@@ -45,6 +45,18 @@ const EXPLICIT_WRITE_VERBS =
 
 const QUOTE_ONLY_VERBS = /\b(quote|price|how\s?much|estimate)\b/i;
 
+/**
+ * Conditional/ladder order language — "sell 10% if MC reaches $5M", "create
+ * a ladder: sell 10% at +25%, 20% at +100%", "take-profit at +50%". This is
+ * a request to CREATE a draft limit order, not to broadcast a market swap
+ * right now, so it doesn't need the stricter EXPLICIT_WRITE_VERBS match.
+ * jupiter-order itself still has confirmationRequired: true — the agent
+ * still has to preview it and the user still has to sign in their wallet.
+ * Never lets this bypass that gate; it only decides which tool gets queued.
+ */
+const CONDITIONAL_ORDER_VERBS =
+  /\b(ladder|when\s+(the\s+)?mc|if\s+(the\s+)?mc|at\s+[+-]?\d+(\.\d+)?%|target\s+(of|mc|price)|take[- ]?profit|stop[- ]?loss|reaches\s+\$|drops?\s+to\s+\$)\b/i;
+
 function extractAddresses(text: string): string[] {
   const matches = text.match(new RegExp(BASE58_RE.source, "g"));
   if (!matches) {
@@ -211,7 +223,12 @@ function pickTools(
       notes.push(
         "Trade intent detected: quote-only stage. jupiter-swap and jupiter-order excluded until explicit execute request.",
       );
-      if (explicitWrite) {
+      if (CONDITIONAL_ORDER_VERBS.test(text)) {
+        add("jupiter-order");
+        notes.push(
+          "Conditional/ladder order language detected — drafting a limit order via jupiter-order. Still requires preview + wallet confirmation before anything is placed.",
+        );
+      } else if (explicitWrite) {
         notes.push(
           "User requested execution language — swap/order tools require confirmation before inclusion.",
         );
