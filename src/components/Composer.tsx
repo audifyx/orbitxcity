@@ -23,6 +23,8 @@ export type ComposerProps = {
   modelLabel: string;
   onModelPress: () => void;
   onToolsPress: () => void;
+  instantBuy?: boolean;
+  onInstantBuyPress?: () => void;
   disabled?: boolean;
   mentionTools?: MentionOption[];
 };
@@ -36,6 +38,8 @@ export function Composer({
   modelLabel,
   onModelPress,
   onToolsPress,
+  instantBuy = false,
+  onInstantBuyPress,
   disabled = false,
   mentionTools = [],
 }: ComposerProps) {
@@ -103,6 +107,24 @@ export function Composer({
           <Text style={styles.chipIcon}>⬡</Text>
           <Text style={styles.chipLabel}>Tools</Text>
         </Pressable>
+
+        {onInstantBuyPress ? (
+          <Pressable
+            style={({ pressed }) => [
+              styles.chip,
+              instantBuy && styles.chipLive,
+              pressed && styles.chipPressed,
+            ]}
+            onPress={onInstantBuyPress}
+            accessibilityRole="button"
+            accessibilityLabel="Toggle instant buy"
+          >
+            <Text style={styles.chipIcon}>{instantBuy ? "●" : "○"}</Text>
+            <Text style={styles.chipLabel}>
+              {instantBuy ? "Auto-sign" : "Manual sign"}
+            </Text>
+          </Pressable>
+        ) : null}
       </View>
 
       <View style={styles.inputWrap}>
@@ -202,6 +224,10 @@ const styles = StyleSheet.create({
   },
   chipPressed: {
     opacity: 0.75,
+  },
+  chipLive: {
+    borderColor: "rgba(126, 255, 196, 0.35)",
+    backgroundColor: "rgba(126, 224, 196, 0.1)",
   },
   chipDot: {
     color: colors.signal,

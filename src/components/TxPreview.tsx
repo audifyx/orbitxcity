@@ -17,6 +17,7 @@ export type TxPreviewProps = {
   route: string;
   warnings?: string[];
   status: TxPreviewStatus;
+  confirmLabel?: string;
   onConfirm?: () => void;
   onCancel?: () => void;
 };
@@ -52,6 +53,7 @@ export function TxPreview({
   route,
   warnings = [],
   status,
+  confirmLabel = "Approve & buy",
   onConfirm,
   onCancel,
 }: TxPreviewProps) {
@@ -128,7 +130,7 @@ export function TxPreview({
               onPress={onConfirm}
               accessibilityRole="button"
             >
-              <Text style={styles.confirmLabel}>Confirm in wallet</Text>
+              <Text style={styles.confirmLabel}>{confirmLabel}</Text>
             </Pressable>
           ) : (
             <View style={styles.pendingBtn}>

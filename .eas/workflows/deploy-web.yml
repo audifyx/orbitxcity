@@ -1,0 +1,11 @@
+name: Deploy web
+
+on:
+  push:
+    branches: ["main"]
+
+jobs:
+  skip_expo_web:
+    name: Skip Expo web deploy
+    steps:
+      - run: echo "OrbitX production is Expo Go. Privy export HTML is hosted on Vercel."

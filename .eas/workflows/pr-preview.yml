@@ -1,0 +1,14 @@
+name: Web PR preview
+
+on:
+  pull_request: {}
+
+jobs:
+  comment:
+    type: github-comment
+    name: Note Expo Go preview
+    params:
+      payload: |
+        OrbitX is an **Android Expo Go** app, not a website.
+
+        Sign-in, wallet, and swaps happen in Expo Go. Privy seed export opens the phone browser on the Vercel export page (`/export`).
