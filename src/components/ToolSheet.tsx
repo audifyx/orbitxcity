@@ -19,7 +19,10 @@ export type ToolCategory =
   | "CREATE"
   | "SOCIAL"
   | "MONITOR"
-  | "ORBITX";
+  | "ORBITX"
+  | "DEFI"
+  | "WALLET"
+  | "KNOWLEDGE";
 
 export type ToolOption = {
   id: string;
@@ -38,9 +41,12 @@ export type ToolSheetProps = {
 const CATEGORIES: ToolCategory[] = [
   "TRADE",
   "INTELLIGENCE",
+  "DEFI",
+  "WALLET",
   "CREATE",
   "SOCIAL",
   "MONITOR",
+  "KNOWLEDGE",
   "ORBITX",
 ];
 

@@ -9,7 +9,7 @@ import {
 } from "react-native";
 
 import { TokenCard } from "./TokenCard";
-import { ToolProgress } from "./ToolProgress";
+import { ToolTerminal } from "./ToolTerminal";
 import { TxPreview, type TxPreviewStatus } from "./TxPreview";
 import { WalletCard } from "./WalletCard";
 import type { Message, MessageCard } from "./types";
@@ -295,7 +295,7 @@ function MessageItem({
 
         {message.toolEvents && message.toolEvents.length > 0 ? (
           <View style={styles.toolProgressWrap}>
-            <ToolProgress events={message.toolEvents} />
+            <ToolTerminal events={message.toolEvents} />
           </View>
         ) : null}
 

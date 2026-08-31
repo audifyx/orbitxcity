@@ -15,11 +15,13 @@ import {
   AGENTS,
   DEFAULT_MODEL_ID,
   MODELS,
+  SKILLS,
   TOOLS,
   asStreamEvent,
   orchestrateLive,
   planFromUtterance,
   rewriteLegacyToolPrompt,
+  searchSkills,
   type OrbitXModelId,
 } from "../brain";
 import type { ToolCategory as BrainToolCategory } from "../brain/types";
@@ -56,6 +58,9 @@ const CATEGORY_MAP: Record<BrainToolCategory, ToolCategory> = {
   social: "SOCIAL",
   monitor: "MONITOR",
   orbitx: "ORBITX",
+  defi: "DEFI",
+  wallet: "WALLET",
+  knowledge: "KNOWLEDGE",
 };
 
 function isUuid(value: string): boolean {
@@ -541,6 +546,14 @@ export function ChatThread({
         subtitle: agent.description,
         kind: "agent" as const,
       }));
+    const skills = (q.length === 0 ? SKILLS.slice(0, 6) : searchSkills(q, 6)).map(
+      (skill) => ({
+        id: `skill:${skill.id}`,
+        title: skill.name,
+        subtitle: skill.summary,
+        kind: "skill" as const,
+      }),
+    );
     const actions: CommandResult[] = [
       {
         id: "nav:wallet",
@@ -555,7 +568,7 @@ export function ChatThread({
         kind: "action",
       },
     ];
-    return [...actions, ...tools, ...agents];
+    return [...actions, ...skills, ...tools, ...agents];
   }, [paletteQuery]);
 
   const sheetTools = TOOLS.map((tool) => ({
@@ -674,6 +687,11 @@ export function ChatThread({
           } else if (id.startsWith("tool:")) {
             const tool = TOOLS.find((item) => item.id === id.slice(5));
             if (tool) setDraft(`@${tool.id} `);
+          } else if (id.startsWith("skill:")) {
+            const skill = SKILLS.find((item) => item.id === id.slice(6));
+            if (skill) {
+              setDraft(skill.triggers[0] ?? skill.name);
+            }
           } else if (id.startsWith("agent:")) {
             const agent = AGENTS.find((item) => item.id === id.slice(6));
             if (agent) setDraft(`Run the ${agent.name} agent`);

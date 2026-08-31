@@ -18,6 +18,7 @@ export type CommandResultKind =
   | "conversation"
   | "agent"
   | "tool"
+  | "skill"
   | "action";
 
 export type CommandResult = {
@@ -42,6 +43,7 @@ const KIND_LABELS: Record<CommandResultKind, string> = {
   conversation: "CHAT",
   agent: "AGENT",
   tool: "TOOL",
+  skill: "SKILL",
   action: "ACTION",
 };
 
