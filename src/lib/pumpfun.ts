@@ -1,10 +1,12 @@
 import { Buffer } from "buffer";
+import { Image, Platform } from "react-native";
 import { Keypair, Transaction, VersionedTransaction } from "@solana/web3.js";
 
 import { signAndSendWithPrivy } from "./privyTx";
 
 const PUMP_IPFS = "https://pump.fun/api/ipfs";
 const PUMP_TRADE_LOCAL = "https://pumpportal.fun/api/trade-local";
+const DEFAULT_LAUNCH_ICON = require("../../assets/icon.png");
 
 export type PumpCreateInput = {
   wallet: string;
@@ -42,18 +44,55 @@ function signWithMint(raw: Uint8Array, mint: Keypair): string {
   }
 }
 
+async function appendPumpImage(form: FormData, imageUri?: string): Promise<void> {
+  if (imageUri) {
+    form.append(
+      "file",
+      {
+        uri: imageUri,
+        type: "image/png",
+        name: "token.png",
+      } as unknown as Blob,
+    );
+    return;
+  }
+
+  const resolved = Image.resolveAssetSource(DEFAULT_LAUNCH_ICON);
+  if (!resolved?.uri) {
+    throw new Error("Could not load the default launch image.");
+  }
+
+  if (Platform.OS === "web") {
+    const response = await fetch(resolved.uri);
+    const blob = await response.blob();
+    form.append("file", blob, "token.png");
+    return;
+  }
+
+  form.append(
+    "file",
+    {
+      uri: resolved.uri,
+      type: "image/png",
+      name: "token.png",
+    } as unknown as Blob,
+  );
+}
+
 export async function uploadPumpMetadata(input: {
   name: string;
   symbol: string;
   description: string;
+  imageUri?: string;
 }): Promise<string> {
   const form = new FormData();
+  await appendPumpImage(form, input.imageUri);
   form.append("name", input.name);
   form.append("symbol", input.symbol);
   form.append("description", input.description);
   form.append("twitter", "");
   form.append("telegram", "");
-  form.append("website", "https://ogscan.fun");
+  form.append("website", "https://www.orbitx.world");
   form.append("showName", "true");
 
   const response = await fetch(PUMP_IPFS, {
@@ -95,6 +134,7 @@ export async function createPumpToken(
     name,
     symbol,
     description: input.description.trim() || `${name} launched from OrbitX.`,
+    imageUri: input.imageUri,
   });
 
   const response = await fetch(PUMP_TRADE_LOCAL, {
