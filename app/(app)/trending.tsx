@@ -11,7 +11,7 @@ import {
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { TokenCard } from "../../src/components";
+import { LimitLadder, TokenCard, type LadderOrder } from "../../src/components";
 import { invokeFunction } from "../../src/lib/supabase";
 import { colors } from "../../src/theme";
 
@@ -20,6 +20,8 @@ type TokenItem = {
   symbol: string;
   price: string;
   marketCap: string;
+  /** Raw numeric market cap in USD, when the source provided one. Ladder math needs this. */
+  marketCapValue?: number;
   liquidity: string;
   volume: string;
   risk: string;
@@ -73,11 +75,13 @@ function pairToToken(pair: unknown): TokenItem | null {
   const liquidity = isRecord(pair.liquidity) ? pair.liquidity.usd : undefined;
   const volume = isRecord(pair.volume) ? pair.volume.h24 : undefined;
   const change = isRecord(pair.priceChange) ? Number(pair.priceChange.h24) : NaN;
+  const rawMc = Number(pair.marketCap ?? pair.fdv);
   return {
     mint: mint || symbol,
     symbol,
     price: formatUsd(pair.priceUsd),
     marketCap: formatUsd(pair.marketCap ?? pair.fdv),
+    marketCapValue: Number.isFinite(rawMc) && rawMc > 0 ? rawMc : undefined,
     liquidity: formatUsd(liquidity),
     volume: formatUsd(volume),
     risk: Number.isFinite(change)
@@ -135,6 +139,33 @@ export default function TrendingScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [ladderToken, setLadderToken] = useState<TokenItem | null>(null);
+
+  const placeLadder = useCallback(
+    (orders: LadderOrder[], context: { mint: string; symbol: string; currentMc: number }) => {
+      // Draft only — this hands off to the agent, which still has to run the
+      // existing jupiter-order tool (confirmationRequired: true) and the user
+      // still has to sign in their wallet. Nothing here executes a trade.
+      const lines = orders
+        .map(
+          (o) =>
+            `${o.side} ${o.allocationPct}% of my ${context.symbol} position when MC ${
+              o.targetChangePct >= 0 ? "reaches" : "drops to"
+            } ~$${Math.round(o.targetMc).toLocaleString()} (${o.targetChangePct >= 0 ? "+" : ""}${o.targetChangePct.toFixed(1)}% from current MC $${Math.round(
+              context.currentMc,
+            ).toLocaleString()})`,
+        )
+        .join("; ");
+      router.push({
+        pathname: "/",
+        params: {
+          context: `Set up this limit ladder for ${context.symbol} (${context.mint}): ${lines}. Confirm each order with me before submitting.`,
+        },
+      });
+      setLadderToken(null);
+    },
+    [router],
+  );
 
   const load = useCallback(async (section: SectionKey) => {
     setError(null);
@@ -247,10 +278,35 @@ export default function TrendingScreen() {
                   },
                 })
               }
+              onLadder={
+                token.marketCapValue != null ? () => setLadderToken(token) : undefined
+              }
             />
           ))
         )}
       </ScrollView>
+
+      {ladderToken && ladderToken.marketCapValue != null ? (
+        <View style={styles.ladderOverlay}>
+          <Pressable
+            style={styles.ladderBackdrop}
+            onPress={() => setLadderToken(null)}
+            accessibilityRole="button"
+            accessibilityLabel="Close ladder"
+          />
+          <View style={styles.ladderSheet}>
+            <LimitLadder
+              mint={ladderToken.mint}
+              symbol={ladderToken.symbol}
+              currentMc={ladderToken.marketCapValue}
+              onPlace={placeLadder}
+            />
+            <Pressable style={styles.ladderClose} onPress={() => setLadderToken(null)}>
+              <Text style={styles.ladderCloseText}>Close</Text>
+            </Pressable>
+          </View>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -327,5 +383,40 @@ const styles = StyleSheet.create({
     fontSize: 15,
     textAlign: "center",
     marginTop: 40,
+  },
+  ladderOverlay: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    justifyContent: "flex-end",
+  },
+  ladderBackdrop: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    backgroundColor: "rgba(0,0,0,0.55)",
+  },
+  ladderSheet: {
+    padding: 16,
+    paddingBottom: 28,
+    gap: 10,
+    backgroundColor: colors.abyss,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    borderWidth: 1,
+    borderColor: colors.hairline,
+  },
+  ladderClose: {
+    alignItems: "center",
+    paddingVertical: 10,
+  },
+  ladderCloseText: {
+    color: colors.mute,
+    fontFamily: "Inter_500Medium",
+    fontSize: 13,
   },
 });

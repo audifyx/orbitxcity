@@ -13,6 +13,8 @@ export type TokenCardProps = {
   onSell?: () => void;
   onAnalyze?: () => void;
   onTrack?: () => void;
+  /** Present only when the caller has a real numeric market cap to build a ladder from. */
+  onLadder?: () => void;
 };
 
 function Metric({ label, value }: { label: string; value: string }) {
@@ -68,6 +70,7 @@ export function TokenCard({
   onSell,
   onAnalyze,
   onTrack,
+  onLadder,
 }: TokenCardProps) {
   return (
     <View style={styles.root}>
@@ -96,6 +99,7 @@ export function TokenCard({
         <ActionButton label="Sell" onPress={onSell} />
         <ActionButton label="Analyze" onPress={onAnalyze} />
         <ActionButton label="Track" onPress={onTrack} />
+        {onLadder ? <ActionButton label="Ladder" onPress={onLadder} /> : null}
       </View>
     </View>
   );
