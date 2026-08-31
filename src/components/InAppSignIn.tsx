@@ -60,6 +60,9 @@ function friendlyPrivyError(error: unknown): string {
   if (isAlreadyLoggedInError(error)) {
     return "This phone is already signed into Privy. Enter OrbitX with that account, or use a different email or phone.";
   }
+  if (/no nonce/i.test(message)) {
+    return "Sign-in expired. Tap Enter OrbitX to request a new sign-in.";
+  }
   const lower = message.toLowerCase();
   if (
     lower.includes("invalid_native_app_id") ||
@@ -89,7 +92,8 @@ export function InAppSignIn() {
   const solanaRef = useRef(solana);
   solanaRef.current = solana;
   const resumed = useRef(false);
-  const { requestSignInMessage, signInWithSignature, connecting } = useAuth();
+  const inFlight = useRef<Promise<void> | null>(null);
+  const { signInWithEmbeddedWallet, connecting } = useAuth();
 
   const [mode, setMode] = useState<Mode>("email");
   const [identifier, setIdentifier] = useState("");
@@ -100,41 +104,70 @@ export function InAppSignIn() {
   const [busy, setBusy] = useState(false);
 
   const finishWalletSession = useCallback(async () => {
-    setStatus("Creating your OrbitX wallet…");
-    const deadline = Date.now() + 45_000;
-    let current = solanaRef.current;
-    let wallets = current.wallets ?? [];
-    if (wallets.length === 0 && typeof current.create === "function") {
-      try {
-        await current.create();
-      } catch (createError) {
-        const text =
-          createError instanceof Error ? createError.message.toLowerCase() : "";
-        if (!text.includes("already")) {
-          throw createError;
-        }
-      }
+    if (inFlight.current) {
+      return inFlight.current;
     }
-    while (wallets.length === 0 && Date.now() < deadline) {
-      await sleep(200);
-      current = solanaRef.current;
-      wallets = current.wallets ?? [];
-    }
-    const wallet = wallets.find((item) => isSolanaPubkey(item.address));
-    if (!wallet) {
-      throw new Error(
-        "Could not create your OrbitX wallet. Check the code and try again.",
-      );
-    }
-    setStatus("Approve the sign-in. This is not a transaction.");
-    const message = await requestSignInMessage(wallet.address);
-    const provider = await wallet.getProvider();
-    const signed = await provider.request({
-      method: "signMessage",
-      params: { message: utf8ToBase64(message) },
+
+    let resolveRun: () => void = () => undefined;
+    let rejectRun: (reason: unknown) => void = () => undefined;
+    const run = new Promise<void>((resolve, reject) => {
+      resolveRun = resolve;
+      rejectRun = reject;
     });
-    await signInWithSignature(wallet.address, toBase58Signature(signed));
-  }, [requestSignInMessage, signInWithSignature]);
+    inFlight.current = run.finally(() => {
+      if (inFlight.current === run) {
+        inFlight.current = null;
+      }
+    });
+
+    void (async () => {
+      try {
+        setStatus("Creating your OrbitX wallet…");
+        const deadline = Date.now() + 45_000;
+        let current = solanaRef.current;
+        let wallets = current.wallets ?? [];
+        if (wallets.length === 0 && typeof current.create === "function") {
+          try {
+            await current.create();
+          } catch (createError) {
+            const text =
+              createError instanceof Error
+                ? createError.message.toLowerCase()
+                : "";
+            if (!text.includes("already")) {
+              throw createError;
+            }
+          }
+        }
+        while (wallets.length === 0 && Date.now() < deadline) {
+          await sleep(200);
+          current = solanaRef.current;
+          wallets = current.wallets ?? [];
+        }
+        const wallet = wallets.find((item) => isSolanaPubkey(item.address));
+        if (!wallet) {
+          throw new Error(
+            "Could not create your OrbitX wallet. Check the code and try again.",
+          );
+        }
+        setStatus("Requesting sign-in…");
+        await signInWithEmbeddedWallet(wallet.address, async (message) => {
+          setStatus("Approve the sign-in. This is not a transaction.");
+          const provider = await wallet.getProvider();
+          const signed = await provider.request({
+            method: "signMessage",
+            params: { message: utf8ToBase64(message) },
+          });
+          return toBase58Signature(signed);
+        });
+        resolveRun();
+      } catch (error) {
+        rejectRun(error);
+      }
+    })();
+
+    return inFlight.current;
+  }, [signInWithEmbeddedWallet]);
 
   const continueExisting = useCallback(async () => {
     clearManualLogout();

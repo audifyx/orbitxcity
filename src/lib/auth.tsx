@@ -4,16 +4,12 @@ import {
   useContext,
   useEffect,
   useMemo,
-  useRef,
   useState,
   type ReactNode,
 } from "react";
 import type { Session } from "@supabase/supabase-js";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { Platform } from "react-native";
-import * as Linking from "expo-linking";
 import * as SecureStore from "expo-secure-store";
-import { parseAuthCallback } from "./hostedAuth";
 import {
   clearPhantomSecureStore,
   startNativeSign,
@@ -21,8 +17,8 @@ import {
   handleNativeSignRedirect,
   WALLET_PUBKEY_KEY,
 } from "./phantom";
+import { isMissingNonceError, withSiwsLock } from "./siws";
 import { supabase, walletAuth, warmWalletAuth } from "./supabase";
-import { consumePrivyHostResult } from "./privyConnect";
 import { logoutPrivySession } from "./privyProvider";
 import {
   connectBrowserWallet,
@@ -61,6 +57,10 @@ interface AuthContextValue {
   ) => Promise<{ pubkey: string; signature: string }>;
   requestSignInMessage: (pubkey: string) => Promise<string>;
   signInWithSignature: (pubkey: string, signature: string) => Promise<void>;
+  signInWithEmbeddedWallet: (
+    pubkey: string,
+    signMessage: (message: string) => Promise<string>,
+  ) => Promise<void>;
   completeNativeConnect: (url: string) => Promise<void>;
   completeNativeSign: (url: string) => Promise<void>;
   clearError: () => void;
@@ -162,6 +162,9 @@ function publicAuthError(error: unknown, fallback: string): string {
     lower.includes("could not connect")
   ) {
     return "Sign-in did not finish. Use your email or phone. OrbitX creates your wallet.";
+  }
+  if (isMissingNonceError(error) || lower.includes("no nonce")) {
+    return "Sign-in expired. Tap Enter OrbitX to request a new sign-in.";
   }
   return message;
 }
@@ -311,17 +314,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
 
     void (async () => {
-      try {
-        const hosted = consumePrivyHostResult();
-        if (hosted) {
-          await finishVerification(hosted.pubkey, hosted.signature);
-        }
-      } catch (hostedError) {
-        if (mounted) {
-          setError(publicAuthError(hostedError, "Wallet sign-in failed."));
-        }
-      }
-
       if (!mounted) {
         return;
       }
@@ -374,14 +366,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       throw new Error("Enter a valid Solana wallet address.");
     }
 
-    const nonceData = parseNonceResponse(
-      await walletAuth("nonce", { pubkey: trimmed }),
-    );
-    setPendingPubkey(trimmed);
-    await SecureStore.setItemAsync(WALLET_PUBKEY_KEY, trimmed).catch(
-      () => undefined,
-    );
-    return nonceData.message;
+    return withSiwsLock(async () => {
+      const nonceData = parseNonceResponse(
+        await walletAuth("nonce", { pubkey: trimmed }),
+      );
+      setPendingPubkey(trimmed);
+      await SecureStore.setItemAsync(WALLET_PUBKEY_KEY, trimmed).catch(
+        () => undefined,
+      );
+      return nonceData.message;
+    });
   }, []);
 
   const signInWithSignature = useCallback(
@@ -397,7 +391,58 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (!isSolanaSignature(trimmedSignature)) {
           throw new Error("Paste the base58 signature from your wallet.");
         }
-        await finishVerification(trimmedPubkey, trimmedSignature);
+        await withSiwsLock(async () => {
+          await finishVerification(trimmedPubkey, trimmedSignature);
+        });
+      } catch (verifyError) {
+        const message = publicAuthError(verifyError, "Wallet sign-in failed.");
+        setError(message);
+        throw new Error(message);
+      } finally {
+        setConnecting(false);
+      }
+    },
+    [finishVerification],
+  );
+
+  const signInWithEmbeddedWallet = useCallback(
+    async (
+      pubkey: string,
+      signMessage: (message: string) => Promise<string>,
+    ) => {
+      const trimmedPubkey = pubkey.trim();
+      if (!isSolanaPubkey(trimmedPubkey)) {
+        throw new Error("Enter a valid Solana wallet address.");
+      }
+
+      setConnecting(true);
+      setError(null);
+      try {
+        await withSiwsLock(async () => {
+          const attempt = async () => {
+            const nonceData = parseNonceResponse(
+              await walletAuth("nonce", { pubkey: trimmedPubkey }),
+            );
+            setPendingPubkey(trimmedPubkey);
+            await SecureStore.setItemAsync(WALLET_PUBKEY_KEY, trimmedPubkey).catch(
+              () => undefined,
+            );
+            const signature = (await signMessage(nonceData.message)).trim();
+            if (!isSolanaSignature(signature)) {
+              throw new Error("Wallet did not return a valid signature.");
+            }
+            await finishVerification(trimmedPubkey, signature);
+          };
+
+          try {
+            await attempt();
+          } catch (verifyError) {
+            if (!isMissingNonceError(verifyError)) {
+              throw verifyError;
+            }
+            await attempt();
+          }
+        });
       } catch (verifyError) {
         const message = publicAuthError(verifyError, "Wallet sign-in failed.");
         setError(message);
@@ -434,37 +479,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
     [],
   );
-
-  const consumedAuthUrl = useRef<string | null>(null);
-
-  useEffect(() => {
-    if (Platform.OS === "web") {
-      return;
-    }
-
-    const consume = (url: string | null) => {
-      if (!url || consumedAuthUrl.current === url) {
-        return;
-      }
-      const parsed = parseAuthCallback(url);
-      if (!parsed) {
-        return;
-      }
-      consumedAuthUrl.current = url;
-      void signInWithSignature(parsed.pubkey, parsed.signature).catch(
-        () => undefined,
-      );
-    };
-
-    const subscription = Linking.addEventListener("url", ({ url }) => {
-      consume(url);
-    });
-    void Linking.getInitialURL().then(consume);
-
-    return () => {
-      subscription.remove();
-    };
-  }, [signInWithSignature]);
 
   const completeNativeConnect = useCallback(async (url: string) => {
     setConnecting(true);
@@ -555,6 +569,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       requestWalletSignature,
       requestSignInMessage,
       signInWithSignature,
+      signInWithEmbeddedWallet,
       completeNativeConnect,
       completeNativeSign,
       clearError,
@@ -570,6 +585,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       requestWalletSignature,
       requestSignInMessage,
       signInWithSignature,
+      signInWithEmbeddedWallet,
       completeNativeConnect,
       completeNativeSign,
       clearError,
