@@ -88,7 +88,11 @@ function AuthGate({ children }: { children: ReactNode }) {
 
     const root = segments[0];
     const isAuthGroup = root === "(auth)";
-    const isCallback = root === "onconnect" || root === "onsign" || root === "auth";
+    const isCallback =
+      root === "onconnect" ||
+      root === "onsign" ||
+      root === "auth" ||
+      root === "x-callback";
     const isExport = root === "wallet-export" || pathname === "/wallet-export";
     const onLogin =
       isAuthGroup || pathname === "/connect" || pathname === "/auth";
@@ -181,6 +185,7 @@ function RootLayoutInner() {
                   <Stack.Screen name="onsign" />
                   <Stack.Screen name="auth" />
                   <Stack.Screen name="wallet-export" />
+                  <Stack.Screen name="x-callback" />
                 </Stack>
                 {showSplash ? (
                   <SplashScreen onComplete={() => setShowSplash(false)} />

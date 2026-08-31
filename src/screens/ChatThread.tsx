@@ -40,6 +40,7 @@ import { useAuth } from "../lib/auth";
 import { readAutoApproveBuys, writeAutoApproveBuys } from "../lib/autoApprove";
 import { claimPumpCreatorFees, getPumpClaimableSol } from "../lib/claimFees";
 import { parseClaimIntent } from "../lib/claimIntent";
+import { resolveCreateFields } from "../lib/createFields";
 import { parseCreateIntent } from "../lib/createIntent";
 import {
   executeDexSwap,
@@ -59,6 +60,8 @@ import { mintOrbitxNft, buyOrbitxNft } from "../lib/nftMarket";
 import { parseNftBuyIntent } from "../lib/nftBuyIntent";
 import { createPumpToken } from "../lib/pumpfun";
 import { getPrivyWalletAddress } from "../lib/privyTx";
+import { parseSocialPostIntent } from "../lib/socialPostIntent";
+import { postToX } from "../lib/xPost";
 import {
   invokeFunction,
   invokeFunctionStream,
@@ -513,18 +516,21 @@ export function ChatThread({
       tradeBusy.current = true;
       setStorageError(null);
 
-      const name = String(
-        input.name ?? (input.kind === "launch" ? "OrbitX Coin" : "OrbitX Pass"),
-      );
-      const symbol = String(
-        input.symbol ?? (input.kind === "launch" ? "ORB" : "PASS"),
+      const { name, symbol } = resolveCreateFields(
+        input.kind,
+        input.name,
+        input.symbol,
       );
       const description = String(input.description ?? "");
       const localId = `create-${Date.now()}`;
       const matches = (card: MessageCard) =>
         input.card ? card === input.card : false;
 
-      if (!input.card) {
+      if (input.card) {
+        setMessages((prev) =>
+          patchCardStatus(prev, matches, { status: "signing", name, symbol }),
+        );
+      } else {
         setMessages((prev) => [
           ...prev,
           {
@@ -534,36 +540,64 @@ export function ChatThread({
               input.kind === "launch"
                 ? `Got you — launching ${name} on pump.fun with your OrbitX wallet.`
                 : `On it — minting ${name} with your OrbitX wallet.`,
+            cards: [
+              {
+                kind: input.kind,
+                title: name,
+                data: { status: "signing", name, symbol },
+              },
+            ],
           },
         ]);
       }
 
       try {
         if (input.kind === "launch") {
+          let initialBuySol = 0;
+          try {
+            initialBuySol = await suggestBuySol(signingWallet);
+          } catch {
+            initialBuySol = 0;
+          }
           const created = await createPumpToken({
             wallet: signingWallet,
             name,
             symbol,
             description,
-            initialBuySol: await suggestBuySol(signingWallet),
+            initialBuySol,
           });
           const success = `Launched $${symbol} · ${created.mint}`;
           setStorageError(success);
-          if (input.card) {
-            setMessages((prev) =>
-              prev.map((message) =>
-                message.cards?.some(matches)
-                  ? { ...message, content: success }
-                  : message,
-              ),
-            );
-          } else {
-            setMessages((prev) =>
-              prev.map((message) =>
-                message.id === localId ? { ...message, content: success } : message,
-              ),
-            );
-          }
+          setMessages((prev) =>
+            prev.map((message) => {
+              const hasCard = input.card
+                ? message.cards?.some(matches)
+                : message.id === localId;
+              if (!hasCard) {
+                return message;
+              }
+              return {
+                ...message,
+                content: success,
+                cards: message.cards?.map((card) =>
+                  input.card && !matches(card)
+                    ? card
+                    : {
+                        kind: input.kind,
+                        title: name,
+                        data: {
+                          ...card.data,
+                          status: "confirmed",
+                          name,
+                          symbol,
+                          mint: created.mint,
+                          signature: created.signature,
+                        },
+                      },
+                ),
+              };
+            }),
+          );
           return;
         }
 
@@ -575,30 +609,169 @@ export function ChatThread({
         });
         const success = `Minted ${name} · ${minted.mint}`;
         setStorageError(success);
+        setMessages((prev) =>
+          prev.map((message) => {
+            const hasCard = input.card
+              ? message.cards?.some(matches)
+              : message.id === localId;
+            if (!hasCard) {
+              return message;
+            }
+            return {
+              ...message,
+              content: success,
+              cards: message.cards?.map((card) =>
+                input.card && !matches(card)
+                  ? card
+                  : {
+                      kind: input.kind,
+                      title: name,
+                      data: {
+                        ...card.data,
+                        status: "confirmed",
+                        name,
+                        symbol,
+                        mint: minted.mint,
+                        signature: minted.signature,
+                      },
+                    },
+              ),
+            };
+          }),
+        );
+      } catch (error) {
+        const failure = formatSwapError(error);
+        setStorageError(failure);
         if (input.card) {
           setMessages((prev) =>
-            prev.map((message) =>
-              message.cards?.some(matches)
-                ? { ...message, content: success }
-                : message,
-            ),
+            patchCardStatus(prev, matches, { status: "failed" }),
           );
         } else {
           setMessages((prev) =>
             prev.map((message) =>
-              message.id === localId ? { ...message, content: success } : message,
+              message.id === localId
+                ? {
+                    ...message,
+                    content: failure,
+                    cards: message.cards?.map((card) => ({
+                      ...card,
+                      data: { ...card.data, status: "failed" },
+                    })),
+                  }
+                : message,
             ),
           );
         }
-      } catch (error) {
-        setStorageError(
-          error instanceof Error ? error.message : "Create failed.",
-        );
       } finally {
         tradeBusy.current = false;
       }
     },
     [wallet],
+  );
+
+  const runPostAction = useCallback(
+    async (input: { text: string; card?: MessageCard }) => {
+      if (!userId) {
+        setStorageError("Sign in to post on X.");
+        return;
+      }
+      if (tradeBusy.current) {
+        return;
+      }
+      tradeBusy.current = true;
+      setStorageError(null);
+
+      const text = input.text.trim();
+      const matches = (card: MessageCard) =>
+        input.card ? card === input.card : false;
+      const localId = `post-${Date.now()}`;
+
+      if (input.card) {
+        setMessages((prev) =>
+          patchCardStatus(prev, matches, { status: "posting", text }),
+        );
+      } else {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: localId,
+            role: "assistant",
+            content: "Posting to X with your connected account…",
+            cards: [
+              {
+                kind: "social",
+                title: "Post to X",
+                data: { status: "posting", text },
+              },
+            ],
+          },
+        ]);
+      }
+
+      try {
+        const result = await postToX(text);
+        const success = result.url
+          ? `Posted on X · ${result.url}`
+          : `Posted on X · ${result.tweetId ?? "live"}`;
+        setStorageError(success);
+        setMessages((prev) =>
+          prev.map((message) => {
+            const hasCard = input.card
+              ? message.cards?.some(matches)
+              : message.id === localId;
+            if (!hasCard) {
+              return message;
+            }
+            return {
+              ...message,
+              content: success,
+              cards: message.cards?.map((card) =>
+                input.card && !matches(card)
+                  ? card
+                  : {
+                      kind: "social",
+                      title: "Post to X",
+                      data: {
+                        ...card.data,
+                        status: "confirmed",
+                        text,
+                        url: result.url,
+                        tweetId: result.tweetId,
+                      },
+                    },
+              ),
+            };
+          }),
+        );
+      } catch (error) {
+        const failure =
+          error instanceof Error ? error.message : "X post failed.";
+        setStorageError(failure);
+        if (input.card) {
+          setMessages((prev) =>
+            patchCardStatus(prev, matches, { status: "failed" }),
+          );
+        } else {
+          setMessages((prev) =>
+            prev.map((message) =>
+              message.id === localId
+                ? {
+                    ...message,
+                    content: failure,
+                    cards: message.cards?.map((card) => ({
+                      ...card,
+                      data: { ...card.data, status: "failed" },
+                    })),
+                  }
+                : message,
+            ),
+          );
+        }
+      } finally {
+        tradeBusy.current = false;
+      }
+    },
+    [userId],
   );
 
   const runClaimAction = useCallback(
@@ -867,6 +1040,20 @@ export function ChatThread({
       return;
     }
 
+    const socialIntent = parseSocialPostIntent(text);
+    if (socialIntent) {
+      const userMessage: Message = {
+        id: `local-${Date.now()}`,
+        role: "user",
+        content: text,
+      };
+      setMessages((prev) => [...prev, userMessage]);
+      setDraft("");
+      setStorageError(null);
+      await runPostAction({ text: socialIntent.text });
+      return;
+    }
+
     const userMessage: Message = {
       id: `local-${Date.now()}`,
       role: "user",
@@ -993,6 +1180,7 @@ export function ChatThread({
     runCreateAction,
     runClaimAction,
     runNftBuyAction,
+    runPostAction,
   ]);
 
   const handleCancelTx = useCallback(
@@ -1077,6 +1265,20 @@ export function ChatThread({
           void runNftBuyAction({ listingId, card });
           continue;
         }
+        if (card.kind === "social") {
+          const status = String(card.data.status ?? "preview");
+          const key = `social:${String(card.data.tweetId ?? card.data.text ?? card.title)}`;
+          if (status !== "preview" || autoFired.current.has(key)) {
+            continue;
+          }
+          const postText = String(card.data.text ?? "");
+          if (!postText) {
+            continue;
+          }
+          autoFired.current.add(key);
+          void runPostAction({ text: postText, card });
+          continue;
+        }
         if (card.kind === "launch" || card.kind === "nft") {
           const status = String(card.data.status ?? "preview");
           const key = `create:${String(card.data.intentId ?? card.data.name)}:${card.kind}`;
@@ -1112,7 +1314,7 @@ export function ChatThread({
         void handleConfirmTx(card);
       }
     }
-  }, [handleConfirmTx, instantBuy, messages, runCreateAction, runClaimAction, runNftBuyAction, sending]);
+  }, [handleConfirmTx, instantBuy, messages, runCreateAction, runClaimAction, runNftBuyAction, runPostAction, sending]);
 
   const selectedModel = MODELS.find((model) => model.id === modelId) ?? MODELS[0];
 
@@ -1171,6 +1373,12 @@ export function ChatThread({
         id: "nav:nft",
         title: "NFTs",
         subtitle: "Mint, list, and buy",
+        kind: "action",
+      },
+      {
+        id: "nav:social",
+        title: "Social",
+        subtitle: "Connect X and post",
         kind: "action",
       },
       {
@@ -1310,7 +1518,7 @@ export function ChatThread({
       <ApproveSheet
         visible={approveOpen}
         title="Approve auto-sign"
-        body="OrbitX auto-signs buys, sells, limit orders, launches, NFT mints, NFT buys, and creator-fee claims with your Privy wallet as soon as a quote or draft is ready. You can turn this off anytime. This is not a seed export."
+        body="OrbitX auto-signs buys, sells, limit orders, launches, NFT mints, NFT buys, creator-fee claims, and X posts with your connected accounts as soon as a quote or draft is ready. You can turn this off anytime. This is not a seed export."
         confirmLabel="Turn on auto-sign"
         onClose={() => setApproveOpen(false)}
         onConfirm={() => {

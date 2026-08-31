@@ -42,6 +42,7 @@ export const VISIBLE_NAV_ROUTES: readonly NavRoute[] = [
   "home",
   "wallet",
   "orders",
+  "social",
   "settings",
 ];
 
@@ -49,6 +50,7 @@ const NAV_ITEMS: NavItem[] = [
   { route: "home", label: "Home" },
   { route: "wallet", label: "Wallet" },
   { route: "orders", label: "Limit orders" },
+  { route: "social", label: "Social" },
   { route: "settings", label: "Settings" },
 ];
 

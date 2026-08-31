@@ -234,17 +234,55 @@ function MessageCardView({
   }
 
   if (card.kind === "launch" || card.kind === "nft") {
+    const status = String(card.data.status ?? "preview");
     return (
       <CreateCard
         kind={card.kind}
         name={String(card.data.name ?? card.title)}
         symbol={String(card.data.symbol ?? "")}
         note={String(card.data.note ?? "")}
+        status={
+          status === "signing" ||
+          status === "confirmed" ||
+          status === "failed"
+            ? status
+            : "preview"
+        }
+        mint={String(card.data.mint ?? "") || undefined}
+        signature={String(card.data.signature ?? "") || undefined}
         onOpen={() => onOpenCreate?.(card.kind === "nft" ? "nft" : "launch", card)}
-        onApprove={() =>
-          onApproveCreate?.(card.kind === "nft" ? "nft" : "launch", card)
+        onApprove={
+          status === "preview"
+            ? () =>
+                onApproveCreate?.(card.kind === "nft" ? "nft" : "launch", card)
+            : undefined
         }
       />
+    );
+  }
+
+  if (card.kind === "social") {
+    const status = String(card.data.status ?? "preview");
+    const text = String(card.data.text ?? card.title);
+    const url = String(card.data.url ?? "");
+    return (
+      <View style={styles.genericCard}>
+        <Text style={styles.genericCardKind}>POST TO X</Text>
+        <Text style={styles.genericCardTitle} numberOfLines={4}>
+          {text}
+        </Text>
+        {status === "posting" ? (
+          <Text style={styles.socialPending}>Posting…</Text>
+        ) : null}
+        {status === "confirmed" ? (
+          <Text style={styles.nftBuySuccess}>
+            {url ? `Live · ${url}` : "Posted on X."}
+          </Text>
+        ) : null}
+        {status === "failed" ? (
+          <Text style={styles.socialFailed}>Post failed — connect X in Social tab.</Text>
+        ) : null}
+      </View>
     );
   }
 
@@ -799,6 +837,18 @@ const styles = StyleSheet.create({
   nftBuySuccess: {
     marginTop: 6,
     color: colors.success,
+    fontFamily: "Inter_500Medium",
+    fontSize: 12,
+  },
+  socialPending: {
+    marginTop: 6,
+    color: colors.signal,
+    fontFamily: "Inter_500Medium",
+    fontSize: 12,
+  },
+  socialFailed: {
+    marginTop: 6,
+    color: colors.danger,
     fontFamily: "Inter_500Medium",
     fontSize: 12,
   },
