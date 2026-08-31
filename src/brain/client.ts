@@ -3,6 +3,7 @@ import { planFromUtterance } from "./planner";
 import { AGENTS } from "./agents";
 import { CHAT_SYSTEM } from "./knowledge";
 import { TOOLS } from "./tools";
+import { SKILL_COUNT, searchSkills, skillCapabilityIndex } from "./skills";
 
 export type ChatCard = {
   kind: "token" | "wallet" | "tx";
@@ -160,6 +161,13 @@ function buildOrchestrateBody(req: OrchestrateRequest): {
         }))
     : [];
 
+  const relevantSkills = searchSkills(req.message, 8).map((skill) => ({
+    id: skill.id,
+    name: skill.name,
+    category: skill.category,
+    toolIds: skill.toolIds,
+  }));
+
   return {
     planToolIds: plan.toolIds,
     body: {
@@ -171,6 +179,11 @@ function buildOrchestrateBody(req: OrchestrateRequest): {
       walletAddress: req.walletAddress,
       knowledge: CHAT_SYSTEM,
       specialists,
+      skills: {
+        count: SKILL_COUNT,
+        index: skillCapabilityIndex(),
+        relevant: relevantSkills,
+      },
       plan: {
         agentIds: plan.agentIds,
         toolIds: plan.toolIds,

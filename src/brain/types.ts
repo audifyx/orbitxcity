@@ -4,7 +4,10 @@ export type ToolCategory =
   | "create"
   | "social"
   | "monitor"
-  | "orbitx";
+  | "orbitx"
+  | "defi"
+  | "wallet"
+  | "knowledge";
 
 export type ToolSide = "read" | "write";
 
@@ -91,4 +94,44 @@ export type ModelDefinition = {
   latency: ModelLatency;
   capabilities: ModelCapability[];
   default?: boolean;
+};
+
+export type SkillCategory =
+  | "trading"
+  | "defi"
+  | "intelligence"
+  | "security"
+  | "wallet"
+  | "portfolio"
+  | "social"
+  | "create"
+  | "monitor"
+  | "knowledge"
+  | "system";
+
+/**
+ * How a skill behaves at runtime:
+ * - `knowledge`: pure explanation, no live tool calls
+ * - `analysis`: reads live tools and synthesizes a read-only answer
+ * - `action`: prepares a write (quote/preview) that the user must sign
+ * - `automation`: runs within permission limits (alerts, pushes)
+ */
+export type SkillKind = "knowledge" | "analysis" | "action" | "automation";
+
+export type SkillLevel = "core" | "advanced" | "expert";
+
+export type SkillDefinition = {
+  id: string;
+  name: string;
+  category: SkillCategory;
+  kind: SkillKind;
+  level: SkillLevel;
+  summary: string;
+  /** Real tool ids this skill orchestrates (may be empty for knowledge skills). */
+  toolIds: string[];
+  /** Owning specialist agent id, when the skill maps to one. */
+  agentId?: string;
+  /** Example phrases that should activate the skill. */
+  triggers: string[];
+  tags: string[];
 };

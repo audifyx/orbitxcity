@@ -8,6 +8,10 @@ export type {
   ModelDefinition,
   ModelLatency,
   PlanIntent,
+  SkillCategory,
+  SkillDefinition,
+  SkillKind,
+  SkillLevel,
   ToolCategory,
   ToolDefinition,
   ToolPermission,
@@ -77,3 +81,16 @@ export {
   toolsRequiringConfirmation,
   writeTools,
 } from "./tools";
+
+export {
+  getSkill,
+  searchSkills,
+  SKILL_COUNT,
+  SKILL_TARGET,
+  SKILLS,
+  skillCapabilityIndex,
+  skillCategoryCounts,
+  skillsByCategory,
+  skillsByKind,
+  type SkillCategoryCount,
+} from "./skills";
