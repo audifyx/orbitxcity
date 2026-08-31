@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Pressable,
   ScrollView,
@@ -10,6 +10,8 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useAuth } from "../lib/auth";
+import { formatBuySol, solAmountForUsd, suggestBuySol } from "../lib/swapGuard";
+import { createPumpToken } from "../lib/pumpfun";
 import { supabase } from "../lib/supabase";
 import { colors } from "../theme";
 
@@ -18,14 +20,35 @@ export function LaunchScreen() {
   const { userId, wallet } = useAuth();
   const [name, setName] = useState("");
   const [symbol, setSymbol] = useState("");
-  const [supply, setSupply] = useState("1000000000");
+  const [buySol, setBuySol] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadDefault = wallet
+      ? suggestBuySol(wallet)
+      : solAmountForUsd();
+    void loadDefault
+      .then((sol) => {
+        if (!cancelled) {
+          setBuySol((current) =>
+            current === "" || current === "0.05" ? formatBuySol(sol) : current,
+          );
+        }
+      })
+      .catch(() => {
+        // Keep empty until they type an amount.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [wallet]);
   const [description, setDescription] = useState("");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<string | null>(null);
 
-  async function saveDraft() {
-    if (!userId) {
-      setResult("Connect Phantom first.");
+  async function launch() {
+    if (!wallet) {
+      setResult("Sign in first. Launch signs with your OrbitX wallet.");
       return;
     }
     if (!name.trim() || !symbol.trim()) {
@@ -34,33 +57,44 @@ export function LaunchScreen() {
     }
     setBusy(true);
     setResult(null);
-    const { error } = await supabase.from("orbitx_ai_transaction_intents").insert({
-      user_id: userId,
-      kind: "launch",
-      status: "preview",
-      quote: {
-        name: name.trim(),
-        symbol: symbol.trim().toUpperCase(),
-        supply,
-        description,
+    try {
+      const created = await createPumpToken({
         wallet,
-        note: "Draft only. A live launch still requires a signed launchpad transaction.",
-      },
-    });
-    setBusy(false);
-    setResult(
-      error
-        ? error.message
-        : "Launch draft saved in Activity. Nothing was broadcast.",
-    );
+        name,
+        symbol,
+        description,
+        initialBuySol: Number(buySol) || 0,
+      });
+      if (userId) {
+        await supabase.from("orbitx_ai_transaction_intents").insert({
+          user_id: userId,
+          kind: "launch",
+          status: "confirmed",
+          quote: {
+            name: name.trim(),
+            symbol: symbol.trim().toUpperCase(),
+            mint: created.mint,
+            signature: created.signature,
+            wallet,
+          },
+        });
+      }
+      setResult(`Launched ${symbol.toUpperCase()} · ${created.mint}\n${created.signature}`);
+    } catch (error) {
+      setResult(error instanceof Error ? error.message : "Launch failed.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
     <View style={[styles.root, { paddingBottom: insets.bottom }]}>
       <ScrollView contentContainerStyle={styles.content}>
+        <Text style={styles.kicker}>PUMP.FUN</Text>
         <Text style={styles.title}>Launch</Text>
         <Text style={styles.subtitle}>
-          Create a token draft. Live mint still requires a wallet signature.
+          Creates the coin on pump.fun, then your OrbitX wallet signs the create
+          transaction. First buy is optional and happens in the same approve.
         </Text>
         <TextInput
           style={styles.input}
@@ -79,11 +113,11 @@ export function LaunchScreen() {
         />
         <TextInput
           style={styles.input}
-          placeholder="Supply"
+          placeholder="Initial buy in SOL"
           placeholderTextColor={colors.mute}
-          value={supply}
-          onChangeText={setSupply}
-          keyboardType="numeric"
+          value={buySol}
+          onChangeText={setBuySol}
+          keyboardType="decimal-pad"
         />
         <TextInput
           style={[styles.input, styles.area]}
@@ -93,20 +127,12 @@ export function LaunchScreen() {
           onChangeText={setDescription}
           multiline
         />
-        <Pressable
-          style={styles.btn}
-          onPress={() => void saveDraft()}
-          disabled={busy}
-        >
+        <Pressable style={styles.btn} onPress={() => void launch()} disabled={busy}>
           <Text style={styles.btnText}>
-            {busy ? "Saving…" : "Save launch draft"}
+            {busy ? "Signing launch…" : "Approve & launch"}
           </Text>
         </Pressable>
         {result ? <Text style={styles.result}>{result}</Text> : null}
-        <Text style={styles.note}>
-          Existing agent_token_launches requires a real agent UUID. Drafts live
-          in orbitx_ai_transaction_intents until a signed launch tx exists.
-        </Text>
       </ScrollView>
     </View>
   );
@@ -115,16 +141,22 @@ export function LaunchScreen() {
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.abyss },
   content: { padding: 20, gap: 12, paddingBottom: 48 },
+  kicker: {
+    color: colors.signal,
+    fontFamily: "Inter_500Medium",
+    fontSize: 11,
+    letterSpacing: 2.4,
+  },
   title: {
     color: colors.frost,
     fontFamily: "SpaceGrotesk_600SemiBold",
-    fontSize: 26,
+    fontSize: 28,
   },
   subtitle: {
     color: colors.mute,
     fontFamily: "Inter_400Regular",
     fontSize: 14,
-    lineHeight: 20,
+    lineHeight: 21,
     marginBottom: 8,
   },
   input: {
@@ -139,7 +171,7 @@ const styles = StyleSheet.create({
   },
   area: { minHeight: 90, textAlignVertical: "top" },
   btn: {
-    backgroundColor: colors.frost,
+    backgroundColor: colors.signal,
     borderRadius: 12,
     paddingVertical: 14,
     alignItems: "center",
@@ -149,12 +181,6 @@ const styles = StyleSheet.create({
     color: colors.mist,
     fontFamily: "Inter_400Regular",
     fontSize: 13,
-    lineHeight: 18,
-  },
-  note: {
-    color: colors.mute,
-    fontFamily: "Inter_400Regular",
-    fontSize: 12,
-    lineHeight: 18,
+    lineHeight: 20,
   },
 });
