@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { PrivyProvider, usePrivy } from "@privy-io/react-auth";
 import {
   useCreateWallet,
+  useExportWallet,
   useSignMessage,
   useWallets,
 } from "@privy-io/react-auth/solana";
@@ -23,16 +24,21 @@ const SUPABASE_URL = "https://ffjipnkhcebjvttliptb.supabase.co";
 const SUPABASE_ANON_KEY =
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZmamlwbmtoY2VianZ0dGxpcHRiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc1Mjc5NDgsImV4cCI6MjA5MzEwMzk0OH0.aXu8bbpVVwc8KOJf1-lHqO3cz_0GZD10_TE0GlKQ1BI";
 
+type HostFlow = "signin" | "export";
+
 type HostParams = {
   appId: string;
   returnTo: string;
+  flow: HostFlow;
 };
 
 function readParams(): HostParams {
   const search = new URLSearchParams(window.location.search);
+  const flow = (search.get("flow") ?? "").trim().toLowerCase();
   return {
     appId: (search.get("appId") ?? DEFAULT_APP_ID).trim() || DEFAULT_APP_ID,
     returnTo: (search.get("return") ?? "").trim(),
+    flow: flow === "export" ? "export" : "signin",
   };
 }
 
@@ -394,6 +400,182 @@ function HostApp({ params }: { params: HostParams }) {
   );
 }
 
+function ExportApp() {
+  const { ready, authenticated, login, error: privyError } = usePrivy();
+  const { wallets, ready: walletsReady } = useWallets();
+  const { createWallet } = useCreateWallet();
+  const { exportWallet } = useExportWallet();
+  const [status, setStatus] = useState(
+    "Sign in to reveal your OrbitX wallet private key.",
+  );
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const loginOpened = useRef(false);
+  const walletsRef = useRef(wallets);
+  walletsRef.current = wallets;
+
+  const pickEmbedded = () => {
+    const current = walletsRef.current;
+    return (
+      current.find(
+        (item) => isEmbeddedSolanaWallet(item) && isSolanaPubkey(item.address),
+      ) ?? current.find((item) => isSolanaPubkey(item.address))
+    );
+  };
+
+  const openLogin = (): void => {
+    setError(null);
+    setStatus("Enter your email or phone to unlock export.");
+    try {
+      login({ loginMethods: ["email", "sms"] });
+    } catch (loginError) {
+      setError(friendlyHostError(loginError));
+    }
+  };
+
+  const runExport = async (): Promise<void> => {
+    if (busy) {
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    setStatus("Preparing your wallet…");
+    try {
+      let wallet = pickEmbedded();
+      const deadline = Date.now() + 30_000;
+      if (!wallet) {
+        try {
+          await createWallet();
+        } catch (createError) {
+          const text =
+            createError instanceof Error
+              ? createError.message.toLowerCase()
+              : "";
+          if (!text.includes("already")) {
+            throw createError;
+          }
+        }
+      }
+      while (!wallet && Date.now() < deadline) {
+        await new Promise((resolve) => window.setTimeout(resolve, 120));
+        wallet = pickEmbedded();
+      }
+      if (!wallet || !isSolanaPubkey(wallet.address)) {
+        throw new Error("No OrbitX wallet found to export.");
+      }
+      setStatus("Opening Privy's secure export window…");
+      await exportWallet({ address: wallet.address });
+      setStatus(
+        "Done. Your private key was shown in Privy's secure window. Never share it with anyone — OrbitX will never ask for it.",
+      );
+    } catch (exportError) {
+      setError(friendlyHostError(exportError));
+      setStatus("");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  useEffect(() => {
+    postToOpener({ type: "ready" });
+  }, []);
+
+  useEffect(() => {
+    if (privyError) {
+      setError(friendlyHostError(privyError));
+    }
+  }, [privyError]);
+
+  useEffect(() => {
+    if (!ready || authenticated || loginOpened.current) {
+      return;
+    }
+    loginOpened.current = true;
+    openLogin();
+  }, [ready, authenticated]);
+
+  const canExport = ready && authenticated && walletsReady && !busy;
+
+  return (
+    <div
+      style={{
+        minHeight: "100vh",
+        background: "#000",
+        color: "#f4f7ff",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 28,
+        gap: 16,
+        textAlign: "center",
+        fontFamily: "system-ui",
+      }}
+    >
+      <div style={{ fontSize: 22, fontWeight: 600 }}>Export OrbitX wallet</div>
+      <div
+        style={{
+          color: "rgba(176, 198, 232, 0.72)",
+          lineHeight: 1.5,
+          maxWidth: 440,
+          whiteSpace: "pre-wrap",
+        }}
+      >
+        {error ?? status}
+      </div>
+      <div
+        style={{
+          color: "#E8C17A",
+          fontSize: 13,
+          lineHeight: 1.5,
+          maxWidth: 440,
+        }}
+      >
+        Your key loads inside Privy&apos;s isolated iframe. OrbitX never sees it.
+        Anyone with this key controls your wallet.
+      </div>
+      {authenticated ? (
+        <button
+          type="button"
+          onClick={() => void runExport()}
+          disabled={!canExport}
+          style={{
+            minHeight: 48,
+            minWidth: 240,
+            border: 0,
+            borderRadius: 14,
+            background: canExport ? "#7EB6FF" : "rgba(126, 182, 255, 0.4)",
+            color: "#000",
+            fontSize: 16,
+            fontWeight: 500,
+            cursor: canExport ? "pointer" : "default",
+          }}
+        >
+          {busy ? "Working…" : "Reveal private key"}
+        </button>
+      ) : ready ? (
+        <button
+          type="button"
+          onClick={openLogin}
+          style={{
+            minHeight: 48,
+            minWidth: 240,
+            border: 0,
+            borderRadius: 14,
+            background: "#7EB6FF",
+            color: "#000",
+            fontSize: 16,
+            fontWeight: 500,
+            cursor: "pointer",
+          }}
+        >
+          Continue with email or phone
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
 function DashboardBlock({
   message,
   onRecheck,
@@ -544,7 +726,7 @@ function Root() {
         },
       }}
     >
-      <HostApp params={params} />
+      {params.flow === "export" ? <ExportApp /> : <HostApp params={params} />}
     </PrivyProvider>
   );
 }

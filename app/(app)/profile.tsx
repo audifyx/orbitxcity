@@ -1,26 +1,41 @@
 import { useCallback, useEffect, useState } from "react";
-import {
-  ActivityIndicator,
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Platform } from "react-native";
+import { useRouter } from "expo-router";
 
+import { ProfileView, type ProfileQuickLink } from "../../src/components";
 import { useAuth } from "../../src/lib/auth";
+import { walletExportUrl } from "../../src/lib/hostedAuth";
 import { supabase } from "../../src/lib/supabase";
-import { colors } from "../../src/theme";
+import { openExternalUrl } from "../../src/lib/walletOpen";
 
 type ProfileRow = {
   username?: string;
   display_name?: string;
+  created_at?: string;
 };
 
+const QUICK_LINKS: ProfileQuickLink[] = [
+  { id: "wallet", label: "Wallet", hint: "Holdings, portfolio value, and PnL" },
+  { id: "settings", label: "Settings", hint: "Model, memory, and permissions" },
+  { id: "export", label: "Export wallet", hint: "Reveal your private key on ogscan.fun" },
+];
+
+function formatDate(value?: string): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return undefined;
+  }
+  return date.toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+  });
+}
+
 export default function ProfileScreen() {
-  const insets = useSafeAreaInsets();
+  const router = useRouter();
   const { wallet, userId } = useAuth();
 
   const [profile, setProfile] = useState<ProfileRow | null>(null);
@@ -32,26 +47,23 @@ export default function ProfileScreen() {
     if (!userId && !wallet) {
       return;
     }
-
     setLoading(true);
     setError(null);
     try {
-      let query = supabase.from("profiles").select("username, display_name");
-
+      let query = supabase
+        .from("profiles")
+        .select("username, display_name, created_at");
       if (userId) {
         query = query.eq("user_id", userId);
       } else if (wallet) {
         query = query.eq("wallet", wallet);
       }
-
       const { data, error: dbError } = await query.maybeSingle();
-
       if (dbError) {
         setError(dbError.message);
         setProfile(null);
         return;
       }
-
       setProfile(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load profile");
@@ -64,132 +76,58 @@ export default function ProfileScreen() {
     void loadProfile();
   }, [loadProfile]);
 
-  const copyAddress = async () => {
+  const copyAddress = useCallback(async () => {
     if (!wallet) {
       return;
     }
-    try {
-      if (
-        Platform.OS === "web" &&
-        typeof navigator !== "undefined" &&
-        navigator.clipboard
-      ) {
+    if (
+      Platform.OS === "web" &&
+      typeof navigator !== "undefined" &&
+      navigator.clipboard
+    ) {
+      try {
         await navigator.clipboard.writeText(wallet);
-      } else {
-        setError("Copy is available on web. Long-press the address on mobile.");
-        return;
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      } catch {
+        setError("Could not copy address.");
       }
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Copy failed");
     }
-  };
+  }, [wallet]);
+
+  const onQuickLink = useCallback(
+    (id: string) => {
+      if (id === "wallet") {
+        router.push("/wallet");
+      } else if (id === "settings") {
+        router.push("/settings");
+      } else if (id === "export") {
+        void openExternalUrl(walletExportUrl());
+      }
+    },
+    [router],
+  );
 
   const displayName =
     profile?.display_name ?? profile?.username ?? "OrbitX user";
 
   return (
-    <ScrollView
-      style={styles.root}
-      contentContainerStyle={[
-        styles.content,
-        { paddingBottom: insets.bottom + 24 },
-      ]}
-    >
-      <Text style={styles.title}>Profile</Text>
-
-      <View style={styles.card}>
-        <Text style={styles.kicker}>Username</Text>
-        {loading ? (
-          <ActivityIndicator color={colors.signal} />
-        ) : (
-          <Text style={styles.username}>{displayName}</Text>
-        )}
-        {error ? <Text style={styles.errorText}>{error}</Text> : null}
-      </View>
-
-      <View style={styles.card}>
-        <Text style={styles.kicker}>Wallet address</Text>
-        {wallet ? (
-          <>
-            <Text style={styles.address} selectable>
-              {wallet}
-            </Text>
-            <Pressable style={styles.copyButton} onPress={() => void copyAddress()}>
-              <Text style={styles.copyButtonText}>
-                {copied ? "Copied" : "Copy address"}
-              </Text>
-            </Pressable>
-          </>
-        ) : (
-          <Text style={styles.muted}>No wallet connected.</Text>
-        )}
-      </View>
-    </ScrollView>
+    <ProfileView
+      displayName={displayName}
+      handle={profile?.username}
+      address={wallet}
+      memberSince={formatDate(profile?.created_at)}
+      loading={loading}
+      error={error}
+      copied={copied}
+      quickLinks={QUICK_LINKS}
+      onCopyAddress={() => void copyAddress()}
+      onOpenExplorer={
+        wallet
+          ? () => void openExternalUrl(`https://solscan.io/account/${wallet}`)
+          : undefined
+      }
+      onQuickLink={onQuickLink}
+    />
   );
 }
-
-const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    backgroundColor: colors.abyss,
-  },
-  content: {
-    padding: 20,
-    gap: 16,
-  },
-  title: {
-    color: colors.frost,
-    fontFamily: "SpaceGrotesk_600SemiBold",
-    fontSize: 26,
-  },
-  card: {
-    backgroundColor: colors.surface,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: colors.hairline,
-    padding: 18,
-    gap: 8,
-  },
-  kicker: {
-    color: colors.signal,
-    fontFamily: "Inter_500Medium",
-    fontSize: 10,
-    letterSpacing: 2,
-  },
-  username: {
-    color: colors.frost,
-    fontFamily: "SpaceGrotesk_600SemiBold",
-    fontSize: 22,
-  },
-  address: {
-    color: colors.ice,
-    fontFamily: "Inter_400Regular",
-    fontSize: 13,
-    lineHeight: 20,
-  },
-  copyButton: {
-    alignSelf: "flex-start",
-    marginTop: 4,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-    backgroundColor: "rgba(126, 182, 255, 0.16)",
-  },
-  copyButtonText: {
-    color: colors.ice,
-    fontFamily: "Inter_500Medium",
-    fontSize: 13,
-  },
-  muted: {
-    color: colors.mute,
-    fontFamily: "Inter_400Regular",
-    fontSize: 14,
-  },
-  errorText: {
-    color: "#FF9A9A",
-    fontFamily: "Inter_400Regular",
-    fontSize: 13,
-  },
-});

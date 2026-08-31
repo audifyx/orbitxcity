@@ -1,53 +1,174 @@
 import { useCallback, useEffect, useState } from "react";
-import {
-  ActivityIndicator,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
+import { Platform, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { PortfolioView, type PortfolioToken } from "../../src/components";
 import { useAuth } from "../../src/lib/auth";
+import { walletExportUrl } from "../../src/lib/hostedAuth";
 import { invokeFunction } from "../../src/lib/supabase";
+import { openExternalUrl } from "../../src/lib/walletOpen";
 import { colors } from "../../src/theme";
 
+type RawToken = Record<string, unknown>;
+
 type WalletSnapshot = {
+  totalUsd?: number;
   solBalance?: number;
-  tokens?: Array<{
-    mint: string;
-    symbol: string;
-    balance: number;
-    usdValue?: number;
-  }>;
   pnl24h?: number;
   pnl7d?: number;
+  tokens: PortfolioToken[];
 };
 
-function truncateAddress(address: string): string {
-  if (address.length <= 12) {
-    return address;
+function num(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
   }
-  return `${address.slice(0, 4)}…${address.slice(-4)}`;
+  if (typeof value === "string" && value.trim() !== "") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
+}
+
+function str(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() !== "" ? value.trim() : undefined;
+}
+
+function firstArray(record: Record<string, unknown>, keys: string[]): RawToken[] {
+  for (const key of keys) {
+    const value = record[key];
+    if (Array.isArray(value)) {
+      return value.filter(
+        (item): item is RawToken => typeof item === "object" && item !== null,
+      );
+    }
+  }
+  return [];
+}
+
+/** Normalize the many shapes wallet/portfolio edge functions can return. */
+function normalizeSnapshot(raw: unknown): WalletSnapshot {
+  const record =
+    typeof raw === "object" && raw !== null ? (raw as Record<string, unknown>) : {};
+  const data =
+    typeof record.data === "object" && record.data !== null
+      ? (record.data as Record<string, unknown>)
+      : record;
+
+  const rawTokens = firstArray(data, [
+    "tokens",
+    "holdings",
+    "balances",
+    "assets",
+    "portfolio",
+  ]);
+
+  const tokens: PortfolioToken[] = rawTokens.map((token, index) => {
+    const amount =
+      num(token.amount) ??
+      num(token.balance) ??
+      num(token.uiAmount) ??
+      num(token.quantity) ??
+      0;
+    const priceUsd = num(token.priceUsd) ?? num(token.price) ?? num(token.usdPrice);
+    const usdValue =
+      num(token.usdValue) ??
+      num(token.valueUsd) ??
+      num(token.value) ??
+      (priceUsd != null ? priceUsd * amount : undefined);
+    return {
+      mint: str(token.mint) ?? str(token.address) ?? str(token.id) ?? `token-${index}`,
+      symbol: str(token.symbol) ?? str(token.ticker) ?? "—",
+      name: str(token.name),
+      amount,
+      usdValue,
+      priceUsd,
+      supplyPct:
+        num(token.supplyPct) ??
+        num(token.supplyPercent) ??
+        num(token.percentOfSupply) ??
+        num(token.ownershipPct),
+    };
+  });
+
+  const solBalance =
+    num(data.solBalance) ?? num(data.sol) ?? num(data.nativeBalance);
+
+  // Total portfolio value: prefer explicit, else sum token values (+ SOL value).
+  const explicitTotal =
+    num(data.totalUsd) ?? num(data.totalValueUsd) ?? num(data.netWorth);
+  const summedTokens = tokens.reduce((sum, t) => sum + (t.usdValue ?? 0), 0);
+  // Only add a separate SOL value if native SOL isn't already a token entry,
+  // otherwise the headline total double-counts it.
+  const WRAPPED_SOL = "So11111111111111111111111111111111111111112";
+  const hasSolToken = tokens.some(
+    (t) => t.symbol.toUpperCase() === "SOL" || t.mint === WRAPPED_SOL,
+  );
+  const solUsd = hasSolToken
+    ? undefined
+    : num(data.solUsdValue) ?? num(data.solValueUsd);
+  const totalUsd =
+    explicitTotal ?? (summedTokens > 0 ? summedTokens + (solUsd ?? 0) : undefined);
+
+  // Allocation share of each holding within the portfolio.
+  const allocationBase = totalUsd && totalUsd > 0 ? totalUsd : summedTokens;
+  const withAllocation = tokens
+    .map((t) => ({
+      ...t,
+      allocationPct:
+        allocationBase > 0 && t.usdValue != null
+          ? (t.usdValue / allocationBase) * 100
+          : undefined,
+    }))
+    .sort((a, b) => (b.usdValue ?? 0) - (a.usdValue ?? 0));
+
+  return {
+    totalUsd,
+    solBalance,
+    pnl24h: num(data.pnl24h) ?? num(data.pnl_24h),
+    pnl7d: num(data.pnl7d) ?? num(data.pnl_7d),
+    tokens: withAllocation,
+  };
 }
 
 async function fetchWalletData(wallet: string): Promise<WalletSnapshot> {
-  const attempts = ["wallet-manager", "og-wallet", "pnl-scan"] as const;
+  // Try the richest portfolio source first, then fall back. Each backend has a
+  // slightly different contract, so we send a superset of the common params.
+  const attempts: Array<{ name: string; body: Record<string, unknown> }> = [
+    { name: "wallet-portfolio", body: { address: wallet, wallet_address: wallet, wallet } },
+    {
+      name: "wallet-manager",
+      body: { action: "get_balance", wallet_address: wallet, wallet },
+    },
+    { name: "og-wallet", body: { address: wallet, wallet_address: wallet, wallet } },
+    { name: "pnl-scan", body: { wallet, wallet_address: wallet } },
+  ];
 
-  for (const name of attempts) {
+  let lastError: unknown = null;
+  for (const attempt of attempts) {
     try {
-      const result = await invokeFunction(name, { wallet, action: "snapshot" });
-      if (typeof result === "object" && result !== null) {
-        return result as WalletSnapshot;
+      const result = await invokeFunction(attempt.name, attempt.body);
+      const snapshot = normalizeSnapshot(result);
+      if (
+        snapshot.tokens.length > 0 ||
+        snapshot.totalUsd != null ||
+        snapshot.solBalance != null
+      ) {
+        return snapshot;
       }
-    } catch {
-      continue;
+    } catch (err) {
+      lastError = err;
     }
   }
 
-  throw new Error("Wallet data unavailable from connected services.");
+  if (lastError) {
+    throw lastError instanceof Error
+      ? lastError
+      : new Error("Wallet data unavailable from connected services.");
+  }
+  // Reached only when services returned empty payloads — show an empty portfolio.
+  return { tokens: [] };
 }
 
 export default function WalletScreen() {
@@ -58,18 +179,17 @@ export default function WalletScreen() {
   const [snapshot, setSnapshot] = useState<WalletSnapshot | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
 
   const load = useCallback(async () => {
     if (!wallet) {
       setSnapshot(null);
       return;
     }
-
     setLoading(true);
     setError(null);
     try {
-      const data = await fetchWalletData(wallet);
-      setSnapshot(data);
+      setSnapshot(await fetchWalletData(wallet));
     } catch (err) {
       setSnapshot(null);
       setError(err instanceof Error ? err.message : "Failed to load wallet");
@@ -86,103 +206,71 @@ export default function WalletScreen() {
     const context = wallet
       ? `Analyze my wallet ${wallet} — holdings, risk, and opportunities.`
       : "Help me understand my Solana wallet.";
-    router.push({
-      pathname: "/(app)",
-      params: { context },
-    });
+    router.push({ pathname: "/", params: { context } });
   }, [router, wallet]);
 
+  const copyAddress = useCallback(async () => {
+    if (!wallet) {
+      return;
+    }
+    if (
+      Platform.OS === "web" &&
+      typeof navigator !== "undefined" &&
+      navigator.clipboard
+    ) {
+      try {
+        await navigator.clipboard.writeText(wallet);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      } catch {
+        setError("Could not copy address.");
+      }
+    }
+  }, [wallet]);
+
+  const openExplorer = useCallback(() => {
+    if (wallet) {
+      void openExternalUrl(`https://solscan.io/account/${wallet}`);
+    }
+  }, [wallet]);
+
+  const exportWallet = useCallback(() => {
+    void openExternalUrl(walletExportUrl());
+  }, []);
+
   return (
-    <ScrollView
-      style={styles.root}
-      contentContainerStyle={[
-        styles.content,
-        { paddingBottom: insets.bottom + 24 },
-      ]}
-    >
-      <Text style={styles.title}>Wallet</Text>
-      <Text style={styles.subtitle}>Your OrbitX in-app wallet</Text>
+    <View style={[styles.root, { paddingBottom: insets.bottom }]}>
+      <View style={styles.header}>
+        <Text style={styles.title}>Wallet</Text>
+        <Text style={styles.subtitle}>Your OrbitX in-app wallet</Text>
+      </View>
 
       {!wallet ? (
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>No wallet yet</Text>
-          <Text style={styles.cardBody}>
-            Sign in with email or phone and OrbitX creates this wallet for you.
-          </Text>
-        </View>
+        <Text style={styles.empty}>
+          Sign in with email or phone and OrbitX creates this wallet for you.
+        </Text>
       ) : (
-        <>
-          <View style={styles.card}>
-            <Text style={styles.cardKicker}>Connected</Text>
-            <Text style={styles.address}>{truncateAddress(wallet)}</Text>
-            {loading ? (
-              <ActivityIndicator color={colors.signal} style={styles.loader} />
-            ) : error ? (
-              <Text style={styles.errorText}>{error}</Text>
-            ) : (
-              <>
-                <View style={styles.statRow}>
-                  <View style={styles.stat}>
-                    <Text style={styles.statLabel}>SOL</Text>
-                    <Text style={styles.statValue}>
-                      {snapshot?.solBalance?.toFixed(4) ?? "—"}
-                    </Text>
-                  </View>
-                  <View style={styles.stat}>
-                    <Text style={styles.statLabel}>24h PnL</Text>
-                    <Text style={styles.statValue}>
-                      {snapshot?.pnl24h != null
-                        ? `${snapshot.pnl24h >= 0 ? "+" : ""}${snapshot.pnl24h.toFixed(2)}%`
-                        : "—"}
-                    </Text>
-                  </View>
-                  <View style={styles.stat}>
-                    <Text style={styles.statLabel}>7d PnL</Text>
-                    <Text style={styles.statValue}>
-                      {snapshot?.pnl7d != null
-                        ? `${snapshot.pnl7d >= 0 ? "+" : ""}${snapshot.pnl7d.toFixed(2)}%`
-                        : "—"}
-                    </Text>
-                  </View>
-                </View>
-
-                <Text style={styles.sectionLabel}>Tokens</Text>
-                {(snapshot?.tokens ?? []).length === 0 ? (
-                  <Text style={styles.muted}>No token balances returned.</Text>
-                ) : (
-                  (snapshot?.tokens ?? []).map((token) => (
-                    <View key={token.mint} style={styles.tokenRow}>
-                      <Text style={styles.tokenSymbol}>{token.symbol}</Text>
-                      <Text style={styles.tokenBalance}>
-                        {token.balance.toLocaleString()}
-                        {token.usdValue != null
-                          ? ` · $${token.usdValue.toFixed(2)}`
-                          : ""}
-                      </Text>
-                    </View>
-                  ))
-                )}
-              </>
-            )}
-          </View>
-
-          <Pressable style={styles.primaryButton} onPress={askOrbitX}>
-            <Text style={styles.primaryButtonText}>Ask OrbitX</Text>
-          </Pressable>
-
-          <Pressable style={styles.secondaryButton} onPress={load}>
-            <Text style={styles.secondaryButtonText}>Refresh</Text>
-          </Pressable>
-
-          <Pressable
-            style={styles.dangerButton}
-            onPress={() => void disconnect()}
-          >
-            <Text style={styles.dangerButtonText}>Log out</Text>
-          </Pressable>
-        </>
+        <View style={styles.portfolio}>
+          <PortfolioView
+            address={wallet}
+            totalUsd={snapshot?.totalUsd}
+            solBalance={snapshot?.solBalance}
+            pnl24h={snapshot?.pnl24h}
+            pnl7d={snapshot?.pnl7d}
+            tokens={snapshot?.tokens ?? []}
+            loading={loading}
+            error={error}
+            copied={copied}
+            onCopyAddress={() => void copyAddress()}
+            onOpenExplorer={openExplorer}
+            onRefresh={() => void load()}
+            onAskOrbitX={askOrbitX}
+            onExport={exportWallet}
+            onLogout={() => void disconnect()}
+          />
+        </View>
       )}
-    </ScrollView>
+    </View>
   );
 }
 
@@ -191,9 +279,16 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.abyss,
   },
-  content: {
-    padding: 20,
-    gap: 16,
+  header: {
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 8,
+    gap: 2,
+  },
+  portfolio: {
+    flex: 1,
+    paddingHorizontal: 20,
+    paddingBottom: 12,
   },
   title: {
     color: colors.frost,
@@ -204,132 +299,12 @@ const styles = StyleSheet.create({
     color: colors.mute,
     fontFamily: "Inter_400Regular",
     fontSize: 14,
-    marginBottom: 4,
   },
-  card: {
-    backgroundColor: colors.surface,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: colors.hairline,
-    padding: 18,
-    gap: 10,
-  },
-  cardKicker: {
-    color: colors.signal,
-    fontFamily: "Inter_500Medium",
-    fontSize: 10,
-    letterSpacing: 2,
-  },
-  cardTitle: {
-    color: colors.frost,
-    fontFamily: "Inter_500Medium",
-    fontSize: 17,
-  },
-  cardBody: {
+  empty: {
     color: colors.mute,
     fontFamily: "Inter_400Regular",
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  address: {
-    color: colors.frost,
-    fontFamily: "SpaceGrotesk_600SemiBold",
-    fontSize: 22,
-    letterSpacing: 1,
-  },
-  loader: {
-    marginTop: 8,
-  },
-  errorText: {
-    color: "#FF9A9A",
-    fontFamily: "Inter_400Regular",
-    fontSize: 14,
-  },
-  statRow: {
-    flexDirection: "row",
-    gap: 10,
-    marginTop: 8,
-  },
-  stat: {
-    flex: 1,
-    padding: 10,
-    borderRadius: 10,
-    backgroundColor: colors.ink,
-  },
-  statLabel: {
-    color: colors.mute,
-    fontFamily: "Inter_500Medium",
-    fontSize: 10,
-    letterSpacing: 1.2,
-  },
-  statValue: {
-    color: colors.frost,
-    fontFamily: "Inter_500Medium",
-    fontSize: 16,
-    marginTop: 4,
-  },
-  sectionLabel: {
-    color: colors.mute,
-    fontFamily: "Inter_500Medium",
-    fontSize: 11,
-    letterSpacing: 1.4,
-    marginTop: 8,
-  },
-  muted: {
-    color: colors.mute,
-    fontFamily: "Inter_400Regular",
-    fontSize: 14,
-  },
-  tokenRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    paddingVertical: 8,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.hairline,
-  },
-  tokenSymbol: {
-    color: colors.frost,
-    fontFamily: "Inter_500Medium",
-    fontSize: 14,
-  },
-  tokenBalance: {
-    color: colors.mute,
-    fontFamily: "Inter_400Regular",
-    fontSize: 13,
-  },
-  primaryButton: {
-    minHeight: 48,
-    borderRadius: 12,
-    backgroundColor: colors.signal,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  primaryButtonText: {
-    color: colors.void,
-    fontFamily: "Inter_500Medium",
     fontSize: 15,
-  },
-  secondaryButton: {
-    minHeight: 44,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.hairline,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  secondaryButtonText: {
-    color: colors.ice,
-    fontFamily: "Inter_500Medium",
-    fontSize: 14,
-  },
-  dangerButton: {
-    minHeight: 44,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  dangerButtonText: {
-    color: "#FF8A8A",
-    fontFamily: "Inter_500Medium",
-    fontSize: 14,
+    lineHeight: 22,
+    padding: 20,
   },
 });

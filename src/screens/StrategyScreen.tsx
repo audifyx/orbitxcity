@@ -24,7 +24,7 @@ export function StrategyScreen() {
 
   async function save() {
     if (!userId) {
-      setMessage("Connect Phantom first.");
+      setMessage("Sign in with email or phone first.");
       return;
     }
     const { error } = await supabase.from("orbitx_ai_memory").insert({

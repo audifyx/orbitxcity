@@ -8,6 +8,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AlertCard } from "../../src/components";
@@ -40,9 +41,23 @@ function parseAlerts(value: unknown): AlertItem[] {
 export default function AlertsScreen() {
   const insets = useSafeAreaInsets();
   const { wallet, userId } = useAuth();
+  const params = useLocalSearchParams<{ mint?: string; symbol?: string }>();
 
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
   const [draft, setDraft] = useState("");
+
+  // Prefill the composer when Trending routes here with a token to track.
+  useEffect(() => {
+    const subject =
+      (typeof params.symbol === "string" && params.symbol) ||
+      (typeof params.mint === "string" && params.mint) ||
+      "";
+    if (subject) {
+      setDraft((prev) =>
+        prev.trim().length > 0 ? prev : `Alert me when ${subject} moves 10%`,
+      );
+    }
+  }, [params.mint, params.symbol]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
