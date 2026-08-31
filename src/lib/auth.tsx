@@ -269,9 +269,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const finishVerification = useCallback(
-    async (pubkey: string, signature: string) => {
+    async (pubkey: string, signature: string, nonce?: string) => {
       const verifyData = parseVerifyResponse(
-        await walletAuth("verify", { pubkey, signature }),
+        await walletAuth("verify", {
+          pubkey,
+          signature,
+          ...(nonce ? { nonce } : {}),
+        }),
       );
 
       const { data, error: setSessionError } = await supabase.auth.setSession({
@@ -438,7 +442,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             if (!isSolanaSignature(signature)) {
               throw new Error("Wallet did not return a valid signature.");
             }
-            await finishVerification(trimmedPubkey, signature);
+            await finishVerification(
+              trimmedPubkey,
+              signature,
+              nonceData.nonce,
+            );
           };
 
           try {
