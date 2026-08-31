@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -24,6 +24,7 @@ import {
 } from "../brain";
 import type { ToolCategory as BrainToolCategory } from "../brain/types";
 import {
+  ApproveSheet,
   CommandPalette,
   Composer,
   EmptyHome,
@@ -36,12 +37,22 @@ import {
   type ToolCategory,
 } from "../components";
 import { useAuth } from "../lib/auth";
+import { readAutoApproveBuys, writeAutoApproveBuys } from "../lib/autoApprove";
 import {
-  confirmSignature,
-  fetchSwapTransaction,
-  parseQuoteJson,
-  signAndSendSwapTransaction,
-} from "../lib/jupiter";
+  executeDexSwap,
+  parseInstantTrade,
+  SOL_MINT,
+} from "../lib/dexTrade";
+import {
+  DEFAULT_BUY_USD,
+  formatSwapError,
+  instantBuySol,
+  prefetchBuyAmount,
+  suggestBuySol,
+} from "../lib/swapGuard";
+import { isSolanaPubkey } from "../lib/wallets";
+import { mintOrbitxNft } from "../lib/nftMarket";
+import { createPumpToken } from "../lib/pumpfun";
 import {
   invokeFunction,
   invokeFunctionStream,
@@ -148,6 +159,10 @@ export function ChatThread({
   const [toolSheetOpen, setToolSheetOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [paletteQuery, setPaletteQuery] = useState("");
+  const [instantBuy, setInstantBuy] = useState(true);
+  const [approveOpen, setApproveOpen] = useState(false);
+  const autoFired = useRef<Set<string>>(new Set());
+  const tradeBusy = useRef(false);
 
   const loadMessages = useCallback(async (convId: string) => {
     setLoadingHistory(true);
@@ -267,9 +282,142 @@ export function ChatThread({
     [conversationId, modelId, onConversationCreated, userId, wallet],
   );
 
+  const matchTxCard = useCallback((card: MessageCard, target: MessageCard) => {
+    if (target.data.intentId && card.data.intentId) {
+      return card.data.intentId === target.data.intentId;
+    }
+    return (
+      card.kind === "tx" &&
+      card.data.quoteJson === target.data.quoteJson &&
+      card.data.inAmount === target.data.inAmount
+    );
+  }, []);
+
+  const runJupiterTrade = useCallback(
+    async (input: {
+      mint: string;
+      side: "buy" | "sell";
+      amount?: number;
+      card?: MessageCard;
+    }) => {
+      if (!isSolanaPubkey(input.mint) || input.mint === SOL_MINT) {
+        setStorageError("This card has no token mint to swap.");
+        return;
+      }
+      if (!wallet) {
+        setStorageError("Sign in before trading.");
+        return;
+      }
+      if (tradeBusy.current) {
+        return;
+      }
+      tradeBusy.current = true;
+      const amount =
+        typeof input.amount === "number" && input.amount > 0
+          ? input.amount
+          : input.side === "buy"
+            ? instantBuySol()
+            : 0.05;
+      const localId = `trade-${Date.now()}`;
+      if (!input.card) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: localId,
+            role: "assistant",
+            content:
+              input.side === "sell"
+                ? "Selling on Jupiter…"
+                : `Buying $${DEFAULT_BUY_USD.toFixed(2)} on Jupiter…`,
+            cards: [
+              {
+                kind: "tx",
+                title: input.side === "sell" ? "Jupiter sell" : "Jupiter buy",
+                data: {
+                  status: "submitted",
+                  side: input.side,
+                  mint: input.mint,
+                  amount,
+                  route: "Jupiter",
+                },
+              },
+            ],
+          },
+        ]);
+      }
+      const matches = (card: MessageCard) =>
+        input.card
+          ? matchTxCard(card, input.card)
+          : card.kind === "tx" &&
+            card.data.mint === input.mint &&
+            card.data.amount === amount &&
+            (String(card.data.status) === "submitted" ||
+              String(card.data.status) === "awaiting_signature");
+      const patch = (
+        status: string,
+        extra?: Record<string, string | number>,
+      ) => {
+        setMessages((prev) => patchCardStatus(prev, matches, { status, ...extra }));
+      };
+      if (input.card) {
+        patch("awaiting_signature");
+      }
+      setStorageError(null);
+      try {
+        const result = await executeDexSwap({
+          wallet,
+          side: input.side,
+          mint: input.mint,
+          amount,
+        });
+        patch("confirmed", {
+          signature: result.signature,
+          tx: result.signature,
+          inAmount: result.quote.inAmount,
+          outAmount: result.quote.outAmount,
+        });
+        setMessages((prev) =>
+          prev.map((message) =>
+            message.cards?.some(matches)
+              ? {
+                  ...message,
+                  content: `${input.side === "sell" ? "Sold" : "Bought"} on Jupiter · ${result.signature.slice(0, 8)}…`,
+                }
+              : message,
+          ),
+        );
+      } catch (error) {
+        const detail = formatSwapError(error);
+        setStorageError(detail);
+        patch("failed");
+      } finally {
+        tradeBusy.current = false;
+      }
+    },
+    [matchTxCard, wallet],
+  );
+
   const handleSend = useCallback(async () => {
     const text = rewriteLegacyToolPrompt(draft.trim(), [...TOOLS]);
     if (!text || sending) {
+      return;
+    }
+
+    const instant = parseInstantTrade(text);
+    if (instant) {
+      const userMessage: Message = {
+        id: `local-${Date.now()}`,
+        role: "user",
+        content: text,
+      };
+      setMessages((prev) => [...prev, userMessage]);
+      setDraft("");
+      setStorageError(null);
+      await runJupiterTrade({
+        mint: instant.mint,
+        side: instant.side,
+        amount: instant.amount,
+      });
       return;
     }
 
@@ -283,7 +431,7 @@ export function ChatThread({
     const plan = planFromUtterance(text, [...AGENTS], [...TOOLS]);
     const plannedEvents = plan.toolIds.map((toolId) => ({
       id: `tool_${toolId}`,
-      label: toolId.replace(/-/g, " "),
+      label: TOOLS.find((tool) => tool.id === toolId)?.name ?? toolId.replace(/-/g, " "),
       status: "running" as const,
     }));
 
@@ -394,18 +542,8 @@ export function ChatThread({
     page,
     wallet,
     onConversationCreated,
+    runJupiterTrade,
   ]);
-
-  const matchTxCard = useCallback((card: MessageCard, target: MessageCard) => {
-    if (target.data.intentId && card.data.intentId) {
-      return card.data.intentId === target.data.intentId;
-    }
-    return (
-      card.kind === "tx" &&
-      card.data.quoteJson === target.data.quoteJson &&
-      card.data.inAmount === target.data.inAmount
-    );
-  }, []);
 
   const handleCancelTx = useCallback(
     async (card: MessageCard) => {
@@ -427,91 +565,64 @@ export function ChatThread({
 
   const handleConfirmTx = useCallback(
     async (card: MessageCard) => {
-      if (!wallet) {
-        setStorageError("Sign in before signing a swap.");
-        return;
-      }
-      const quote = parseQuoteJson(card.data.quoteJson);
-      if (!quote) {
-        setStorageError("This preview has no Jupiter quote payload to sign.");
-        return;
-      }
-      const intentId = String(card.data.intentId ?? "");
-      const patch = (status: string, extra?: Record<string, string>) => {
-        setMessages((prev) =>
-          patchCardStatus(prev, (item) => matchTxCard(item, card), {
-            status,
-            ...extra,
-          }),
-        );
-      };
-
-      patch("awaiting_signature");
-      try {
-        const swapTx = await fetchSwapTransaction({
-          quoteResponse: quote,
-          userPublicKey: wallet,
-        });
-        patch("submitted");
-        const signature = await signAndSendSwapTransaction(swapTx);
-        if (intentId && isUuid(intentId)) {
-          await supabase
-            .from("orbitx_ai_transaction_intents")
-            .update({ status: "submitted", signature })
-            .eq("id", intentId);
-        }
-        patch("confirming", { signature });
-
-        let outcome: "confirmed" | "failed" | "pending" = "pending";
-        for (let attempt = 0; attempt < 8; attempt += 1) {
-          await sleep(2000);
-          outcome = await confirmSignature(signature);
-          if (outcome !== "pending") break;
-        }
-
-        if (outcome === "confirmed") {
-          if (intentId && isUuid(intentId)) {
-            await supabase
-              .from("orbitx_ai_transaction_intents")
-              .update({ status: "confirmed" })
-              .eq("id", intentId);
-          }
-          patch("confirmed", { signature });
-        } else if (outcome === "failed") {
-          if (intentId && isUuid(intentId)) {
-            await supabase
-              .from("orbitx_ai_transaction_intents")
-              .update({ status: "failed", error_code: "rpc_err" })
-              .eq("id", intentId);
-          }
-          patch("failed", { signature });
-        } else {
-          if (intentId && isUuid(intentId)) {
-            await supabase
-              .from("orbitx_ai_transaction_intents")
-              .update({ status: "submitted", signature })
-              .eq("id", intentId);
-          }
-          patch("submitted", { signature });
-          setStorageError(
-            `Swap broadcast (${signature.slice(0, 8)}…). RPC has not confirmed it yet — not marked successful.`,
-          );
-        }
-      } catch (error) {
-        const detail =
-          error instanceof Error ? error.message : "Swap signing failed";
-        setStorageError(detail);
-        patch("failed");
-        if (intentId && isUuid(intentId)) {
-          await supabase
-            .from("orbitx_ai_transaction_intents")
-            .update({ status: "failed", error_code: "sign_failed" })
-            .eq("id", intentId);
-        }
-      }
+      const mint = String(
+        card.data.mint ?? card.data.outputMint ?? card.data.inputMint ?? "",
+      );
+      const side = String(card.data.side ?? "buy") === "sell" ? "sell" : "buy";
+      const amount =
+        typeof card.data.amount === "number"
+          ? card.data.amount
+          : side === "buy" &&
+              typeof card.data.inAmount === "string" &&
+              /^\d+$/.test(card.data.inAmount)
+            ? Number(card.data.inAmount) / 1e9
+            : undefined;
+      await runJupiterTrade({ mint, side, amount, card });
     },
-    [matchTxCard, wallet],
+    [runJupiterTrade],
   );
+
+  const handleTokenTrade = useCallback(
+    async (mint: string, side: "buy" | "sell") => {
+      await runJupiterTrade({ mint, side });
+    },
+    [runJupiterTrade],
+  );
+
+  useEffect(() => {
+    prefetchBuyAmount(wallet ?? undefined);
+  }, [wallet]);
+
+  useEffect(() => {
+    void readAutoApproveBuys().then(setInstantBuy);
+  }, []);
+
+  useEffect(() => {
+    if (!instantBuy || sending) {
+      return;
+    }
+    for (const message of messages) {
+      for (const card of message.cards ?? []) {
+        if (card.kind !== "tx") {
+          continue;
+        }
+        const canQuote =
+          Boolean(card.data.quoteJson) ||
+          Boolean(card.data.inputMint && card.data.outputMint && card.data.inAmount) ||
+          Boolean(card.data.mint);
+        if (!canQuote) {
+          continue;
+        }
+        const status = String(card.data.status ?? "preview");
+        const key = String(card.data.intentId ?? card.data.quoteJson);
+        if (status !== "preview" || autoFired.current.has(key)) {
+          continue;
+        }
+        autoFired.current.add(key);
+        void handleConfirmTx(card);
+      }
+    }
+  }, [handleConfirmTx, instantBuy, messages, sending]);
 
   const selectedModel = MODELS.find((model) => model.id === modelId) ?? MODELS[0];
 
@@ -549,6 +660,24 @@ export function ChatThread({
         kind: "action",
       },
       {
+        id: "nav:dex",
+        title: "DEX",
+        subtitle: "Buy and sell with Jupiter / pump.fun",
+        kind: "action",
+      },
+      {
+        id: "nav:launch",
+        title: "Launch",
+        subtitle: "Create a coin on pump.fun",
+        kind: "action",
+      },
+      {
+        id: "nav:nft",
+        title: "NFTs",
+        subtitle: "Mint, list, and buy",
+        kind: "action",
+      },
+      {
         id: "nav:settings",
         title: "Settings",
         subtitle: "Model, memory, and permissions",
@@ -572,7 +701,15 @@ export function ChatThread({
       keyboardVerticalOffset={Platform.OS === "ios" ? 8 : 0}
     >
       <View style={styles.threadHeader}>
-        <Text style={styles.headerKicker}>ORBITX AGENT</Text>
+        <View style={styles.headerCopy}>
+          <View style={styles.headerLiveRow}>
+            <View style={styles.liveDot} />
+            <Text style={styles.headerKicker}>ORBITX CORE · LIVE</Text>
+          </View>
+          <Text style={styles.headerTitle} numberOfLines={1}>
+            {wallet ? `${wallet.slice(0, 4)}…${wallet.slice(-4)} armed` : "Sign in to trade"}
+          </Text>
+        </View>
         {Platform.OS !== "web" ? (
           <Pressable
             style={styles.searchButton}
@@ -605,6 +742,46 @@ export function ChatThread({
             messages={messages}
             onConfirmTx={(card) => void handleConfirmTx(card)}
             onCancelTx={(card) => void handleCancelTx(card)}
+            onBuyToken={(mint) => {
+              void handleTokenTrade(mint, "buy");
+            }}
+            onSellToken={(mint) => {
+              void handleTokenTrade(mint, "sell");
+            }}
+            onOpenCreate={(kind) => {
+              router.push(kind === "nft" ? "/nft" : "/launch");
+            }}
+            onApproveCreate={(kind, card) => {
+              void (async () => {
+                if (!wallet) {
+                  setStorageError("Sign in before signing.");
+                  return;
+                }
+                try {
+                  if (kind === "launch") {
+                    const created = await createPumpToken({
+                      wallet,
+                      name: String(card.data.name ?? "OrbitX"),
+                      symbol: String(card.data.symbol ?? "ORB"),
+                      description: String(card.data.description ?? ""),
+                      initialBuySol: await suggestBuySol(wallet),
+                    });
+                    setStorageError(`Launched ${created.mint}`);
+                    return;
+                  }
+                  const minted = await mintOrbitxNft({
+                    wallet,
+                    name: String(card.data.name ?? "Orbit Pass"),
+                    symbol: String(card.data.symbol ?? "PASS"),
+                  });
+                  setStorageError(`Minted ${minted.mint}`);
+                } catch (error) {
+                  setStorageError(
+                    error instanceof Error ? error.message : "Create failed.",
+                  );
+                }
+              })();
+            }}
             onRegenerate={() => {
               const lastUser = [...messages]
                 .reverse()
@@ -631,9 +808,31 @@ export function ChatThread({
           modelLabel={selectedModel?.label ?? "Balanced"}
           onModelPress={() => setModelSheetOpen(true)}
           onToolsPress={() => setToolSheetOpen(true)}
+          instantBuy={instantBuy}
+          onInstantBuyPress={() => {
+            if (instantBuy) {
+              setInstantBuy(false);
+              void writeAutoApproveBuys(false);
+              return;
+            }
+            setApproveOpen(true);
+          }}
           mentionTools={TOOLS.map((tool) => ({ id: tool.id, name: tool.name }))}
         />
       </View>
+
+      <ApproveSheet
+        visible={approveOpen}
+        title="Approve instant buys"
+        body="OrbitX will sign Jupiter buys with your Privy wallet as soon as a quote is ready. You can turn this off anytime. This is not a seed export."
+        confirmLabel="Approve instant buys"
+        onClose={() => setApproveOpen(false)}
+        onConfirm={() => {
+          setInstantBuy(true);
+          void writeAutoApproveBuys(true);
+          setApproveOpen(false);
+        }}
+      />
 
       <ModelSheet
         visible={modelSheetOpen}
@@ -670,7 +869,7 @@ export function ChatThread({
         results={paletteResults}
         onPick={(id) => {
           if (id.startsWith("nav:")) {
-            router.push(`/${id.slice(4)}` as "/trending");
+            router.push(`/${id.slice(4)}` as "/dex");
           } else if (id.startsWith("tool:")) {
             const tool = TOOLS.find((item) => item.id === id.slice(5));
             if (tool) setDraft(`@${tool.id} `);
@@ -695,15 +894,36 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingVertical: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.hairline,
+    backgroundColor: colors.void,
+  },
+  headerCopy: {
+    flex: 1,
+    gap: 3,
+  },
+  headerLiveRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 7,
+  },
+  liveDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: colors.success,
   },
   headerKicker: {
-    color: colors.mute,
+    color: colors.signal,
     fontFamily: "Inter_500Medium",
     fontSize: 10,
-    letterSpacing: 2,
+    letterSpacing: 2.4,
+  },
+  headerTitle: {
+    color: colors.frost,
+    fontFamily: "SpaceGrotesk_600SemiBold",
+    fontSize: 15,
   },
   searchButton: {
     width: 36,

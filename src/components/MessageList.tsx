@@ -8,6 +8,7 @@ import {
   View,
 } from "react-native";
 
+import { CreateCard } from "./CreateCard";
 import { TokenCard } from "./TokenCard";
 import { ToolProgress } from "./ToolProgress";
 import { TxPreview, type TxPreviewStatus } from "./TxPreview";
@@ -22,6 +23,10 @@ export type MessageListProps = {
   onRegenerate?: () => void;
   onConfirmTx?: (card: MessageCard) => void;
   onCancelTx?: (card: MessageCard) => void;
+  onBuyToken?: (mint: string) => void;
+  onSellToken?: (mint: string) => void;
+  onOpenCreate?: (kind: "launch" | "nft", card: MessageCard) => void;
+  onApproveCreate?: (kind: "launch" | "nft", card: MessageCard) => void;
 };
 
 type InlineSegment = {
@@ -170,12 +175,21 @@ function MessageCardView({
   card,
   onConfirmTx,
   onCancelTx,
+  onBuyToken,
+  onSellToken,
+  onOpenCreate,
+  onApproveCreate,
 }: {
   card: MessageCard;
   onConfirmTx?: (card: MessageCard) => void;
   onCancelTx?: (card: MessageCard) => void;
+  onBuyToken?: (mint: string) => void;
+  onSellToken?: (mint: string) => void;
+  onOpenCreate?: (kind: "launch" | "nft", card: MessageCard) => void;
+  onApproveCreate?: (kind: "launch" | "nft", card: MessageCard) => void;
 }) {
   if (card.kind === "token") {
+    const mint = String(card.data.mint ?? "");
     return (
       <TokenCard
         symbol={String(card.data.symbol ?? card.title)}
@@ -184,6 +198,23 @@ function MessageCardView({
         liquidity={String(card.data.liq ?? card.data.liquidity ?? "—")}
         volume={String(card.data.vol ?? card.data.volume ?? "—")}
         risk={String(card.data.risk ?? "—")}
+        onBuy={() => mint && onBuyToken?.(mint)}
+        onSell={() => mint && onSellToken?.(mint)}
+      />
+    );
+  }
+
+  if (card.kind === "launch" || card.kind === "nft") {
+    return (
+      <CreateCard
+        kind={card.kind}
+        name={String(card.data.name ?? card.title)}
+        symbol={String(card.data.symbol ?? "")}
+        note={String(card.data.note ?? "")}
+        onOpen={() => onOpenCreate?.(card.kind === "nft" ? "nft" : "launch", card)}
+        onApprove={() =>
+          onApproveCreate?.(card.kind === "nft" ? "nft" : "launch", card)
+        }
       />
     );
   }
@@ -211,6 +242,11 @@ function MessageCardView({
         route={String(card.data.route ?? "Jupiter")}
         warnings={warnings}
         status={asTxStatus(card.data.status)}
+        confirmLabel={
+          String(card.data.side ?? "buy") === "sell"
+            ? "Approve & sell"
+            : "Approve & buy"
+        }
         onConfirm={() => onConfirmTx?.(card)}
         onCancel={() => onCancelTx?.(card)}
       />
@@ -231,6 +267,10 @@ type MessageItemProps = {
   onRegenerate?: () => void;
   onConfirmTx?: (card: MessageCard) => void;
   onCancelTx?: (card: MessageCard) => void;
+  onBuyToken?: (mint: string) => void;
+  onSellToken?: (mint: string) => void;
+  onOpenCreate?: (kind: "launch" | "nft", card: MessageCard) => void;
+  onApproveCreate?: (kind: "launch" | "nft", card: MessageCard) => void;
 };
 
 function MessageItem({
@@ -239,6 +279,10 @@ function MessageItem({
   onRegenerate,
   onConfirmTx,
   onCancelTx,
+  onBuyToken,
+  onSellToken,
+  onOpenCreate,
+  onApproveCreate,
 }: MessageItemProps) {
   const [copied, setCopied] = useState(false);
   const blocks = parseMarkdown(message.content);
@@ -264,6 +308,12 @@ function MessageItem({
 
   return (
     <View style={[styles.messageWrap, isUser && styles.messageWrapUser]}>
+      {!isUser ? (
+        <View style={styles.agentRow}>
+          <View style={styles.agentPulse} />
+          <Text style={styles.agentKicker}>ORBITX CORE</Text>
+        </View>
+      ) : null}
       <View style={[styles.bubble, isUser ? styles.bubbleUser : styles.bubbleAssistant]}>
         {blocks.map((block, blockIndex) => {
           if (block.type === "list") {
@@ -305,6 +355,10 @@ function MessageItem({
               card={card}
               onConfirmTx={onConfirmTx}
               onCancelTx={onCancelTx}
+              onBuyToken={onBuyToken}
+              onSellToken={onSellToken}
+              onOpenCreate={onOpenCreate}
+              onApproveCreate={onApproveCreate}
             />
           </View>
         ))}
@@ -342,6 +396,10 @@ export function MessageList({
   onRegenerate,
   onConfirmTx,
   onCancelTx,
+  onBuyToken,
+  onSellToken,
+  onOpenCreate,
+  onApproveCreate,
 }: MessageListProps) {
   const lastAssistantId = [...messages]
     .reverse()
@@ -360,6 +418,10 @@ export function MessageList({
           onRegenerate={onRegenerate}
           onConfirmTx={onConfirmTx}
           onCancelTx={onCancelTx}
+          onBuyToken={onBuyToken}
+          onSellToken={onSellToken}
+          onOpenCreate={onOpenCreate}
+          onApproveCreate={onApproveCreate}
         />
       )}
     />
@@ -370,29 +432,55 @@ const styles = StyleSheet.create({
   listContent: {
     paddingHorizontal: 16,
     paddingVertical: 20,
-    gap: 18,
+    gap: 22,
   },
   messageWrap: {
-    alignItems: "flex-start",
-    gap: 8,
+    alignItems: "stretch",
+    width: "100%",
+    gap: 10,
   },
   messageWrapUser: {
     alignItems: "flex-end",
   },
+  agentRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingLeft: 2,
+  },
+  agentPulse: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: colors.signal,
+  },
+  agentKicker: {
+    color: colors.signal,
+    fontFamily: "Inter_500Medium",
+    fontSize: 10,
+    letterSpacing: 2.8,
+  },
   bubble: {
-    maxWidth: "92%",
-    borderRadius: 16,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+    width: "100%",
+    maxWidth: "100%",
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
     borderWidth: StyleSheet.hairlineWidth,
   },
   bubbleUser: {
-    backgroundColor: "rgba(126, 182, 255, 0.1)",
-    borderColor: "rgba(126, 182, 255, 0.22)",
+    width: "86%",
+    maxWidth: 420,
+    alignSelf: "flex-end",
+    backgroundColor: "rgba(90, 140, 255, 0.16)",
+    borderColor: "rgba(150, 196, 255, 0.32)",
   },
   bubbleAssistant: {
-    backgroundColor: colors.glass,
-    borderColor: colors.line,
+    alignSelf: "stretch",
+    backgroundColor: "rgba(6, 8, 14, 0.96)",
+    borderColor: "rgba(126, 182, 255, 0.18)",
+    borderLeftWidth: 2,
+    borderLeftColor: colors.signal,
   },
   paragraph: {
     marginBottom: 8,
@@ -438,6 +526,8 @@ const styles = StyleSheet.create({
   },
   toolProgressWrap: {
     marginTop: 10,
+    width: "100%",
+    alignSelf: "stretch",
   },
   cardWrap: {
     marginTop: 12,

@@ -1,3 +1,4 @@
+import { Buffer } from "buffer";
 import { Platform } from "react-native";
 import bs58 from "bs58";
 
@@ -110,6 +111,103 @@ export function isSolanaSignature(value: string): boolean {
   } catch {
     return false;
   }
+}
+
+function viewToBytes(value: unknown): Uint8Array | null {
+  if (value instanceof Uint8Array) {
+    return value;
+  }
+  if (ArrayBuffer.isView(value)) {
+    const view = value;
+    return new Uint8Array(view.buffer, view.byteOffset, view.byteLength);
+  }
+  if (Array.isArray(value) && value.every((item) => typeof item === "number")) {
+    return Uint8Array.from(value);
+  }
+  return null;
+}
+
+function decodeBase64Bytes(value: string): Uint8Array | null {
+  try {
+    const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
+    const bytes = Uint8Array.from(Buffer.from(normalized, "base64"));
+    return bytes.length > 0 ? bytes : null;
+  } catch {
+    return null;
+  }
+}
+
+function decodeHexBytes(value: string): Uint8Array | null {
+  const hex = value.startsWith("0x") || value.startsWith("0X") ? value.slice(2) : value;
+  if (!/^[0-9a-fA-F]+$/.test(hex) || hex.length % 2 !== 0) {
+    return null;
+  }
+  try {
+    const bytes = Uint8Array.from(Buffer.from(hex, "hex"));
+    return bytes.length > 0 ? bytes : null;
+  } catch {
+    return null;
+  }
+}
+
+function decodeSignatureString(value: string): Uint8Array | null {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+  try {
+    const base58 = bs58.decode(trimmed);
+    if (base58.length === 64) {
+      return base58;
+    }
+  } catch {
+    // Privy Expo returns base64, not base58.
+  }
+  const base64 = decodeBase64Bytes(trimmed);
+  if (base64 && base64.length === 64) {
+    return base64;
+  }
+  const hex = decodeHexBytes(trimmed);
+  if (hex && hex.length === 64) {
+    return hex;
+  }
+  return null;
+}
+
+export function toBase58Signature(value: unknown): string {
+  const direct = viewToBytes(value);
+  if (direct && direct.length === 64) {
+    return bs58.encode(direct);
+  }
+  if (typeof value === "string") {
+    const decoded = decodeSignatureString(value);
+    if (decoded) {
+      return bs58.encode(decoded);
+    }
+  }
+  if (value && typeof value === "object") {
+    const rec = value as Record<string, unknown>;
+    if (Array.isArray(rec.data) && rec.data.every((item) => typeof item === "number")) {
+      const bytes = Uint8Array.from(rec.data);
+      if (bytes.length === 64) {
+        return bs58.encode(bytes);
+      }
+    }
+    for (const key of ["signature", "sig", "data"] as const) {
+      if (key in rec && rec[key] !== value) {
+        try {
+          return toBase58Signature(rec[key]);
+        } catch {
+          // Try the next wrapper field.
+        }
+      }
+    }
+  }
+  throw new Error("OrbitX wallet did not return a valid signature.");
+}
+
+export function utf8ToBase64(value: string): string {
+  return Buffer.from(new TextEncoder().encode(value)).toString("base64");
 }
 
 function getInjectedById(id: WalletId): InjectedProvider | null {

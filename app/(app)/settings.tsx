@@ -9,6 +9,7 @@ import {
   Text,
   View,
 } from "react-native";
+import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { DEFAULT_MODEL_ID, MODELS, resolveModelId } from "../../src/brain";
@@ -35,7 +36,9 @@ const PERMISSION_OPTIONS: PermissionMode[] = [
 
 export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
-  const { userId } = useAuth();
+  const router = useRouter();
+  const { userId, disconnect } = useAuth();
+  const [loggingOut, setLoggingOut] = useState(false);
 
   const [defaultModelId, setDefaultModelId] = useState(DEFAULT_MODEL_ID);
   const [memories, setMemories] = useState<MemoryRow[]>([]);
@@ -151,6 +154,19 @@ export default function SettingsScreen() {
       setError(err instanceof Error ? err.message : "Failed to delete memory");
     }
   };
+
+  const logOut = useCallback(async () => {
+    setLoggingOut(true);
+    setError(null);
+    try {
+      await disconnect();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not log out.");
+    } finally {
+      router.replace("/connect");
+      setLoggingOut(false);
+    }
+  }, [disconnect, router]);
 
   const pauseAllAgents = () => {
     Alert.alert(
@@ -284,6 +300,20 @@ export default function SettingsScreen() {
       </View>
 
       <Pressable
+        style={[styles.logoutButton, loggingOut && styles.pauseDisabled]}
+        onPress={() => void logOut()}
+        disabled={loggingOut}
+        accessibilityRole="button"
+        accessibilityLabel="Log out"
+      >
+        {loggingOut ? (
+          <ActivityIndicator color={colors.frost} />
+        ) : (
+          <Text style={styles.logoutText}>Log out</Text>
+        )}
+      </Pressable>
+
+      <Pressable
         style={[styles.pauseButton, pausing && styles.pauseDisabled]}
         onPress={pauseAllAgents}
         disabled={pausing}
@@ -301,8 +331,8 @@ export default function SettingsScreen() {
           Conversations are stored in your OrbitX account with RLS. Message
           contents are sent to the selected model provider to generate replies.
           OrbitX does not log prompt contents in application logs. Email and
-          phone sign-in create an in-app wallet. Private keys never leave that
-          wallet.
+          phone sign-in create an in-app Privy wallet. Exporting the secret key
+          is handled by Privy. OrbitX never receives or stores that key.
         </Text>
       </View>
     </ScrollView>
@@ -397,6 +427,19 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_400Regular",
     fontSize: 14,
     textTransform: "capitalize",
+  },
+  logoutButton: {
+    marginTop: 16,
+    minHeight: 48,
+    borderRadius: 12,
+    backgroundColor: colors.signal,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  logoutText: {
+    color: colors.void,
+    fontFamily: "Inter_500Medium",
+    fontSize: 15,
   },
   pauseButton: {
     marginTop: 8,

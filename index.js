@@ -1,4 +1,6 @@
+import "fast-text-encoding";
 import "react-native-get-random-values";
+import "@ethersproject/shims";
 import { getRandomValues as expoCryptoGetRandomValues } from "expo-crypto";
 import { Buffer } from "buffer";
 

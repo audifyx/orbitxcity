@@ -10,5 +10,7 @@ export async function connectWithPrivy(): Promise<{
   pubkey: string;
   signature: string;
 }> {
-  throw new Error("Email or phone sign-in is only available on the OrbitX website.");
+  throw new Error(
+    "Use email or phone on this screen. OrbitX signs you in inside the app.",
+  );
 }
