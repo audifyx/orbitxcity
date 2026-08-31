@@ -176,6 +176,39 @@ export async function solAmountForUsd(usd = DEFAULT_BUY_USD): Promise<number> {
   return Number(sol.toFixed(6));
 }
 
+export async function fetchTokenUsdPrice(mint: string): Promise<number> {
+  if (!isSolanaPubkey(mint)) {
+    throw new Error("Enter a valid token mint.");
+  }
+  try {
+    const response = await fetch(
+      `${JUPITER_PRICE_URL}?ids=${encodeURIComponent(mint)}`,
+    );
+    const json: unknown = await response.json().catch(() => null);
+    const data = asRecord(asRecord(json)?.data);
+    const row = data ? asRecord(data[mint]) : null;
+    const price = Number(row?.price);
+    if (response.ok && Number.isFinite(price) && price > 0) {
+      return price;
+    }
+  } catch {
+    // Fall through to the error below.
+  }
+  throw new Error("Could not get a live USD price for this token.");
+}
+
+export async function tokenAmountForUsd(mint: string, usd: number): Promise<number> {
+  if (!Number.isFinite(usd) || usd <= 0) {
+    throw new Error("Enter a USD amount greater than 0.");
+  }
+  const price = await fetchTokenUsdPrice(mint);
+  const amount = usd / price;
+  if (!Number.isFinite(amount) || amount <= 0) {
+    throw new Error("USD amount is too small for this token price.");
+  }
+  return Number(amount.toPrecision(9));
+}
+
 export async function suggestBuySol(wallet: string): Promise<number> {
   const have = await getSolLamports(wallet);
   const spendable = (have - FEE_RESERVE_LAMPORTS) / 1e9;

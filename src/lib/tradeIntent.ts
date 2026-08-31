@@ -6,8 +6,11 @@ export type MarketTradeIntent = {
   kind: "market";
   side: TradeSide;
   mint: string;
+  /** SOL for buys, token units for sells (when not using USD). */
   amount?: number;
   percent?: number;
+  /** Exact USD notional — e.g. buy $1 or sell $1 worth. */
+  amountUsd?: number;
 };
 
 export type LimitTradeIntent = {
@@ -16,6 +19,7 @@ export type LimitTradeIntent = {
   mint: string;
   percent?: number;
   amountSol?: number;
+  amountUsd?: number;
   triggerType: "mcap" | "price";
   triggerValue: number;
 };
@@ -65,6 +69,24 @@ function parseMoneyValue(raw: string): number | undefined {
   return Number.isFinite(value) && value > 0 ? value : undefined;
 }
 
+export function parseUsdAmount(text: string): number | undefined {
+  const patterns = [
+    /\$\s*(\d+(?:\.\d{1,2})?)/,
+    /\b(\d+(?:\.\d{1,2})?)\s*(?:usd|usdc|dollars?)\b/i,
+    /\b(\d+(?:\.\d{1,2})?)\s*\$\b/,
+  ];
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match?.[1]) {
+      const value = parseMoneyValue(match[1]);
+      if (value !== undefined) {
+        return value;
+      }
+    }
+  }
+  return undefined;
+}
+
 function parseSolAmount(text: string): number | undefined {
   const explicit = text.match(/\b(\d+(?:\.\d+)?)\s*sol\b/i);
   if (explicit) {
@@ -102,6 +124,9 @@ export function parseTradeIntent(text: string): TradeIntent | null {
     return null;
   }
 
+  const amountUsd = parseUsdAmount(trimmed);
+  const solAmount = parseSolAmount(trimmed);
+
   const limitMatch = lower.match(
     /(?:when|once|at)\s+(?:the\s+)?(?:mc(?:ap)?|market\s*cap|price)\s+(?:hits?|reaches?|is|at|>=|=>|above|below)\s+([$]?\d[\d.,]*(?:\s*[kmb])?)/i,
   );
@@ -132,37 +157,39 @@ export function parseTradeIntent(text: string): TradeIntent | null {
       };
     }
 
-    const amountSol = parseSolAmount(trimmed);
     return {
       kind: "limit",
       side: "buy",
       mint,
-      amountSol,
+      amountSol: amountUsd ? undefined : solAmount,
+      amountUsd,
       triggerType,
       triggerValue,
     };
   }
 
-  const percentToken = tokens.find(
-    (token) => parsePercentToken(token) !== undefined,
-  );
+  const percentToken = amountUsd
+    ? undefined
+    : tokens.find((token) => parsePercentToken(token) !== undefined);
   const percent = percentToken ? parsePercentToken(percentToken) : undefined;
-  const rawAmount = tokens.find(
-    (token) =>
-      /^\d+(?:\.\d+)?$/.test(token) &&
-      parsePercentToken(token) === undefined,
-  );
-  const amount = rawAmount ? Number(rawAmount) : undefined;
+
+  let amount: number | undefined;
+  if (!amountUsd && !solAmount) {
+    const rawAmount = tokens.find(
+      (token) =>
+        /^\d+(?:\.\d+)?$/.test(token) &&
+        parsePercentToken(token) === undefined,
+    );
+    amount = rawAmount ? Number(rawAmount) : undefined;
+  }
 
   return {
     kind: "market",
     side: isSell ? "sell" : "buy",
     mint,
-    amount:
-      typeof amount === "number" && Number.isFinite(amount) && amount > 0
-        ? amount
-        : undefined,
-    percent,
+    amount: solAmount ?? amount,
+    amountUsd,
+    percent: amountUsd ? undefined : percent,
   };
 }
 
@@ -172,6 +199,7 @@ export function parseInstantTrade(text: string): {
   mint: string;
   amount?: number;
   percent?: number;
+  amountUsd?: number;
 } | null {
   const intent = parseTradeIntent(text);
   if (!intent || intent.kind !== "market") {
@@ -182,5 +210,6 @@ export function parseInstantTrade(text: string): {
     mint: intent.mint,
     amount: intent.amount,
     percent: intent.percent,
+    amountUsd: intent.amountUsd,
   };
 }

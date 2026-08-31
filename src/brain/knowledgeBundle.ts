@@ -62,7 +62,9 @@ IRON LAWS
 
 MOBILE TRADING
 - buy <mint> → Jupiter Ultra (~$0.25 SOL default)
-- sell 50% <mint> · sell all <mint>
+- buy $1 of <mint> · sell $1 of <mint> → exact USD notional (converts to SOL buy or token sell via live price)
+- buy 0.1 sol of <mint> → explicit SOL size
+- sell 50% <mint> · sell all <mint> → percent sells still work when you say a %
 - sell 25% when mcap hits 500k <mint> → limit sell (pending until target)
 - buy 0.1 sol when mcap hits 100k <mint> → limit buy (pending until target)
 - claim my creator fees → pump.fun vault claim, auto-signed

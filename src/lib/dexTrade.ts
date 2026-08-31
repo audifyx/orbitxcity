@@ -9,7 +9,7 @@ import {
 import { getPrivyWalletAddress } from "./privyTx";
 import { getTokenBalance, resolveSellAmount } from "./portfolio";
 import { parseInstantTrade as parseTradeText } from "./tradeIntent";
-import { assertCanAffordBuy, formatSwapError, getSolLamports, instantBuySol } from "./swapGuard";
+import { assertCanAffordBuy, formatSwapError, getSolLamports, instantBuySol, solAmountForUsd, tokenAmountForUsd } from "./swapGuard";
 import { isSolanaPubkey } from "./wallets";
 
 function signingWallet(preferred?: string): string {
@@ -39,6 +39,7 @@ export function parseInstantTrade(text: string): {
   mint: string;
   amount?: number;
   percent?: number;
+  amountUsd?: number;
 } | null {
   return parseTradeText(text);
 }
@@ -49,8 +50,17 @@ export async function resolveTradeAmount(input: {
   mint: string;
   amount?: number;
   percent?: number;
+  amountUsd?: number;
 }): Promise<number> {
   const wallet = signingWallet(input.wallet);
+
+  if (typeof input.amountUsd === "number" && input.amountUsd > 0) {
+    if (input.side === "buy") {
+      return solAmountForUsd(input.amountUsd);
+    }
+    return tokenAmountForUsd(input.mint, input.amountUsd);
+  }
+
   if (input.side === "buy") {
     if (typeof input.amount === "number" && input.amount > 0) {
       return input.amount;

@@ -53,6 +53,7 @@ import { voiceForLimitOrder, voiceForMarketTrade, voiceForClaimFees } from "../l
 import {
   formatSwapError,
   prefetchBuyAmount,
+  solAmountForUsd,
   suggestBuySol,
 } from "../lib/swapGuard";
 import { isSolanaPubkey } from "../lib/wallets";
@@ -315,6 +316,7 @@ export function ChatThread({
       side: "buy" | "sell";
       amount?: number;
       percent?: number;
+      amountUsd?: number;
       card?: MessageCard;
     }) => {
       if (!isSolanaPubkey(input.mint) || input.mint === SOL_MINT) {
@@ -342,6 +344,7 @@ export function ChatThread({
           mint: input.mint,
           amount: input.amount,
           percent: input.percent,
+          amountUsd: input.amountUsd,
         });
       } catch (error) {
         setStorageError(formatSwapError(error));
@@ -354,6 +357,7 @@ export function ChatThread({
         side: input.side,
         phase: "start",
         percent: input.percent,
+        amountUsd: input.amountUsd,
       });
       if (!input.card) {
         setMessages((prev) => [
@@ -372,6 +376,7 @@ export function ChatThread({
                   mint: input.mint,
                   amount,
                   percent: input.percent,
+                  amountUsd: input.amountUsd,
                   route: "Jupiter",
                   compact: true,
                 },
@@ -416,6 +421,7 @@ export function ChatThread({
           side: input.side,
           phase: "success",
           percent: input.percent,
+          amountUsd: input.amountUsd,
           signature: result.signature,
         });
         setMessages((prev) =>
@@ -455,6 +461,7 @@ export function ChatThread({
       side: "buy" | "sell";
       percent?: number;
       amountSol?: number;
+      amountUsd?: number;
       triggerType: "mcap" | "price";
       triggerValue: number;
     }) => {
@@ -463,12 +470,21 @@ export function ChatThread({
         return;
       }
       try {
+        let amountSol = input.amountSol;
+        if (
+          input.side === "buy" &&
+          typeof input.amountUsd === "number" &&
+          input.amountUsd > 0 &&
+          amountSol === undefined
+        ) {
+          amountSol = await solAmountForUsd(input.amountUsd);
+        }
         const order = await createLimitOrder({
           wallet,
           mint: input.mint,
           side: input.side,
           percent: input.percent,
-          amountSol: input.amountSol,
+          amountSol,
           triggerType: input.triggerType,
           triggerValue: input.triggerValue,
         });
@@ -1060,6 +1076,7 @@ export function ChatThread({
           side: intent.side,
           percent: intent.percent,
           amountSol: intent.amountSol,
+          amountUsd: intent.amountUsd,
           triggerType: intent.triggerType,
           triggerValue: intent.triggerValue,
         });
@@ -1070,6 +1087,7 @@ export function ChatThread({
         side: intent.side,
         amount: intent.amount,
         percent: intent.percent,
+        amountUsd: intent.amountUsd,
       });
       return;
     }
@@ -1305,12 +1323,14 @@ export function ChatThread({
       const side = String(card.data.side ?? "buy") === "sell" ? "sell" : "buy";
       const percent =
         typeof card.data.percent === "number" ? card.data.percent : undefined;
+      const amountUsd =
+        typeof card.data.amountUsd === "number" ? card.data.amountUsd : undefined;
       let amount =
         typeof card.data.amount === "number" ? card.data.amount : undefined;
       if (amount === undefined && side === "buy" && typeof card.data.inAmount === "string" && /^\d+$/.test(card.data.inAmount)) {
         amount = Number(card.data.inAmount) / 1e9;
       }
-      await runJupiterTrade({ mint, side, amount, percent, card });
+      await runJupiterTrade({ mint, side, amount, percent, amountUsd, card });
     },
     [runJupiterTrade],
   );

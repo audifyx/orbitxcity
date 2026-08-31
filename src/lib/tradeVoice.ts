@@ -52,14 +52,25 @@ export function voiceForMarketTrade(input: {
   side: "buy" | "sell";
   phase: "start" | "success" | "fail";
   percent?: number;
+  amountUsd?: number;
   signature?: string;
 }): string {
+  const usdLabel =
+    typeof input.amountUsd === "number" && input.amountUsd > 0
+      ? `$${input.amountUsd.toFixed(2)}`
+      : null;
+
   if (input.phase === "fail") {
     return input.side === "sell"
       ? "That sell didn't go through — check your balance and try again."
       : "Buy didn't land — might need more SOL or a smaller size.";
   }
   if (input.phase === "start") {
+    if (usdLabel) {
+      return input.side === "sell"
+        ? `Got you — selling ${usdLabel} worth right now.`
+        : `Got you — buying ${usdLabel} worth right now.`;
+    }
     if (input.side === "sell") {
       const pct =
         typeof input.percent === "number"
