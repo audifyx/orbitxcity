@@ -15,4 +15,5 @@ export * from "./ToolSheet";
 export * from "./PerformancePanel";
 export * from "./SimpleBarChart";
 export * from "./DexChart";
+export * from "./HomeSnapshotBar";
 export * from "./types";

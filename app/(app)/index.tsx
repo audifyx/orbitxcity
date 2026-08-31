@@ -1,6 +1,7 @@
 import { StyleSheet, View } from "react-native";
 import { useLocalSearchParams } from "expo-router";
 
+import { HomeSnapshotBar } from "../../src/components";
 import { ChatThread } from "../../src/screens/ChatThread";
 import { colors } from "../../src/theme";
 
@@ -11,6 +12,7 @@ export default function HomeScreen() {
 
   return (
     <View style={styles.root}>
+      <HomeSnapshotBar />
       <ChatThread initialContext={initialContext} page="home" />
     </View>
   );
