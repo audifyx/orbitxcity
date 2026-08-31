@@ -7,6 +7,10 @@ const WSOL_MINT = "So11111111111111111111111111111111111111112";
 const TOKEN_PROGRAM = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
 const TOKEN_2022_PROGRAM = "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb";
 const JUPITER_PRICE_URL = "https://lite-api.jup.ag/price/v2";
+const ORBITX_WALLET_API = "https://www.orbitx.world/api/ogdex/wallet";
+const RPC_ENDPOINTS = Array.from(
+  new Set([solanaRpcUrl, "https://api.mainnet-beta.solana.com"]),
+);
 
 const KNOWN_SYMBOLS: Record<string, string> = {
   [WSOL_MINT]: "SOL",
@@ -74,24 +78,93 @@ function asFiniteNumber(value: unknown): number | undefined {
 }
 
 async function solanaRpc<T>(method: string, params: unknown[]): Promise<T> {
-  const response = await fetch(solanaRpcUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      jsonrpc: "2.0",
-      id: 1,
-      method,
-      params,
-    }),
-  });
-  const json = (await response.json()) as RpcEnvelope<T>;
-  if (!response.ok || json.error) {
-    throw new Error(json.error?.message ?? `Solana RPC ${method} failed.`);
+  let lastError: Error | null = null;
+  for (const url of RPC_ENDPOINTS) {
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method,
+          params,
+        }),
+      });
+      const json = (await response.json()) as RpcEnvelope<T>;
+      if (!response.ok || json.error) {
+        throw new Error(
+          json.error?.message ?? `Solana RPC ${method} failed (${response.status}).`,
+        );
+      }
+      if (json.result === undefined) {
+        throw new Error(`Solana RPC ${method} returned no result.`);
+      }
+      return json.result;
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+    }
   }
-  if (json.result === undefined) {
-    throw new Error(`Solana RPC ${method} returned no result.`);
+  throw lastError ?? new Error(`Solana RPC ${method} failed.`);
+}
+
+async function fetchTokenBalancesFromRpc(
+  wallet: string,
+): Promise<Map<string, number>> {
+  const [spl, token2022] = await Promise.all([
+    solanaRpc<unknown>("getParsedTokenAccountsByOwner", [
+      wallet,
+      { programId: TOKEN_PROGRAM },
+      { encoding: "jsonParsed" },
+    ]).catch(() => ({ value: [] })),
+    solanaRpc<unknown>("getParsedTokenAccountsByOwner", [
+      wallet,
+      { programId: TOKEN_2022_PROGRAM },
+      { encoding: "jsonParsed" },
+    ]).catch(() => ({ value: [] })),
+  ]);
+
+  const merged = new Map<string, number>();
+  for (const token of [
+    ...parseTokenAccounts(spl),
+    ...parseTokenAccounts(token2022),
+  ]) {
+    merged.set(token.mint, (merged.get(token.mint) ?? 0) + token.balance);
   }
-  return json.result;
+  return merged;
+}
+
+async function fetchOrbitxTokenBalance(
+  wallet: string,
+  mint: string,
+): Promise<number | null> {
+  try {
+    const response = await fetch(
+      `${ORBITX_WALLET_API}?address=${encodeURIComponent(wallet)}`,
+    );
+    if (!response.ok) {
+      return null;
+    }
+    const json = asRecord(await response.json());
+    if (!json || json.ok !== true) {
+      return null;
+    }
+    const holdings = Array.isArray(json.holdings) ? json.holdings : [];
+    for (const item of holdings) {
+      const row = asRecord(item);
+      if (!row || row.mint !== mint) {
+        continue;
+      }
+      const balance =
+        asFiniteNumber(row.uiAmount) ?? asFiniteNumber(row.balance);
+      if (balance !== undefined) {
+        return balance;
+      }
+    }
+    return 0;
+  } catch {
+    return null;
+  }
 }
 
 function parseTokenAccounts(value: unknown): PortfolioToken[] {
@@ -130,26 +203,23 @@ export async function getTokenBalance(wallet: string, mint: string): Promise<num
   if (!isSolanaPubkey(wallet) || !isSolanaPubkey(mint)) {
     return 0;
   }
-  const [spl, token2022] = await Promise.all([
-    solanaRpc<unknown>("getParsedTokenAccountsByOwner", [
-      wallet,
-      { mint },
-      { encoding: "jsonParsed" },
-    ]).catch(() => ({ value: [] })),
-    solanaRpc<unknown>("getParsedTokenAccountsByOwner", [
-      wallet,
-      { programId: TOKEN_2022_PROGRAM },
-      { encoding: "jsonParsed" },
-    ]).catch(() => ({ value: [] })),
-  ]);
 
-  let total = 0;
-  for (const token of [...parseTokenAccounts(spl), ...parseTokenAccounts(token2022)]) {
-    if (token.mint === mint) {
-      total += token.balance;
+  try {
+    const balances = await fetchTokenBalancesFromRpc(wallet);
+    const fromRpc = balances.get(mint) ?? 0;
+    if (fromRpc > 0) {
+      return fromRpc;
     }
+  } catch {
+    // Fall through to OrbitX wallet API.
   }
-  return total;
+
+  const fromOrbitx = await fetchOrbitxTokenBalance(wallet, mint);
+  if (fromOrbitx !== null) {
+    return fromOrbitx;
+  }
+
+  return 0;
 }
 
 export async function resolveSellAmount(
@@ -162,18 +232,6 @@ export async function resolveSellAmount(
     throw new Error("You do not hold this token.");
   }
 
-  if (typeof input.percent === "number" && Number.isFinite(input.percent)) {
-    const pct = Math.min(Math.max(input.percent, 0), 100);
-    if (pct <= 0) {
-      throw new Error("Enter a sell percent greater than 0.");
-    }
-    const amount = balance * (pct / 100);
-    if (amount <= 0) {
-      throw new Error("Sell amount is too small.");
-    }
-    return Number(amount.toPrecision(9));
-  }
-
   if (typeof input.amount === "number" && Number.isFinite(input.amount) && input.amount > 0) {
     if (input.amount > balance) {
       throw new Error(
@@ -183,7 +241,22 @@ export async function resolveSellAmount(
     return input.amount;
   }
 
-  return Number(balance.toPrecision(9));
+  if (typeof input.percent === "number" && Number.isFinite(input.percent)) {
+    const pct = Math.min(Math.max(input.percent, 0), 100);
+    if (pct <= 0) {
+      throw new Error("Enter a sell percent greater than 0.");
+    }
+    let amount = balance * (pct / 100);
+    if (pct >= 99.99) {
+      amount = balance * 0.9999;
+    }
+    if (amount <= 0) {
+      throw new Error("Sell amount is too small.");
+    }
+    return Number(amount.toPrecision(9));
+  }
+
+  return Number((balance * 0.9999).toPrecision(9));
 }
 
 async function fetchTokenPrices(
@@ -252,18 +325,9 @@ function sortTokens(tokens: PortfolioToken[]): PortfolioToken[] {
 }
 
 async function fetchRpcPortfolio(wallet: string): Promise<WalletSnapshot> {
-  const [balance, spl, token2022] = await Promise.all([
+  const [balance, balances] = await Promise.all([
     solanaRpc<{ value: number }>("getBalance", [wallet]),
-    solanaRpc<unknown>("getParsedTokenAccountsByOwner", [
-      wallet,
-      { programId: TOKEN_PROGRAM },
-      { encoding: "jsonParsed" },
-    ]).catch(() => ({ value: [] })),
-    solanaRpc<unknown>("getParsedTokenAccountsByOwner", [
-      wallet,
-      { programId: TOKEN_2022_PROGRAM },
-      { encoding: "jsonParsed" },
-    ]).catch(() => ({ value: [] })),
+    fetchTokenBalancesFromRpc(wallet),
   ]);
 
   const solBalance = asFiniteNumber(balance.value);
@@ -271,20 +335,11 @@ async function fetchRpcPortfolio(wallet: string): Promise<WalletSnapshot> {
     throw new Error("Solana RPC did not return a SOL balance.");
   }
 
-  const merged = new Map<string, PortfolioToken>();
-  for (const token of [
-    ...parseTokenAccounts(spl),
-    ...parseTokenAccounts(token2022),
-  ]) {
-    const existing = merged.get(token.mint);
-    if (existing) {
-      existing.balance += token.balance;
-    } else {
-      merged.set(token.mint, { ...token });
-    }
-  }
-
-  const tokens = [...merged.values()];
+  const tokens: PortfolioToken[] = [...balances.entries()].map(([mint, tokenBalance]) => ({
+    mint,
+    symbol: KNOWN_SYMBOLS[mint] ?? `${mint.slice(0, 4)}…${mint.slice(-4)}`,
+    balance: tokenBalance,
+  }));
   const prices = await fetchTokenPrices([WSOL_MINT, ...tokens.map((t) => t.mint)]);
   const priced = applyPrices(tokens, prices);
   const solUsd =

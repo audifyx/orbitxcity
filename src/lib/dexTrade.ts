@@ -50,16 +50,27 @@ export async function resolveTradeAmount(input: {
   amount?: number;
   percent?: number;
 }): Promise<number> {
+  const wallet = signingWallet(input.wallet);
   if (input.side === "buy") {
     if (typeof input.amount === "number" && input.amount > 0) {
       return input.amount;
     }
     return instantBuySol();
   }
-  return resolveSellAmount(input.wallet, input.mint, {
-    amount: input.amount,
-    percent: input.percent ?? 100,
-  });
+
+  const sellInput: { amount?: number; percent?: number } = {};
+  if (typeof input.amount === "number" && Number.isFinite(input.amount) && input.amount > 0) {
+    sellInput.amount = input.amount;
+  } else if (
+    typeof input.percent === "number" &&
+    Number.isFinite(input.percent)
+  ) {
+    sellInput.percent = input.percent;
+  } else {
+    sellInput.percent = 100;
+  }
+
+  return resolveSellAmount(wallet, input.mint, sellInput);
 }
 
 export async function quoteDexSwap(input: {
@@ -111,29 +122,34 @@ export async function executeDexSwap(input: {
 
   const inputMint = input.side === "buy" ? SOL_MINT : mint;
   const outputMint = input.side === "buy" ? mint : SOL_MINT;
-  const amountRaw =
-    input.side === "buy"
-      ? uiAmountToRaw(input.amount, 9)
-      : uiAmountToRaw(input.amount, await getMintDecimals(mint));
 
   try {
+    let amountRaw: string;
     if (input.side === "buy") {
       await assertCanAffordBuy(wallet, input.amount);
+      amountRaw = uiAmountToRaw(input.amount, 9);
     } else {
       const balance = await getTokenBalance(wallet, mint);
       if (balance <= 0) {
         throw new Error("You do not hold this token.");
       }
-      if (input.amount > balance) {
+      let sellAmount = input.amount;
+      if (sellAmount > balance) {
         throw new Error(
-          `Not enough tokens. You hold ${balance.toPrecision(6)} but tried to sell ${input.amount}.`,
+          `Not enough tokens. You hold ${balance.toPrecision(6)} but tried to sell ${sellAmount}.`,
         );
+      }
+      if (sellAmount >= balance * 0.999) {
+        sellAmount = balance * 0.9999;
       }
       const sol = await getSolLamports(wallet);
       if (sol < 2_000_000) {
         throw new Error("Not enough SOL for sell fees. Keep a little SOL in the wallet.");
       }
+      const decimals = await getMintDecimals(mint);
+      amountRaw = uiAmountToRaw(sellAmount, decimals);
     }
+
     const result = await executeJupiterSwap({
       inputMint,
       outputMint,
