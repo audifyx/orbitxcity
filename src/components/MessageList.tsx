@@ -10,6 +10,8 @@ import {
 } from "react-native";
 
 import { CreateCard } from "./CreateCard";
+import { ClaimCard } from "./ClaimCard";
+import { OrbitXMark } from "./OrbitXMark";
 import { OrderCard, type OrderCardStatus } from "./OrderCard";
 import { TokenCard } from "./TokenCard";
 import { ToolProgress } from "./ToolProgress";
@@ -31,6 +33,8 @@ export type MessageListProps = {
   onSellToken?: (mint: string) => void;
   onOpenCreate?: (kind: "launch" | "nft", card: MessageCard) => void;
   onApproveCreate?: (kind: "launch" | "nft", card: MessageCard) => void;
+  onClaimFees?: (card: MessageCard) => void;
+  onBuyNft?: (card: MessageCard) => void;
 };
 
 type InlineSegment = {
@@ -198,6 +202,8 @@ function MessageCardView({
   onOpenCreate,
   onApproveCreate,
   onOpenOrders,
+  onClaimFees,
+  onBuyNft,
 }: {
   card: MessageCard;
   onConfirmTx?: (card: MessageCard) => void;
@@ -208,6 +214,8 @@ function MessageCardView({
   onOpenCreate?: (kind: "launch" | "nft", card: MessageCard) => void;
   onApproveCreate?: (kind: "launch" | "nft", card: MessageCard) => void;
   onOpenOrders?: () => void;
+  onClaimFees?: (card: MessageCard) => void;
+  onBuyNft?: (card: MessageCard) => void;
 }) {
   if (card.kind === "token") {
     const mint = String(card.data.mint ?? "");
@@ -250,10 +258,74 @@ function MessageCardView({
     );
   }
 
+  if (card.kind === "claim") {
+    const status = String(card.data.status ?? "preview");
+    return (
+      <ClaimCard
+        claimableSol={
+          typeof card.data.claimableSol === "number"
+            ? card.data.claimableSol
+            : undefined
+        }
+        status={
+          status === "claiming" ||
+          status === "confirmed" ||
+          status === "failed"
+            ? status
+            : "preview"
+        }
+        signature={String(card.data.signature ?? "") || undefined}
+        onClaim={
+          status === "preview" ? () => onClaimFees?.(card) : undefined
+        }
+      />
+    );
+  }
+
+  if (card.kind === "nft_buy") {
+    const status = String(card.data.status ?? "preview");
+    return (
+      <View style={styles.genericCard}>
+        <Text style={styles.genericCardKind}>NFT BUY</Text>
+        <Text style={styles.genericCardTitle}>
+          {String(card.data.name ?? card.title)}
+        </Text>
+        <Text style={styles.nftBuyMeta}>
+          {typeof card.data.priceSol === "number"
+            ? `${card.data.priceSol} SOL`
+            : "Listed NFT"}
+        </Text>
+        {status === "preview" && onBuyNft ? (
+          <Pressable
+            style={({ pressed }) => [
+              styles.nftBuyButton,
+              pressed && styles.actionPressed,
+            ]}
+            onPress={() => onBuyNft(card)}
+            accessibilityRole="button"
+          >
+            <Text style={styles.nftBuyButtonText}>Buy with OrbitX wallet</Text>
+          </Pressable>
+        ) : null}
+        {status === "confirmed" ? (
+          <Text style={styles.nftBuySuccess}>Purchased on chain.</Text>
+        ) : null}
+      </View>
+    );
+  }
+
   if (card.kind === "order") {
     return (
       <OrderCard
-        percent={Number(card.data.percent ?? 0)}
+        side={String(card.data.side) === "buy" ? "buy" : "sell"}
+        percent={
+          typeof card.data.percent === "number" ? card.data.percent : undefined
+        }
+        amountSol={
+          typeof card.data.amountSol === "number"
+            ? card.data.amountSol
+            : undefined
+        }
         triggerType={
           String(card.data.triggerType) === "price" ? "price" : "mcap"
         }
@@ -338,6 +410,8 @@ type MessageItemProps = {
   onOpenCreate?: (kind: "launch" | "nft", card: MessageCard) => void;
   onApproveCreate?: (kind: "launch" | "nft", card: MessageCard) => void;
   onOpenOrders?: () => void;
+  onClaimFees?: (card: MessageCard) => void;
+  onBuyNft?: (card: MessageCard) => void;
 };
 
 function MessageItem({
@@ -352,6 +426,8 @@ function MessageItem({
   onOpenCreate,
   onApproveCreate,
   onOpenOrders,
+  onClaimFees,
+  onBuyNft,
 }: MessageItemProps) {
   const [copied, setCopied] = useState(false);
   const blocks = parseMarkdown(message.content);
@@ -379,8 +455,14 @@ function MessageItem({
     <View style={[styles.messageWrap, isUser && styles.messageWrapUser]}>
       {!isUser ? (
         <View style={styles.agentRow}>
+          <View style={styles.agentAvatar}>
+            <OrbitXMark size={16} />
+          </View>
+          <View style={styles.agentMeta}>
+            <Text style={styles.agentKicker}>ORBITX CORE</Text>
+            <Text style={styles.agentSub}>Auto-sign · Jupiter · pump.fun</Text>
+          </View>
           <View style={styles.agentPulse} />
-          <Text style={styles.agentKicker}>ORBITX CORE</Text>
         </View>
       ) : null}
       <View style={[styles.bubble, isUser ? styles.bubbleUser : styles.bubbleAssistant]}>
@@ -430,6 +512,8 @@ function MessageItem({
               onOpenCreate={onOpenCreate}
               onApproveCreate={onApproveCreate}
               onOpenOrders={onOpenOrders}
+              onClaimFees={onClaimFees}
+              onBuyNft={onBuyNft}
             />
           </View>
         ))}
@@ -472,6 +556,8 @@ export function MessageList({
   onSellToken,
   onOpenCreate,
   onApproveCreate,
+  onClaimFees,
+  onBuyNft,
 }: MessageListProps) {
   const router = useRouter();
   const openOrders = () => router.push("/orders");
@@ -498,6 +584,8 @@ export function MessageList({
           onOpenCreate={onOpenCreate}
           onApproveCreate={onApproveCreate}
           onOpenOrders={openOrders}
+          onClaimFees={onClaimFees}
+          onBuyNft={onBuyNft}
         />
       )}
     />
@@ -521,20 +609,40 @@ const styles = StyleSheet.create({
   agentRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
+    gap: 10,
     paddingLeft: 2,
+    marginBottom: 2,
+  },
+  agentAvatar: {
+    width: 30,
+    height: 30,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(126, 182, 255, 0.1)",
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "rgba(126, 182, 255, 0.24)",
+  },
+  agentMeta: {
+    flex: 1,
+    gap: 1,
   },
   agentPulse: {
     width: 7,
     height: 7,
     borderRadius: 4,
-    backgroundColor: colors.signal,
+    backgroundColor: colors.success,
   },
   agentKicker: {
     color: colors.signal,
-    fontFamily: "Inter_500Medium",
+    fontFamily: "Inter_600SemiBold",
     fontSize: 10,
-    letterSpacing: 2.8,
+    letterSpacing: 2.4,
+  },
+  agentSub: {
+    color: colors.dim,
+    fontFamily: "Inter_400Regular",
+    fontSize: 10,
   },
   bubble: {
     width: "100%",
@@ -553,10 +661,15 @@ const styles = StyleSheet.create({
   },
   bubbleAssistant: {
     alignSelf: "stretch",
-    backgroundColor: "rgba(6, 8, 14, 0.96)",
-    borderColor: "rgba(126, 182, 255, 0.18)",
-    borderLeftWidth: 2,
+    backgroundColor: "rgba(4, 7, 14, 0.98)",
+    borderColor: "rgba(126, 182, 255, 0.2)",
+    borderLeftWidth: 3,
     borderLeftColor: colors.signal,
+    shadowColor: colors.signal,
+    shadowOpacity: 0.08,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 2,
   },
   paragraph: {
     marginBottom: 8,
@@ -663,5 +776,30 @@ const styles = StyleSheet.create({
     color: colors.frost,
     fontFamily: "Inter_500Medium",
     fontSize: 14,
+  },
+  nftBuyMeta: {
+    color: colors.mist,
+    fontFamily: "Inter_400Regular",
+    fontSize: 13,
+  },
+  nftBuyButton: {
+    marginTop: 8,
+    alignSelf: "flex-start",
+    minHeight: 34,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    justifyContent: "center",
+    backgroundColor: colors.signal,
+  },
+  nftBuyButtonText: {
+    color: colors.void,
+    fontFamily: "Inter_600SemiBold",
+    fontSize: 12,
+  },
+  nftBuySuccess: {
+    marginTop: 6,
+    color: colors.success,
+    fontFamily: "Inter_500Medium",
+    fontSize: 12,
   },
 });

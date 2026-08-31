@@ -12,8 +12,10 @@ export type MarketTradeIntent = {
 
 export type LimitTradeIntent = {
   kind: "limit";
+  side: TradeSide;
   mint: string;
-  percent: number;
+  percent?: number;
+  amountSol?: number;
   triggerType: "mcap" | "price";
   triggerValue: number;
 };
@@ -63,6 +65,20 @@ function parseMoneyValue(raw: string): number | undefined {
   return Number.isFinite(value) && value > 0 ? value : undefined;
 }
 
+function parseSolAmount(text: string): number | undefined {
+  const explicit = text.match(/\b(\d+(?:\.\d+)?)\s*sol\b/i);
+  if (explicit) {
+    const value = Number(explicit[1]);
+    return Number.isFinite(value) && value > 0 ? value : undefined;
+  }
+  const withClause = text.match(/\bwith\s+(\d+(?:\.\d+)?)\s*sol\b/i);
+  if (withClause) {
+    const value = Number(withClause[1]);
+    return Number.isFinite(value) && value > 0 ? value : undefined;
+  }
+  return undefined;
+}
+
 function findMint(tokens: string[]): string | undefined {
   return tokens.find((token) => isSolanaPubkey(token));
 }
@@ -87,28 +103,49 @@ export function parseTradeIntent(text: string): TradeIntent | null {
   }
 
   const limitMatch = lower.match(
-    /(?:when|once|at)\s+(?:the\s+)?(?:mc(?:ap)?|market\s*cap|price)\s+(?:hits?|reaches?|is|at|>=|=>|above)\s+([$]?\d[\d.,]*(?:\s*[kmb])?)/i,
+    /(?:when|once|at)\s+(?:the\s+)?(?:mc(?:ap)?|market\s*cap|price)\s+(?:hits?|reaches?|is|at|>=|=>|above|below)\s+([$]?\d[\d.,]*(?:\s*[kmb])?)/i,
   );
-  if (isSell && limitMatch) {
-    const percentToken = tokens.find((token) => parsePercentToken(token) !== undefined);
-    const percent = percentToken ? parsePercentToken(percentToken) : 100;
+  if (limitMatch) {
     const triggerRaw = limitMatch[1] ?? "";
     const triggerValue = parseMoneyValue(triggerRaw);
-    if (percent === undefined || triggerValue === undefined) {
+    if (triggerValue === undefined) {
       return null;
     }
     const triggerType =
       /mc(?:ap)?|market\s*cap/i.test(limitMatch[0]) ? "mcap" : "price";
+
+    if (isSell) {
+      const percentToken = tokens.find(
+        (token) => parsePercentToken(token) !== undefined,
+      );
+      const percent = percentToken ? parsePercentToken(percentToken) : 100;
+      if (percent === undefined) {
+        return null;
+      }
+      return {
+        kind: "limit",
+        side: "sell",
+        mint,
+        percent,
+        triggerType,
+        triggerValue,
+      };
+    }
+
+    const amountSol = parseSolAmount(trimmed);
     return {
       kind: "limit",
+      side: "buy",
       mint,
-      percent,
+      amountSol,
       triggerType,
       triggerValue,
     };
   }
 
-  const percentToken = tokens.find((token) => parsePercentToken(token) !== undefined);
+  const percentToken = tokens.find(
+    (token) => parsePercentToken(token) !== undefined,
+  );
   const percent = percentToken ? parsePercentToken(percentToken) : undefined;
   const rawAmount = tokens.find(
     (token) =>

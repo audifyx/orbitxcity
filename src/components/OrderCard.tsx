@@ -10,7 +10,9 @@ export type OrderCardStatus =
   | "cancelled";
 
 export type OrderCardProps = {
-  percent: number;
+  side?: "buy" | "sell";
+  percent?: number;
+  amountSol?: number;
   triggerType: "mcap" | "price";
   triggerValue: number;
   symbol?: string;
@@ -56,8 +58,31 @@ function formatTarget(type: "mcap" | "price", value: number): string {
   return `$${value}`;
 }
 
+function describeOrder(props: {
+  side?: "buy" | "sell";
+  percent?: number;
+  amountSol?: number;
+  triggerType: "mcap" | "price";
+  triggerValue: number;
+  symbol?: string;
+}): string {
+  const label = props.symbol ? props.symbol : "token";
+  const target = formatTarget(props.triggerType, props.triggerValue);
+  if (props.side === "buy") {
+    const size =
+      typeof props.amountSol === "number"
+        ? `${props.amountSol} SOL`
+        : "a SOL slice";
+    return `Limit buy ${size} of ${label} when ${target} hits.`;
+  }
+  const pct = props.percent ?? 100;
+  return `Limit sell ${pct}% of ${label} when ${target} hits.`;
+}
+
 export function OrderCard({
+  side = "sell",
   percent,
+  amountSol,
   triggerType,
   triggerValue,
   symbol,
@@ -66,14 +91,28 @@ export function OrderCard({
   onCancel,
   onOpenDashboard,
 }: OrderCardProps) {
-  const label = symbol ? symbol : "token";
   const canCancel = status === "pending" && onCancel;
 
   return (
     <View style={styles.root}>
-      <Text style={styles.line}>
-        Limit sell {percent}% of {label} when {formatTarget(triggerType, triggerValue)} hits.
-      </Text>
+      <View style={styles.headerRow}>
+        <View
+          style={[
+            styles.sideBadge,
+            side === "buy" ? styles.sideBuy : styles.sideSell,
+          ]}
+        >
+          <Text
+            style={[
+              styles.sideText,
+              side === "buy" ? styles.sideTextBuy : styles.sideTextSell,
+            ]}
+          >
+            {side === "buy" ? "BUY" : "SELL"}
+          </Text>
+        </View>
+        <Text style={styles.line}>{describeOrder({ side, percent, amountSol, triggerType, triggerValue, symbol })}</Text>
+      </View>
       <View style={styles.metaRow}>
         <View style={[styles.badge, { borderColor: statusColor(status) }]}>
           <View style={[styles.dot, { backgroundColor: statusColor(status) }]} />
@@ -112,6 +151,32 @@ const styles = StyleSheet.create({
     marginTop: 8,
     gap: 8,
     paddingLeft: 2,
+  },
+  headerRow: {
+    gap: 8,
+  },
+  sideBadge: {
+    alignSelf: "flex-start",
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  sideBuy: {
+    backgroundColor: "rgba(72, 214, 154, 0.14)",
+  },
+  sideSell: {
+    backgroundColor: "rgba(255, 120, 120, 0.12)",
+  },
+  sideText: {
+    fontFamily: "Inter_600SemiBold",
+    fontSize: 10,
+    letterSpacing: 1.4,
+  },
+  sideTextBuy: {
+    color: colors.success,
+  },
+  sideTextSell: {
+    color: colors.danger,
   },
   line: {
     color: colors.mist,

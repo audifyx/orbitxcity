@@ -26,6 +26,7 @@ const ROUTE_MAP: Record<NavRoute, string> = {
   home: "/",
   trending: "/trending",
   wallet: "/wallet",
+  orders: "/orders",
   tools: "/tools",
   agents: "/agents",
   activity: "/activity",

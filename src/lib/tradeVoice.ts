@@ -26,10 +26,22 @@ const BUY_PLACE = [
   "Copy — opening the position now.",
 ];
 
-const LIMIT_SET = [
-  "Limit order armed. I'll sell when your target hits — nothing moves until then.",
-  "Got it — that's sitting on the limit desk as pending until price hits.",
-  "Limit set. I'll watch the chart and pull the trigger when it's time.",
+const LIMIT_SET_SELL = [
+  "Limit sell armed. I'll fire when your target hits — nothing moves until then.",
+  "Got it — that's on the limit desk as a pending sell until price hits.",
+  "Sell limit set. I'll watch the chart and pull the trigger when it's time.",
+];
+
+const LIMIT_SET_BUY = [
+  "Limit buy armed. I'll scoop when your target hits — sitting on the desk until then.",
+  "Got it — buy order is pending on the limit desk until mcap or price hits.",
+  "Buy limit set. I'll watch for your entry and auto-sign when it's time.",
+];
+
+const CLAIM_WIN = [
+  "Fees claimed — creator bag secured. That's yours.",
+  "Done. Creator fees are in your wallet now.",
+  "Claimed. Clean pull from the pump vault.",
 ];
 
 function pick<T>(list: T[]): T {
@@ -62,13 +74,37 @@ export function voiceForMarketTrade(input: {
 
 export function voiceForLimitOrder(order: LimitOrder, phase: "create" | "fill"): string {
   if (phase === "fill") {
-    return `Target hit — sold ${order.percent}% and it's on chain. Let's go.`;
+    if (order.side === "buy") {
+      const size =
+        typeof order.amountSol === "number"
+          ? `${order.amountSol} SOL`
+          : "your size";
+      return `Target hit — bought ${size} and it's on chain. Let's go.`;
+    }
+    return `Target hit — sold ${order.percent ?? 100}% and it's on chain. Let's go.`;
   }
   const target =
     order.triggerType === "mcap"
       ? `mcap $${formatCompact(order.triggerValue)}`
       : `price $${order.triggerValue}`;
-  return `${pick(LIMIT_SET)} (${order.percent}% when ${target})`;
+  if (order.side === "buy") {
+    const size =
+      typeof order.amountSol === "number"
+        ? `${order.amountSol} SOL`
+        : "a SOL slice";
+    return `${pick(LIMIT_SET_BUY)} (${size} when ${target})`;
+  }
+  return `${pick(LIMIT_SET_SELL)} (${order.percent ?? 100}% when ${target})`;
+}
+
+export function voiceForClaimFees(phase: "start" | "success" | "fail"): string {
+  if (phase === "fail") {
+    return "Couldn't claim fees right now — vault might be empty or the network hiccuped.";
+  }
+  if (phase === "start") {
+    return "On it — claiming your pump.fun creator fees with your OrbitX wallet.";
+  }
+  return pick(CLAIM_WIN);
 }
 
 function formatCompact(value: number): string {

@@ -1,6 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { executeDexSwap } from "./dexTrade";
 import { getTokenBalance, resolveSellAmount } from "./portfolio";
+import { instantBuySol } from "./swapGuard";
 import { isSolanaPubkey } from "./wallets";
 
 const STORAGE_KEY = "orbitx-limit-orders";
@@ -14,12 +15,16 @@ export type LimitOrderStatus =
   | "failed"
   | "cancelled";
 
+export type LimitOrderSide = "buy" | "sell";
+
 export type LimitOrder = {
   id: string;
   wallet: string;
   mint: string;
   symbol?: string;
-  percent: number;
+  side: LimitOrderSide;
+  percent?: number;
+  amountSol?: number;
   triggerType: "mcap" | "price";
   triggerValue: number;
   status: LimitOrderStatus;
@@ -53,6 +58,46 @@ function notify(orders: LimitOrder[]): void {
   }
 }
 
+function normalizeOrder(raw: Record<string, unknown>): LimitOrder | null {
+  if (
+    typeof raw.id !== "string" ||
+    typeof raw.wallet !== "string" ||
+    typeof raw.mint !== "string" ||
+    (raw.triggerType !== "mcap" && raw.triggerType !== "price") ||
+    typeof raw.triggerValue !== "number"
+  ) {
+    return null;
+  }
+
+  const side: LimitOrderSide = raw.side === "buy" ? "buy" : "sell";
+  const percent =
+    typeof raw.percent === "number" ? raw.percent : side === "sell" ? 100 : undefined;
+  const amountSol =
+    typeof raw.amountSol === "number" ? raw.amountSol : undefined;
+
+  if (side === "sell" && (percent === undefined || percent <= 0 || percent > 100)) {
+    return null;
+  }
+
+  return {
+    id: raw.id,
+    wallet: raw.wallet,
+    mint: raw.mint,
+    symbol: typeof raw.symbol === "string" ? raw.symbol : undefined,
+    side,
+    percent,
+    amountSol,
+    triggerType: raw.triggerType,
+    triggerValue: raw.triggerValue,
+    status: (raw.status as LimitOrderStatus) ?? "pending",
+    createdAt: typeof raw.createdAt === "number" ? raw.createdAt : Date.now(),
+    triggeredAt:
+      typeof raw.triggeredAt === "number" ? raw.triggeredAt : undefined,
+    signature: typeof raw.signature === "string" ? raw.signature : undefined,
+    error: typeof raw.error === "string" ? raw.error : undefined,
+  };
+}
+
 async function readAll(): Promise<LimitOrder[]> {
   try {
     const raw = await AsyncStorage.getItem(STORAGE_KEY);
@@ -63,20 +108,12 @@ async function readAll(): Promise<LimitOrder[]> {
     if (!Array.isArray(parsed)) {
       return [];
     }
-    return parsed.filter((item): item is LimitOrder => {
-      const rec = asRecord(item);
-      if (!rec) {
-        return false;
-      }
-      return (
-        typeof rec.id === "string" &&
-        typeof rec.wallet === "string" &&
-        typeof rec.mint === "string" &&
-        typeof rec.percent === "number" &&
-        (rec.triggerType === "mcap" || rec.triggerType === "price") &&
-        typeof rec.triggerValue === "number"
-      );
-    });
+    return parsed
+      .map((item) => {
+        const rec = asRecord(item);
+        return rec ? normalizeOrder(rec) : null;
+      })
+      .filter((item): item is LimitOrder => item !== null);
   } catch {
     return [];
   }
@@ -106,7 +143,9 @@ export async function listLimitOrders(wallet?: string): Promise<LimitOrder[]> {
 export async function createLimitOrder(input: {
   wallet: string;
   mint: string;
-  percent: number;
+  side: LimitOrderSide;
+  percent?: number;
+  amountSol?: number;
   triggerType: "mcap" | "price";
   triggerValue: number;
   symbol?: string;
@@ -114,16 +153,24 @@ export async function createLimitOrder(input: {
   if (!isSolanaPubkey(input.wallet) || !isSolanaPubkey(input.mint)) {
     throw new Error("Sign in before placing a limit order.");
   }
-  if (!Number.isFinite(input.percent) || input.percent <= 0 || input.percent > 100) {
-    throw new Error("Enter a sell percent between 1 and 100.");
-  }
   if (!Number.isFinite(input.triggerValue) || input.triggerValue <= 0) {
     throw new Error("Enter a valid target price or market cap.");
   }
 
-  const balance = await getTokenBalance(input.wallet, input.mint);
-  if (balance <= 0) {
-    throw new Error("You do not hold this token — nothing to sell.");
+  if (input.side === "sell") {
+    const percent = input.percent ?? 100;
+    if (!Number.isFinite(percent) || percent <= 0 || percent > 100) {
+      throw new Error("Enter a sell percent between 1 and 100.");
+    }
+    const balance = await getTokenBalance(input.wallet, input.mint);
+    if (balance <= 0) {
+      throw new Error("You do not hold this token — nothing to sell.");
+    }
+  } else {
+    const amountSol = input.amountSol ?? (await instantBuySol());
+    if (!Number.isFinite(amountSol) || amountSol <= 0) {
+      throw new Error("Enter a buy size in SOL.");
+    }
   }
 
   const order: LimitOrder = {
@@ -131,7 +178,12 @@ export async function createLimitOrder(input: {
     wallet: input.wallet,
     mint: input.mint,
     symbol: input.symbol,
-    percent: input.percent,
+    side: input.side,
+    percent: input.side === "sell" ? (input.percent ?? 100) : undefined,
+    amountSol:
+      input.side === "buy"
+        ? (input.amountSol ?? (await instantBuySol()))
+        : undefined,
     triggerType: input.triggerType,
     triggerValue: input.triggerValue,
     status: "pending",
@@ -211,9 +263,25 @@ function isTriggered(order: LimitOrder, market: TokenMarket): boolean {
   return typeof market.mcap === "number" && market.mcap >= order.triggerValue;
 }
 
-async function executeLimitSell(order: LimitOrder): Promise<LimitOrder> {
+async function executeLimitOrder(order: LimitOrder): Promise<LimitOrder> {
+  if (order.side === "buy") {
+    const amount = order.amountSol ?? (await instantBuySol());
+    const result = await executeDexSwap({
+      wallet: order.wallet,
+      side: "buy",
+      mint: order.mint,
+      amount,
+    });
+    return {
+      ...order,
+      status: "confirmed",
+      triggeredAt: Date.now(),
+      signature: result.signature,
+    };
+  }
+
   const amount = await resolveSellAmount(order.wallet, order.mint, {
-    percent: order.percent,
+    percent: order.percent ?? 100,
   });
   const result = await executeDexSwap({
     wallet: order.wallet,
@@ -260,7 +328,7 @@ async function tick(wallet: string): Promise<void> {
       next.push(triggered);
 
       try {
-        const filled = await executeLimitSell(triggered);
+        const filled = await executeLimitOrder(triggered);
         changed = true;
         next[next.length - 1] = filled;
       } catch (error) {
@@ -268,7 +336,12 @@ async function tick(wallet: string): Promise<void> {
         next[next.length - 1] = {
           ...triggered,
           status: "failed",
-          error: error instanceof Error ? error.message : "Limit sell failed.",
+          error:
+            error instanceof Error
+              ? error.message
+              : order.side === "buy"
+                ? "Limit buy failed."
+                : "Limit sell failed.",
         };
       }
     } catch (error) {

@@ -13,6 +13,7 @@ export type NavRoute =
   | "home"
   | "trending"
   | "wallet"
+  | "orders"
   | "tools"
   | "agents"
   | "activity"
@@ -40,12 +41,14 @@ type NavItem = {
 export const VISIBLE_NAV_ROUTES: readonly NavRoute[] = [
   "home",
   "wallet",
+  "orders",
   "settings",
 ];
 
 const NAV_ITEMS: NavItem[] = [
   { route: "home", label: "Home" },
   { route: "wallet", label: "Wallet" },
+  { route: "orders", label: "Limit orders" },
   { route: "settings", label: "Settings" },
 ];
 
@@ -67,6 +70,7 @@ function routeFromPath(path?: string): NavRoute {
   }
   if (path.includes("trending")) return "trending";
   if (path.includes("wallet")) return "wallet";
+  if (path.includes("orders")) return "orders";
   if (path.includes("tools")) return "tools";
   if (path.includes("agents")) return "agents";
   if (path.includes("activity")) return "activity";

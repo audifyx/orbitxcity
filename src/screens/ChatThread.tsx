@@ -38,6 +38,8 @@ import {
 } from "../components";
 import { useAuth } from "../lib/auth";
 import { readAutoApproveBuys, writeAutoApproveBuys } from "../lib/autoApprove";
+import { claimPumpCreatorFees, getPumpClaimableSol } from "../lib/claimFees";
+import { parseClaimIntent } from "../lib/claimIntent";
 import { parseCreateIntent } from "../lib/createIntent";
 import {
   executeDexSwap,
@@ -46,14 +48,15 @@ import {
 } from "../lib/dexTrade";
 import { cancelLimitOrder, createLimitOrder } from "../lib/limitOrders";
 import { parseTradeIntent } from "../lib/tradeIntent";
-import { voiceForLimitOrder, voiceForMarketTrade } from "../lib/tradeVoice";
+import { voiceForLimitOrder, voiceForMarketTrade, voiceForClaimFees } from "../lib/tradeVoice";
 import {
   formatSwapError,
   prefetchBuyAmount,
   suggestBuySol,
 } from "../lib/swapGuard";
 import { isSolanaPubkey } from "../lib/wallets";
-import { mintOrbitxNft } from "../lib/nftMarket";
+import { mintOrbitxNft, buyOrbitxNft } from "../lib/nftMarket";
+import { parseNftBuyIntent } from "../lib/nftBuyIntent";
 import { createPumpToken } from "../lib/pumpfun";
 import { getPrivyWalletAddress } from "../lib/privyTx";
 import {
@@ -439,7 +442,9 @@ export function ChatThread({
   const placeLimitOrder = useCallback(
     async (input: {
       mint: string;
-      percent: number;
+      side: "buy" | "sell";
+      percent?: number;
+      amountSol?: number;
       triggerType: "mcap" | "price";
       triggerValue: number;
     }) => {
@@ -451,7 +456,9 @@ export function ChatThread({
         const order = await createLimitOrder({
           wallet,
           mint: input.mint,
+          side: input.side,
           percent: input.percent,
+          amountSol: input.amountSol,
           triggerType: input.triggerType,
           triggerValue: input.triggerValue,
         });
@@ -464,10 +471,12 @@ export function ChatThread({
             cards: [
               {
                 kind: "order",
-                title: "Limit sell",
+                title: input.side === "buy" ? "Limit buy" : "Limit sell",
                 data: {
                   orderId: order.id,
+                  side: order.side,
                   percent: order.percent,
+                  amountSol: order.amountSol,
                   triggerType: order.triggerType,
                   triggerValue: order.triggerValue,
                   mint: order.mint,
@@ -592,6 +601,189 @@ export function ChatThread({
     [wallet],
   );
 
+  const runClaimAction = useCallback(
+    async (input?: { card?: MessageCard }) => {
+      const signingWallet = getPrivyWalletAddress() ?? wallet;
+      if (!signingWallet) {
+        setStorageError("Stay signed in — your OrbitX wallet is still loading.");
+        return;
+      }
+      if (tradeBusy.current) {
+        return;
+      }
+      tradeBusy.current = true;
+      setStorageError(null);
+
+      const matches = (card: MessageCard) =>
+        input?.card ? card === input.card : false;
+      const localId = `claim-${Date.now()}`;
+
+      if (!input?.card) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: localId,
+            role: "assistant",
+            content: voiceForClaimFees("start"),
+            cards: [
+              {
+                kind: "claim",
+                title: "Claim fees",
+                data: { status: "claiming" },
+              },
+            ],
+          },
+        ]);
+      } else {
+        setMessages((prev) =>
+          patchCardStatus(prev, matches, { status: "claiming" }),
+        );
+      }
+
+      try {
+        const claimable = await getPumpClaimableSol(signingWallet);
+        const result = await claimPumpCreatorFees(signingWallet);
+        const success = `Claimed ${result.claimedSol.toFixed(4)} SOL · ${result.signature.slice(0, 8)}…`;
+        setStorageError(success);
+        setMessages((prev) =>
+          prev.map((message) => {
+            if (input?.card && message.cards?.some(matches)) {
+              return {
+                ...message,
+                content: voiceForClaimFees("success"),
+                cards: message.cards.map((card) =>
+                  matches(card)
+                    ? {
+                        ...card,
+                        data: {
+                          ...card.data,
+                          status: "confirmed",
+                          signature: result.signature,
+                          claimableSol: claimable,
+                        },
+                      }
+                    : card,
+                ),
+              };
+            }
+            if (!input?.card && message.id === localId) {
+              return {
+                ...message,
+                content: voiceForClaimFees("success"),
+                cards: [
+                  {
+                    kind: "claim",
+                    title: "Claim fees",
+                    data: {
+                      status: "confirmed",
+                      signature: result.signature,
+                      claimableSol: claimable,
+                    },
+                  },
+                ],
+              };
+            }
+            return message;
+          }),
+        );
+      } catch (error) {
+        const detail =
+          error instanceof Error ? error.message : "Claim failed.";
+        setStorageError(detail);
+        if (input?.card) {
+          setMessages((prev) =>
+            prev.map((message) =>
+              message.cards?.some(matches)
+                ? {
+                    ...message,
+                    content: voiceForClaimFees("fail"),
+                    cards: message.cards.map((card) =>
+                      matches(card)
+                        ? { ...card, data: { ...card.data, status: "failed" } }
+                        : card,
+                    ),
+                  }
+                : message,
+            ),
+          );
+        } else {
+          setMessages((prev) =>
+            prev.map((message) =>
+              message.id === localId
+                ? {
+                    ...message,
+                    content: voiceForClaimFees("fail"),
+                    cards: [
+                      {
+                        kind: "claim",
+                        title: "Claim fees",
+                        data: { status: "failed" },
+                      },
+                    ],
+                  }
+                : message,
+            ),
+          );
+        }
+      } finally {
+        tradeBusy.current = false;
+      }
+    },
+    [wallet],
+  );
+
+  const runNftBuyAction = useCallback(
+    async (input: { listingId: string; card?: MessageCard }) => {
+      const signingWallet = getPrivyWalletAddress() ?? wallet;
+      if (!signingWallet) {
+        setStorageError("Stay signed in — your OrbitX wallet is still loading.");
+        return;
+      }
+      if (tradeBusy.current) {
+        return;
+      }
+      tradeBusy.current = true;
+      setStorageError(null);
+
+      const matches = (card: MessageCard) =>
+        input.card ? card === input.card : false;
+      if (input.card) {
+        setMessages((prev) =>
+          patchCardStatus(prev, matches, { status: "claiming" }),
+        );
+      }
+
+      try {
+        const signature = await buyOrbitxNft({
+          listingId: input.listingId,
+          wallet: signingWallet,
+        });
+        const success = `NFT purchased · ${signature.slice(0, 8)}…`;
+        setStorageError(success);
+        if (input.card) {
+          setMessages((prev) =>
+            patchCardStatus(prev, matches, {
+              status: "confirmed",
+              signature,
+            }),
+          );
+        }
+      } catch (error) {
+        setStorageError(
+          error instanceof Error ? error.message : "NFT buy failed.",
+        );
+        if (input.card) {
+          setMessages((prev) =>
+            patchCardStatus(prev, matches, { status: "failed" }),
+          );
+        }
+      } finally {
+        tradeBusy.current = false;
+      }
+    },
+    [wallet],
+  );
+
   const handleSend = useCallback(async () => {
     const text = rewriteLegacyToolPrompt(draft.trim(), [...TOOLS]);
     if (!text || sending) {
@@ -611,7 +803,9 @@ export function ChatThread({
       if (intent.kind === "limit") {
         await placeLimitOrder({
           mint: intent.mint,
+          side: intent.side,
           percent: intent.percent,
+          amountSol: intent.amountSol,
           triggerType: intent.triggerType,
           triggerValue: intent.triggerValue,
         });
@@ -623,6 +817,34 @@ export function ChatThread({
         amount: intent.amount,
         percent: intent.percent,
       });
+      return;
+    }
+
+    const claimIntent = parseClaimIntent(text);
+    if (claimIntent) {
+      const userMessage: Message = {
+        id: `local-${Date.now()}`,
+        role: "user",
+        content: text,
+      };
+      setMessages((prev) => [...prev, userMessage]);
+      setDraft("");
+      setStorageError(null);
+      await runClaimAction();
+      return;
+    }
+
+    const nftBuyIntent = parseNftBuyIntent(text);
+    if (nftBuyIntent) {
+      const userMessage: Message = {
+        id: `local-${Date.now()}`,
+        role: "user",
+        content: text,
+      };
+      setMessages((prev) => [...prev, userMessage]);
+      setDraft("");
+      setStorageError(null);
+      await runNftBuyAction({ listingId: nftBuyIntent.listingId });
       return;
     }
 
@@ -769,6 +991,8 @@ export function ChatThread({
     runJupiterTrade,
     placeLimitOrder,
     runCreateAction,
+    runClaimAction,
+    runNftBuyAction,
   ]);
 
   const handleCancelTx = useCallback(
@@ -832,6 +1056,27 @@ export function ChatThread({
     }
     for (const message of messages) {
       for (const card of message.cards ?? []) {
+        if (card.kind === "claim") {
+          const status = String(card.data.status ?? "preview");
+          const key = `claim:${String(card.data.signature ?? card.title)}`;
+          if (status !== "preview" || autoFired.current.has(key)) {
+            continue;
+          }
+          autoFired.current.add(key);
+          void runClaimAction({ card });
+          continue;
+        }
+        if (card.kind === "nft_buy") {
+          const status = String(card.data.status ?? "preview");
+          const listingId = String(card.data.listingId ?? "");
+          const key = `nftbuy:${listingId}`;
+          if (status !== "preview" || !listingId || autoFired.current.has(key)) {
+            continue;
+          }
+          autoFired.current.add(key);
+          void runNftBuyAction({ listingId, card });
+          continue;
+        }
         if (card.kind === "launch" || card.kind === "nft") {
           const status = String(card.data.status ?? "preview");
           const key = `create:${String(card.data.intentId ?? card.data.name)}:${card.kind}`;
@@ -867,7 +1112,7 @@ export function ChatThread({
         void handleConfirmTx(card);
       }
     }
-  }, [handleConfirmTx, instantBuy, messages, runCreateAction, sending]);
+  }, [handleConfirmTx, instantBuy, messages, runCreateAction, runClaimAction, runNftBuyAction, sending]);
 
   const selectedModel = MODELS.find((model) => model.id === modelId) ?? MODELS[0];
 
@@ -898,6 +1143,12 @@ export function ChatThread({
         kind: "agent" as const,
       }));
     const actions: CommandResult[] = [
+      {
+        id: "nav:orders",
+        title: "Limit orders",
+        subtitle: "Pending buy & sell limits",
+        kind: "action",
+      },
       {
         id: "nav:wallet",
         title: "Wallet",
@@ -1008,6 +1259,15 @@ export function ChatThread({
                 card,
               });
             }}
+            onClaimFees={(card) => {
+              void runClaimAction({ card });
+            }}
+            onBuyNft={(card) => {
+              const listingId = String(card.data.listingId ?? "");
+              if (listingId) {
+                void runNftBuyAction({ listingId, card });
+              }
+            }}
             onRegenerate={() => {
               const lastUser = [...messages]
                 .reverse()
@@ -1050,7 +1310,7 @@ export function ChatThread({
       <ApproveSheet
         visible={approveOpen}
         title="Approve auto-sign"
-        body="OrbitX signs buys, sells, launches, and mints with your Privy wallet as soon as a quote or draft is ready. You can turn this off anytime. This is not a seed export."
+        body="OrbitX auto-signs buys, sells, limit orders, launches, NFT mints, NFT buys, and creator-fee claims with your Privy wallet as soon as a quote or draft is ready. You can turn this off anytime. This is not a seed export."
         confirmLabel="Turn on auto-sign"
         onClose={() => setApproveOpen(false)}
         onConfirm={() => {

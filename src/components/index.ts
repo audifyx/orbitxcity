@@ -48,6 +48,12 @@ export type { ApproveSheetProps } from "./ApproveSheet";
 export { CreateCard } from "./CreateCard";
 export type { CreateCardProps } from "./CreateCard";
 
+export { ClaimCard } from "./ClaimCard";
+export type { ClaimCardProps } from "./ClaimCard";
+
+export { OrderCard } from "./OrderCard";
+export type { OrderCardProps } from "./OrderCard";
+
 export { ExportKeySheet } from "./ExportKeySheet";
 export type { ExportKeySheetProps } from "./ExportKeySheet";
 
