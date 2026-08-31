@@ -1,0 +1,10 @@
+{
+  "tokens": [
+    {"symbol":"NOVA","marketCap":"$18.42M","change24h":"+24.8%","volume24h":"1.82M","risk":"LOW"},
+    {"symbol":"ORBIT","marketCap":"$42.77M","change24h":"+12.6%","volume24h":"5.14M","risk":"LOW"},
+    {"symbol":"CLAW","marketCap":"$2.34M","change24h":"+67.9%","volume24h":"311K","risk":"HIGH"},
+    {"symbol":"CITY","marketCap":"$9.82M","change24h":"+18.4%","volume24h":"1.27M","risk":"MED"}
+  ],
+  "agent": {"prompt":"Scan NOVA and explain the risk.","tools":["OG Scan","Wallet Intel","Jupiter Quote Preview"]},
+  "social": {"communities":12,"spaces":8,"lobbies":21,"xp":18420}
+}

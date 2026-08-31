@@ -1,0 +1,8 @@
+{
+  "id": "orbitx-content-demo",
+  "displayName": "OrbitX Content Demo",
+  "auth": { "type": "none", "session": null },
+  "wallet": { "type": "mock", "address": null, "privateKey": null, "connected": false },
+  "funds": { "currency": "USD", "balance": 25000, "source": "fictional" },
+  "execution": { "enabled": false, "networkCalls": false, "transactions": [] }
+}
