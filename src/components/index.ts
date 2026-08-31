@@ -26,6 +26,9 @@ export type { TxPreviewProps, TxPreviewStatus } from "./TxPreview";
 export { ToolProgress } from "./ToolProgress";
 export type { ToolProgressProps } from "./ToolProgress";
 
+export { ToolTerminal } from "./ToolTerminal";
+export type { ToolTerminalProps } from "./ToolTerminal";
+
 export { ModelSheet } from "./ModelSheet";
 export type { ModelOption, ModelSheetProps } from "./ModelSheet";
 

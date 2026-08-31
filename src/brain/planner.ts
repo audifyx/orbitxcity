@@ -1,3 +1,4 @@
+import { routeFromSkills } from "./skillRouter";
 import type { AgentDefinition, PlanIntent, ToolDefinition, UtterancePlan } from "./types";
 
 const BASE58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
@@ -428,11 +429,16 @@ export function planFromUtterance(
   const trimmed = text.trim();
   const addresses = extractAddresses(trimmed);
   const mentions = extractToolMentions(trimmed, tools);
-  const intent = detectIntent(trimmed, addresses);
+  const skillRoute = routeFromSkills(trimmed);
+  const intent = skillRoute.intent ?? detectIntent(trimmed, addresses);
   const explicitWrite = EXPLICIT_WRITE_VERBS.test(trimmed);
   const live = wantsLiveTools(trimmed, addresses, mentions);
 
-  const agentIds = (live ? pickAgents(intent, trimmed) : ["master"]).filter((id) =>
+  const baseAgents = live ? pickAgents(intent, trimmed) : ["master"];
+  const mergedAgents = Array.from(
+    new Set([...baseAgents, ...skillRoute.agentIds]),
+  );
+  const agentIds = mergedAgents.filter((id) =>
     agents.some((a) => a.id === id),
   );
 
@@ -458,7 +464,7 @@ export function planFromUtterance(
     };
   }
 
-  const { toolIds, notes: toolNotes } = pickTools(
+  const { toolIds: pickedToolIds, notes: toolNotes } = pickTools(
     intent,
     trimmed,
     addresses,
@@ -466,7 +472,11 @@ export function planFromUtterance(
     explicitWrite,
   );
 
-  const notes = [...toolNotes];
+  const toolIds = Array.from(
+    new Set([...skillRoute.toolIds, ...pickedToolIds]),
+  ).slice(0, 12);
+
+  const notes = [...skillRoute.notes, ...toolNotes];
 
   if (addresses.length > 0) {
     notes.push(`Solana address(es) detected: ${addresses.join(", ")}`);

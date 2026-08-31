@@ -1,3 +1,4 @@
+import { EXTENDED_TOOLS } from "./extendedTools";
 import type { ToolCategory, ToolDefinition } from "./types";
 
 function tool(
@@ -442,8 +443,18 @@ export const TOOLS: readonly ToolDefinition[] = [
   }),
 ] as const;
 
+const BASE_TOOLS = TOOLS;
+
+/** Full catalog: core tools + skill aliases (same backends). */
+export const ALL_TOOLS: readonly ToolDefinition[] = [
+  ...BASE_TOOLS,
+  ...EXTENDED_TOOLS.filter(
+    (ext) => !BASE_TOOLS.some((base) => base.id === ext.id),
+  ),
+];
+
 const TOOL_MAP = new Map<string, ToolDefinition>(
-  TOOLS.map((t) => [t.id, t]),
+  ALL_TOOLS.map((t) => [t.id, t]),
 );
 
 export function getTool(id: string): ToolDefinition | undefined {
@@ -454,21 +465,21 @@ export function toolsByCategory(
   category?: ToolCategory,
 ): ToolDefinition[] {
   if (!category) {
-    return [...TOOLS];
+    return [...ALL_TOOLS];
   }
-  return TOOLS.filter((t) => t.category === category);
+  return ALL_TOOLS.filter((t) => t.category === category);
 }
 
 export function writeTools(): ToolDefinition[] {
-  return TOOLS.filter((t) => t.side === "write");
+  return ALL_TOOLS.filter((t) => t.side === "write");
 }
 
 export function readTools(): ToolDefinition[] {
-  return TOOLS.filter((t) => t.side === "read");
+  return ALL_TOOLS.filter((t) => t.side === "read");
 }
 
 export function toolsRequiringConfirmation(): ToolDefinition[] {
-  return TOOLS.filter((t) => t.confirmationRequired);
+  return ALL_TOOLS.filter((t) => t.confirmationRequired);
 }
 
 export type { ToolDefinition };

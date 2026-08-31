@@ -85,7 +85,141 @@ const KNOWN_TOOLS = [
   "launch-coin",
   "nft-mint",
   "nft-execute-sale",
+  // Skill aliases (same backends)
+  "fast-quote",
+  "instant-price",
+  "usd-price",
+  "market-quote",
+  "limit-quote",
+  "slippage-check",
+  "route-preview",
+  "token-search",
+  "pair-price",
+  "sol-price",
+  "quick-scan",
+  "deep-scan",
+  "rug-check",
+  "safety-scan",
+  "holder-scan",
+  "whale-map",
+  "dev-wallet",
+  "sniper-scan",
+  "bundle-scan",
+  "xray-scan",
+  "intel-v2",
+  "intel-pass",
+  "unified-scan",
+  "enhanced-scan",
+  "ai-brief",
+  "oxw-scan",
+  "metadata-lookup",
+  "trending-scan",
+  "mcap-lookup",
+  "liquidity-scan",
+  "volume-scan",
+  "wallet-scan",
+  "pnl-lookup",
+  "balance-check",
+  "holdings-fetch",
+  "portfolio-scan",
+  "activity-feed",
+  "pump-launch",
+  "token-launch",
+  "bonding-curve",
+  "migration-scan",
+  "pump-migration",
+  "graduation-watch",
+  "launch-intel",
+  "new-pair-scan",
+  "nft-create",
+  "collection-mint",
+  "nft-list",
+  "nft-sale",
+  "nft-intel",
+  "price-alert",
+  "wallet-alert",
+  "push-notify",
+  "macro-analytics",
+  "tracker-feed",
+  "track-record-lookup",
+  "x-post",
+  "tweet-draft",
+  "news-scan",
+  "narrative-scan",
+  "kol-scan",
+  "pdf-report",
+  "full-report",
 ];
+
+const TOOL_BACKEND: Record<string, string> = {
+  "fast-quote": "jupiter-quote",
+  "market-quote": "jupiter-quote",
+  "slippage-check": "jupiter-quote",
+  "route-preview": "jupiter-quote",
+  "instant-price": "jupiter-price",
+  "usd-price": "jupiter-price",
+  "limit-quote": "jupiter-price",
+  "pair-price": "jupiter-price",
+  "sol-price": "jupiter-price",
+  "token-search": "jupiter-tokens",
+  "quick-scan": "token-data",
+  "metadata-lookup": "token-data",
+  "trending-scan": "token-data",
+  "mcap-lookup": "token-data",
+  "launch-intel": "token-data",
+  "new-pair-scan": "token-data",
+  "nft-intel": "token-data",
+  "deep-scan": "og-scan-token",
+  "full-report": "og-scan-token",
+  "rug-check": "token-safety",
+  "safety-scan": "token-safety",
+  "holder-scan": "og-holders",
+  "whale-map": "og-holders",
+  "dev-wallet": "ogdex-firstbuyer",
+  "sniper-scan": "ogdex-firstbuyer",
+  "bundle-scan": "ogdex-xray",
+  "xray-scan": "ogdex-xray",
+  "intel-v2": "ogdex-intel-v2",
+  "intel-pass": "ogdex-intel",
+  "unified-scan": "unified-intelligence",
+  "enhanced-scan": "enhanced-intelligence",
+  "ai-brief": "ai-analyzer",
+  "oxw-scan": "oxw-token-scan",
+  "liquidity-scan": "birdseye-analytics",
+  "volume-scan": "birdseye-analytics",
+  "macro-analytics": "birdseye-analytics",
+  "wallet-scan": "og-wallet",
+  "pnl-lookup": "pnl-scan",
+  "balance-check": "wallet-manager",
+  "holdings-fetch": "wallet-manager",
+  "portfolio-scan": "wallet-manager",
+  "activity-feed": "solana-tracker",
+  "tracker-feed": "solana-tracker",
+  "pump-launch": "launch-coin",
+  "token-launch": "launch-coin",
+  "bonding-curve": "pumpfun-migrations",
+  "migration-scan": "migration-watch",
+  "pump-migration": "pumpfun-migrations",
+  "graduation-watch": "pumpfun-migrations",
+  "nft-create": "nft-mint",
+  "collection-mint": "nft-mint",
+  "nft-list": "nft-execute-sale",
+  "nft-sale": "nft-execute-sale",
+  "price-alert": "alerts",
+  "wallet-alert": "alerts",
+  "push-notify": "send-push",
+  "track-record-lookup": "track-record",
+  "x-post": "post-to-x",
+  "tweet-draft": "ai-analyzer",
+  "news-scan": "news-fetcher",
+  "narrative-scan": "news-fetcher",
+  "kol-scan": "news-fetcher",
+  "pdf-report": "og-report-pdf",
+};
+
+function canonicalToolId(toolId: string): string {
+  return TOOL_BACKEND[toolId] ?? toolId;
+}
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -116,15 +250,17 @@ type ChatCard = {
 
 const CHAT_SYSTEM = `You are OrbitX, a live chat partner who also has on-chain Solana tools.
 
-Talk like a sharp human in a chat — first person, react to what they just said. Casual chat: 2–6 short sentences. Mint / “tell me about” / full report: write a complete advanced briefing with sections (identity, market, safety, holders, forensics, links). Never write a status report about tool counts.
+Talk like a sharp human in a chat — first person, react to what they just said. Casual chat: 2–6 short sentences. Mint / "tell me about" / full report: write a complete advanced briefing with sections (identity, market, safety, holders, forensics, links). Never write a status report about tool counts.
 
 Iron laws:
 1. Never fabricate prices, holders, liquidity, or tx results.
 2. If a tool failed, say it failed.
-3. Never claim a swap or transfer landed. Quotes are previews until they sign in their wallet.
+3. On OrbitX mobile, swaps, launches, mints, and X posts auto-sign in-app with the Privy wallet — never tell users to open Phantom or an external wallet. Quotes are previews until they tap Approve in chat.
 4. Never ask for a seed phrase or private key.
 5. If they pasted a mint, that is the subject.
 6. Casual chat = just talk. If tools ran, weave the facts in like you just looked them up.
+7. Portfolio/holdings: pull from wallet RPC — never send users to another tab when they ask what they hold.
+8. USD trades (buy $1 of …) are supported — size via live Jupiter price.
 
 Never say "N/N tools returned data" or "I ran live tools against existing backend functions".`;
 
@@ -581,29 +717,30 @@ function payloadForTool(
   addresses: string[],
   walletAddress?: string,
 ): Record<string, unknown> {
+  const backend = canonicalToolId(toolId);
   const mint = addresses[0];
   const wallet = walletAddress ?? mint;
-  if (toolId === "og-scan-token") {
+  if (backend === "og-scan-token") {
     return { query: mint ?? message.slice(0, 80), source: "orbitx-ai" };
   }
-  if (toolId === "token-data") {
+  if (backend === "token-data") {
     return mint
       ? { action: "get_metadata", token_address: mint }
       : { action: "trending" };
   }
-  if (toolId === "token-safety") {
+  if (backend === "token-safety") {
     return { mint: mint ?? message };
   }
-  if (toolId === "og-holders") {
+  if (backend === "og-holders") {
     return { mint, limit: 20 };
   }
-  if (toolId === "og-wallet") {
+  if (backend === "og-wallet") {
     return { address: wallet, wallet };
   }
-  if (toolId === "pnl-scan") {
+  if (backend === "pnl-scan") {
     return { wallet, mint };
   }
-  if (toolId === "jupiter-quote") {
+  if (backend === "jupiter-quote") {
     const selling = /\bsell\b/i.test(message);
     const sol = parseSolAmount(message) ?? 0.1;
     const amount = Math.round(sol * 1_000_000_000);
@@ -624,59 +761,59 @@ function payloadForTool(
       side: "buy",
     };
   }
-  if (toolId === "jupiter-price") {
+  if (backend === "jupiter-price") {
     return { ids: addresses.length > 0 ? addresses : [SOL_MINT] };
   }
-  if (toolId === "jupiter-tokens") {
+  if (backend === "jupiter-tokens") {
     return { query: mint ?? message.slice(0, 80) };
   }
-  if (toolId === "alerts") {
+  if (backend === "alerts") {
     return { action: "parse", nl_request: message, mint };
   }
   if (
-    toolId === "ogdex-xray" ||
-    toolId === "ogdex-intel-v2" ||
-    toolId === "ogdex-intel" ||
-    toolId === "ogdex-firstbuyer"
+    backend === "ogdex-xray" ||
+    backend === "ogdex-intel-v2" ||
+    backend === "ogdex-intel" ||
+    backend === "ogdex-firstbuyer"
   ) {
     return { mint: mint ?? message };
   }
-  if (toolId === "wallet-manager") {
+  if (backend === "wallet-manager") {
     return {
       action: "get_balance",
       wallet_address: wallet,
     };
   }
-  if (toolId === "solana-tracker") {
+  if (backend === "solana-tracker") {
     return { wallet_address: wallet };
   }
-  if (toolId === "news-fetcher") {
+  if (backend === "news-fetcher") {
     return {};
   }
-  if (toolId === "unified-intelligence" || toolId === "enhanced-intelligence") {
+  if (backend === "unified-intelligence" || backend === "enhanced-intelligence") {
     return {
       messages: [{ role: "user", content: message }],
       context: mint ? `Analyze mint ${mint}` : message.slice(0, 160),
     };
   }
-  if (toolId === "ai-analyzer") {
+  if (backend === "ai-analyzer") {
     return {
       action: "chat",
       messages: [{ role: "user", content: message }],
     };
   }
-  if (toolId === "birdseye-analytics") {
+  if (backend === "birdseye-analytics") {
     return mint
       ? { address: mint }
       : { address: SOL_MINT };
   }
-  if (toolId === "pumpfun-migrations") {
+  if (backend === "pumpfun-migrations") {
     return { limit: 20 };
   }
-  if (toolId === "migration-watch") {
+  if (backend === "migration-watch") {
     return { action: "list" };
   }
-  if (toolId === "oxw-token-scan") {
+  if (backend === "oxw-token-scan") {
     return { mint: mint ?? message };
   }
   return { query: message, mint, wallet };
@@ -1285,8 +1422,9 @@ Deno.serve(async (req) => {
             });
           } else {
             const payload = payloadForTool(toolId, message, addresses, walletAddress);
-            result = await callFn(toolId, payload, jwt);
-            if (toolId === "jupiter-quote" && isRecord(result)) {
+            const backendId = canonicalToolId(toolId);
+            result = await callFn(backendId, payload, jwt);
+            if (backendId === "jupiter-quote" && isRecord(result)) {
               const quote = isRecord(result.quote) ? result.quote : result;
               const { data: intentRow } = await userClient
                 .from("orbitx_ai_transaction_intents")
@@ -1320,7 +1458,7 @@ Deno.serve(async (req) => {
                 },
               });
             } else {
-              cards.push(...cardsFromTool(toolId, result));
+              cards.push(...cardsFromTool(backendId, result));
             }
           }
 

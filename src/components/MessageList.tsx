@@ -12,10 +12,8 @@ import {
 import { HoldingsCard } from "./HoldingsCard";
 import { CreateCard } from "./CreateCard";
 import { ClaimCard } from "./ClaimCard";
-import { OrbitXMark } from "./OrbitXMark";
 import { OrderCard, type OrderCardStatus } from "./OrderCard";
 import { TokenCard } from "./TokenCard";
-import { ToolProgress } from "./ToolProgress";
 import { TradeReceipt } from "./TradeReceipt";
 import { TxPreview, type TxPreviewStatus } from "./TxPreview";
 import { WalletCard } from "./WalletCard";
@@ -563,19 +561,13 @@ function MessageItem({
 
   return (
     <View style={[styles.messageWrap, isUser && styles.messageWrapUser]}>
-      {!isUser ? (
-        <View style={styles.agentRow}>
-          <View style={styles.agentAvatar}>
-            <OrbitXMark size={16} />
-          </View>
-          <View style={styles.agentMeta}>
-            <Text style={styles.agentKicker}>ORBITX CORE</Text>
-            <Text style={styles.agentSub}>Auto-sign · Jupiter · pump.fun</Text>
-          </View>
-          <View style={styles.agentPulse} />
-        </View>
-      ) : null}
       <View style={[styles.bubble, isUser ? styles.bubbleUser : styles.bubbleAssistant]}>
+        {!isUser && message.streaming && blocks.length === 0 ? (
+          <View style={styles.typingRow}>
+            <Text style={styles.typingText}>typing</Text>
+            <Text style={styles.cursor}>▍</Text>
+          </View>
+        ) : null}
         {blocks.map((block, blockIndex) => {
           if (block.type === "list") {
             return (
@@ -599,16 +591,6 @@ function MessageItem({
             </View>
           );
         })}
-
-        {message.streaming && blocks.length === 0 ? (
-          <Text style={styles.cursor}>▍</Text>
-        ) : null}
-
-        {message.toolEvents && message.toolEvents.length > 0 ? (
-          <View style={styles.toolProgressWrap}>
-            <ToolProgress events={message.toolEvents} />
-          </View>
-        ) : null}
 
         {message.cards?.map((card, index) => (
           <View key={`${card.kind}-${index}`} style={styles.cardWrap}>
@@ -708,54 +690,16 @@ export function MessageList({
 const styles = StyleSheet.create({
   listContent: {
     paddingHorizontal: 16,
-    paddingVertical: 20,
-    gap: 22,
+    paddingVertical: 16,
+    gap: 14,
   },
   messageWrap: {
     alignItems: "stretch",
     width: "100%",
-    gap: 10,
+    gap: 6,
   },
   messageWrapUser: {
     alignItems: "flex-end",
-  },
-  agentRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    paddingLeft: 2,
-    marginBottom: 2,
-  },
-  agentAvatar: {
-    width: 30,
-    height: 30,
-    borderRadius: 10,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "rgba(126, 182, 255, 0.1)",
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "rgba(126, 182, 255, 0.24)",
-  },
-  agentMeta: {
-    flex: 1,
-    gap: 1,
-  },
-  agentPulse: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-    backgroundColor: colors.success,
-  },
-  agentKicker: {
-    color: colors.signal,
-    fontFamily: "Inter_600SemiBold",
-    fontSize: 10,
-    letterSpacing: 2.4,
-  },
-  agentSub: {
-    color: colors.dim,
-    fontFamily: "Inter_400Regular",
-    fontSize: 10,
   },
   bubble: {
     width: "100%",
@@ -769,20 +713,27 @@ const styles = StyleSheet.create({
     width: "86%",
     maxWidth: 420,
     alignSelf: "flex-end",
-    backgroundColor: "rgba(90, 140, 255, 0.16)",
-    borderColor: "rgba(150, 196, 255, 0.32)",
+    backgroundColor: "rgba(90, 140, 255, 0.14)",
+    borderColor: "rgba(150, 196, 255, 0.28)",
   },
   bubbleAssistant: {
     alignSelf: "stretch",
-    backgroundColor: "rgba(4, 7, 14, 0.98)",
-    borderColor: "rgba(126, 182, 255, 0.2)",
-    borderLeftWidth: 3,
-    borderLeftColor: colors.signal,
-    shadowColor: colors.signal,
-    shadowOpacity: 0.08,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 2,
+    backgroundColor: "rgba(8, 12, 20, 0.72)",
+    borderColor: "rgba(126, 182, 255, 0.14)",
+    borderLeftWidth: 0,
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  typingRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  typingText: {
+    color: colors.dim,
+    fontFamily: "Inter_400Regular",
+    fontSize: 14,
+    fontStyle: "italic",
   },
   paragraph: {
     marginBottom: 8,
@@ -825,11 +776,6 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_500Medium",
     fontSize: 14,
     lineHeight: 23,
-  },
-  toolProgressWrap: {
-    marginTop: 10,
-    width: "100%",
-    alignSelf: "stretch",
   },
   cardWrap: {
     marginTop: 12,

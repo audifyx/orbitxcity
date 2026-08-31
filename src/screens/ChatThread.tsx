@@ -15,7 +15,7 @@ import {
   AGENTS,
   DEFAULT_MODEL_ID,
   MODELS,
-  TOOLS,
+  ALL_TOOLS,
   asStreamEvent,
   orchestrateLive,
   planFromUtterance,
@@ -31,10 +31,12 @@ import {
   MessageList,
   ModelSheet,
   ToolSheet,
+  ToolTerminal,
   type CommandResult,
   type Message,
   type MessageCard,
   type ToolCategory,
+  type ToolEvent,
 } from "../components";
 import { useAuth } from "../lib/auth";
 import { readAutoApproveBuys, writeAutoApproveBuys } from "../lib/autoApprove";
@@ -178,6 +180,8 @@ export function ChatThread({
   const [paletteQuery, setPaletteQuery] = useState("");
   const [instantBuy, setInstantBuy] = useState(true);
   const [approveOpen, setApproveOpen] = useState(false);
+  const [liveTools, setLiveTools] = useState<ToolEvent[]>([]);
+  const [terminalCollapsed, setTerminalCollapsed] = useState(false);
   const autoFired = useRef<Set<string>>(new Set());
   const tradeBusy = useRef(false);
 
@@ -1055,7 +1059,7 @@ export function ChatThread({
   );
 
   const handleSend = useCallback(async () => {
-    const text = rewriteLegacyToolPrompt(draft.trim(), [...TOOLS]);
+    const text = rewriteLegacyToolPrompt(draft.trim(), [...ALL_TOOLS]);
     if (!text || sending) {
       return;
     }
@@ -1174,12 +1178,17 @@ export function ChatThread({
     };
 
     const assistantId = `assistant-${Date.now()}`;
-    const plan = planFromUtterance(text, [...AGENTS], [...TOOLS]);
-    const plannedEvents = plan.toolIds.map((toolId) => ({
+    const plan = planFromUtterance(text, [...AGENTS], [...ALL_TOOLS]);
+    const plannedEvents: ToolEvent[] = plan.toolIds.map((toolId) => ({
       id: `tool_${toolId}`,
-      label: TOOLS.find((tool) => tool.id === toolId)?.name ?? toolId.replace(/-/g, " "),
+      toolId,
+      label: ALL_TOOLS.find((tool) => tool.id === toolId)?.name ?? toolId.replace(/-/g, " "),
       status: "running" as const,
+      detail: "queued",
     }));
+
+    setLiveTools(plannedEvents);
+    setTerminalCollapsed(false);
 
     setMessages((prev) => [
       ...prev,
@@ -1189,7 +1198,6 @@ export function ChatThread({
         role: "assistant",
         content: "",
         streaming: true,
-        toolEvents: plannedEvents,
       },
     ]);
     setDraft("");
@@ -1222,6 +1230,29 @@ export function ChatThread({
       patchAssistant({ content: full, streaming: false });
     };
 
+    const mapToolEvents = (events: {
+      id: string;
+      toolId?: string;
+      label: string;
+      status: ToolEvent["status"];
+      detail?: string;
+    }[]): ToolEvent[] =>
+      events.map((item) => ({
+        id: item.id,
+        toolId: item.toolId,
+        label: item.label,
+        status: item.status,
+        detail:
+          item.detail ??
+          (item.status === "running"
+            ? "running"
+            : item.status === "ok"
+              ? "done"
+              : item.status === "error"
+                ? "failed"
+                : undefined),
+      }));
+
     const result = await orchestrateLive(
       invokeFunction,
       Platform.OS === "web"
@@ -1236,13 +1267,8 @@ export function ChatThread({
                 patchAssistant({ content: streamed, streaming: true });
               }
               if (event.type === "tools") {
-                patchAssistant({
-                  toolEvents: event.toolEvents.map((item) => ({
-                    id: item.id,
-                    label: item.label,
-                    status: item.status,
-                  })),
-                });
+                const mapped = mapToolEvents(event.toolEvents);
+                setLiveTools(mapped);
               }
               onEvent(event);
             });
@@ -1259,14 +1285,12 @@ export function ChatThread({
 
     await reveal(result.text);
 
+    const finalTools = mapToolEvents(result.toolEvents);
+    setLiveTools(finalTools);
+
     patchAssistant({
       content: result.text,
       streaming: false,
-      toolEvents: result.toolEvents.map((event) => ({
-        id: event.id,
-        label: event.label,
-        status: event.status,
-      })),
       cards: result.cards.map((card) => ({
         kind: card.kind,
         title: card.title,
@@ -1436,7 +1460,7 @@ export function ChatThread({
 
   const paletteResults: CommandResult[] = useMemo(() => {
     const q = paletteQuery.trim().toLowerCase();
-    const tools = TOOLS.filter((tool) =>
+    const tools = ALL_TOOLS.filter((tool) =>
       q.length === 0
         ? true
         : `${tool.name} ${tool.description}`.toLowerCase().includes(q),
@@ -1507,7 +1531,7 @@ export function ChatThread({
     return [...actions, ...tools, ...agents];
   }, [paletteQuery]);
 
-  const sheetTools = TOOLS.map((tool) => ({
+  const sheetTools = ALL_TOOLS.map((tool) => ({
     id: tool.id,
     name: tool.name,
     category: CATEGORY_MAP[tool.category],
@@ -1549,6 +1573,12 @@ export function ChatThread({
           <Text style={styles.storageBannerText}>{storageError}</Text>
         </View>
       ) : null}
+
+      <ToolTerminal
+        events={liveTools}
+        collapsed={terminalCollapsed}
+        onToggleCollapse={() => setTerminalCollapsed((value) => !value)}
+      />
 
       <View style={styles.messagesArea}>
         {loadingHistory ? (
@@ -1627,7 +1657,7 @@ export function ChatThread({
             }
             setApproveOpen(true);
           }}
-          mentionTools={TOOLS.map((tool) => ({ id: tool.id, name: tool.name }))}
+          mentionTools={ALL_TOOLS.map((tool) => ({ id: tool.id, name: tool.name }))}
         />
       </View>
 
@@ -1660,7 +1690,7 @@ export function ChatThread({
         visible={toolSheetOpen}
         tools={sheetTools}
         onSelect={(id) => {
-          const tool = TOOLS.find((item) => item.id === id);
+          const tool = ALL_TOOLS.find((item) => item.id === id);
           if (tool) {
             setDraft((prev) => {
               const base = prev.replace(/@([a-z0-9-]*)$/i, "").trimEnd();
@@ -1681,7 +1711,7 @@ export function ChatThread({
           if (id.startsWith("nav:")) {
             router.push(`/${id.slice(4)}` as "/dex");
           } else if (id.startsWith("tool:")) {
-            const tool = TOOLS.find((item) => item.id === id.slice(5));
+            const tool = ALL_TOOLS.find((item) => item.id === id.slice(5));
             if (tool) setDraft(`@${tool.id} `);
           } else if (id.startsWith("agent:")) {
             const agent = AGENTS.find((item) => item.id === id.slice(6));

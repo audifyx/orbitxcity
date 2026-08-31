@@ -73,7 +73,18 @@ export {
   getTool,
   readTools,
   TOOLS,
+  ALL_TOOLS,
   toolsByCategory,
   toolsRequiringConfirmation,
   writeTools,
 } from "./tools";
+
+export {
+  AGENT_SKILLS,
+  SKILL_COUNT,
+  skillsByCategory,
+  type AgentSkill,
+  type SkillCategory,
+} from "./skillCatalog";
+
+export { matchSkills, routeFromSkills, topSkillCategories } from "./skillRouter";
