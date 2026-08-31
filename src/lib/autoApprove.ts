@@ -5,9 +5,12 @@ const STORAGE_KEY = "orbitx-auto-approve-buys";
 export async function readAutoApproveBuys(): Promise<boolean> {
   try {
     const value = await AsyncStorage.getItem(STORAGE_KEY);
+    if (value === null) {
+      return true;
+    }
     return value === "1";
   } catch {
-    return false;
+    return true;
   }
 }
 

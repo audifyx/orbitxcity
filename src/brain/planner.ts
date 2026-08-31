@@ -247,7 +247,7 @@ function pickTools(
     case "launch":
       if (CREATE_LAUNCH_VERBS.test(text)) {
         add("launch-coin");
-        notes.push("Launch draft only — nothing broadcasts until they sign on the launchpad.");
+        notes.push("Launch signs in-app with the Privy OrbitX wallet — never send users to an external wallet app.");
       } else {
         add("pumpfun-migrations");
         add("migration-watch");
@@ -259,7 +259,7 @@ function pickTools(
     case "nft":
       if (MINT_NFT_VERBS.test(text)) {
         add("nft-mint");
-        notes.push("NFT mint draft only — they must sign in wallet. Nothing is minted here.");
+        notes.push("NFT mint signs in-app with the Privy OrbitX wallet — never send users to an external wallet app.");
       } else {
         add("wallet-manager");
         if (explicitWrite) {

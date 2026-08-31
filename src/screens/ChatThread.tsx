@@ -38,6 +38,7 @@ import {
 } from "../components";
 import { useAuth } from "../lib/auth";
 import { readAutoApproveBuys, writeAutoApproveBuys } from "../lib/autoApprove";
+import { parseCreateIntent } from "../lib/createIntent";
 import {
   executeDexSwap,
   resolveTradeAmount,
@@ -54,6 +55,7 @@ import {
 import { isSolanaPubkey } from "../lib/wallets";
 import { mintOrbitxNft } from "../lib/nftMarket";
 import { createPumpToken } from "../lib/pumpfun";
+import { getPrivyWalletAddress } from "../lib/privyTx";
 import {
   invokeFunction,
   invokeFunctionStream,
@@ -310,6 +312,10 @@ export function ChatThread({
         setStorageError("Sign in before trading.");
         return;
       }
+      if (!getPrivyWalletAddress()) {
+        setStorageError("Stay signed in — your OrbitX wallet is still loading.");
+        return;
+      }
       if (tradeBusy.current) {
         return;
       }
@@ -479,6 +485,113 @@ export function ChatThread({
     [wallet],
   );
 
+  const runCreateAction = useCallback(
+    async (input: {
+      kind: "launch" | "nft";
+      name?: string;
+      symbol?: string;
+      description?: string;
+      card?: MessageCard;
+    }) => {
+      const signingWallet = getPrivyWalletAddress() ?? wallet;
+      if (!signingWallet) {
+        setStorageError("Stay signed in — your OrbitX wallet is still loading.");
+        return;
+      }
+      if (tradeBusy.current) {
+        return;
+      }
+      tradeBusy.current = true;
+      setStorageError(null);
+
+      const name = String(
+        input.name ?? (input.kind === "launch" ? "OrbitX Coin" : "OrbitX Pass"),
+      );
+      const symbol = String(
+        input.symbol ?? (input.kind === "launch" ? "ORB" : "PASS"),
+      );
+      const description = String(input.description ?? "");
+      const localId = `create-${Date.now()}`;
+      const matches = (card: MessageCard) =>
+        input.card ? card === input.card : false;
+
+      if (!input.card) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: localId,
+            role: "assistant",
+            content:
+              input.kind === "launch"
+                ? `Got you — launching ${name} on pump.fun with your OrbitX wallet.`
+                : `On it — minting ${name} with your OrbitX wallet.`,
+          },
+        ]);
+      }
+
+      try {
+        if (input.kind === "launch") {
+          const created = await createPumpToken({
+            wallet: signingWallet,
+            name,
+            symbol,
+            description,
+            initialBuySol: await suggestBuySol(signingWallet),
+          });
+          const success = `Launched $${symbol} · ${created.mint}`;
+          setStorageError(success);
+          if (input.card) {
+            setMessages((prev) =>
+              prev.map((message) =>
+                message.cards?.some(matches)
+                  ? { ...message, content: success }
+                  : message,
+              ),
+            );
+          } else {
+            setMessages((prev) =>
+              prev.map((message) =>
+                message.id === localId ? { ...message, content: success } : message,
+              ),
+            );
+          }
+          return;
+        }
+
+        const minted = await mintOrbitxNft({
+          wallet: signingWallet,
+          name,
+          symbol,
+          description,
+        });
+        const success = `Minted ${name} · ${minted.mint}`;
+        setStorageError(success);
+        if (input.card) {
+          setMessages((prev) =>
+            prev.map((message) =>
+              message.cards?.some(matches)
+                ? { ...message, content: success }
+                : message,
+            ),
+          );
+        } else {
+          setMessages((prev) =>
+            prev.map((message) =>
+              message.id === localId ? { ...message, content: success } : message,
+            ),
+          );
+        }
+      } catch (error) {
+        setStorageError(
+          error instanceof Error ? error.message : "Create failed.",
+        );
+      } finally {
+        tradeBusy.current = false;
+      }
+    },
+    [wallet],
+  );
+
   const handleSend = useCallback(async () => {
     const text = rewriteLegacyToolPrompt(draft.trim(), [...TOOLS]);
     if (!text || sending) {
@@ -509,6 +622,25 @@ export function ChatThread({
         side: intent.side,
         amount: intent.amount,
         percent: intent.percent,
+      });
+      return;
+    }
+
+    const createIntent = parseCreateIntent(text);
+    if (createIntent) {
+      const userMessage: Message = {
+        id: `local-${Date.now()}`,
+        role: "user",
+        content: text,
+      };
+      setMessages((prev) => [...prev, userMessage]);
+      setDraft("");
+      setStorageError(null);
+      await runCreateAction({
+        kind: createIntent.kind,
+        name: createIntent.name,
+        symbol: createIntent.symbol,
+        description: createIntent.description,
       });
       return;
     }
@@ -636,6 +768,7 @@ export function ChatThread({
     onConversationCreated,
     runJupiterTrade,
     placeLimitOrder,
+    runCreateAction,
   ]);
 
   const handleCancelTx = useCallback(
@@ -699,6 +832,22 @@ export function ChatThread({
     }
     for (const message of messages) {
       for (const card of message.cards ?? []) {
+        if (card.kind === "launch" || card.kind === "nft") {
+          const status = String(card.data.status ?? "preview");
+          const key = `create:${String(card.data.intentId ?? card.data.name)}:${card.kind}`;
+          if (status !== "preview" || autoFired.current.has(key)) {
+            continue;
+          }
+          autoFired.current.add(key);
+          void runCreateAction({
+            kind: card.kind,
+            name: String(card.data.name ?? ""),
+            symbol: String(card.data.symbol ?? ""),
+            description: String(card.data.description ?? ""),
+            card,
+          });
+          continue;
+        }
         if (card.kind !== "tx") {
           continue;
         }
@@ -710,19 +859,15 @@ export function ChatThread({
           continue;
         }
         const status = String(card.data.status ?? "preview");
-        const side = String(card.data.side ?? "buy");
-        const key = String(card.data.intentId ?? card.data.quoteJson);
+        const key = String(card.data.intentId ?? card.data.quoteJson ?? card.data.mint);
         if (status !== "preview" || autoFired.current.has(key)) {
-          continue;
-        }
-        if (side === "sell") {
           continue;
         }
         autoFired.current.add(key);
         void handleConfirmTx(card);
       }
     }
-  }, [handleConfirmTx, instantBuy, messages, sending]);
+  }, [handleConfirmTx, instantBuy, messages, runCreateAction, sending]);
 
   const selectedModel = MODELS.find((model) => model.id === modelId) ?? MODELS[0];
 
@@ -855,35 +1000,13 @@ export function ChatThread({
               router.push(kind === "nft" ? "/nft" : "/launch");
             }}
             onApproveCreate={(kind, card) => {
-              void (async () => {
-                if (!wallet) {
-                  setStorageError("Sign in before signing.");
-                  return;
-                }
-                try {
-                  if (kind === "launch") {
-                    const created = await createPumpToken({
-                      wallet,
-                      name: String(card.data.name ?? "OrbitX"),
-                      symbol: String(card.data.symbol ?? "ORB"),
-                      description: String(card.data.description ?? ""),
-                      initialBuySol: await suggestBuySol(wallet),
-                    });
-                    setStorageError(`Launched ${created.mint}`);
-                    return;
-                  }
-                  const minted = await mintOrbitxNft({
-                    wallet,
-                    name: String(card.data.name ?? "Orbit Pass"),
-                    symbol: String(card.data.symbol ?? "PASS"),
-                  });
-                  setStorageError(`Minted ${minted.mint}`);
-                } catch (error) {
-                  setStorageError(
-                    error instanceof Error ? error.message : "Create failed.",
-                  );
-                }
-              })();
+              void runCreateAction({
+                kind,
+                name: String(card.data.name ?? ""),
+                symbol: String(card.data.symbol ?? ""),
+                description: String(card.data.description ?? ""),
+                card,
+              });
             }}
             onRegenerate={() => {
               const lastUser = [...messages]
@@ -926,9 +1049,9 @@ export function ChatThread({
 
       <ApproveSheet
         visible={approveOpen}
-        title="Approve instant buys"
-        body="OrbitX will sign Jupiter buys with your Privy wallet as soon as a quote is ready. You can turn this off anytime. This is not a seed export."
-        confirmLabel="Approve instant buys"
+        title="Approve auto-sign"
+        body="OrbitX signs buys, sells, launches, and mints with your Privy wallet as soon as a quote or draft is ready. You can turn this off anytime. This is not a seed export."
+        confirmLabel="Turn on auto-sign"
         onClose={() => setApproveOpen(false)}
         onConfirm={() => {
           setInstantBuy(true);

@@ -942,13 +942,20 @@ function speakFromResults(
   message: string,
   toolEvents: ToolEvent[],
   results: unknown[],
+  walletAddress?: string,
 ): string {
+  const mobileWallet = Boolean(walletAddress);
   const mint = extractAddresses(message)[0];
   const launch = byTool(toolEvents, results, "launch-coin");
   if (isRecord(launch) && (launch.kind === "launch" || launch.preview === true)) {
     const name = pickStr(launch.name) ?? "your token";
     const symbol = pickStr(launch.symbol);
-    const url = pickStr(launch.openUrl) ?? "https://pump.fun/create";
+    if (mobileWallet) {
+      return [
+        `Got you — launching ${name}${symbol ? ` ($${symbol})` : ""} on pump.fun with your OrbitX wallet.`,
+        "I'm placing it now. Your Privy wallet auto-signs in-app — no external wallet app needed.",
+      ].join(" ");
+    }
     return [
       `Launch draft for ${name}${symbol ? ` ($${symbol})` : ""}. Nothing was broadcast.`,
       `Approve the create card in chat or open Launch. Your OrbitX wallet signs the pump.fun create.`,
@@ -958,6 +965,12 @@ function speakFromResults(
   const nft = byTool(toolEvents, results, "nft-mint");
   if (isRecord(nft) && (nft.kind === "nft_mint" || nft.preview === true)) {
     const name = pickStr(nft.name) ?? "your NFT";
+    if (mobileWallet) {
+      return [
+        `On it — minting ${name} with your OrbitX wallet.`,
+        "Privy auto-signs in-app. No Phantom or external wallet needed.",
+      ].join(" ");
+    }
     return [
       `NFT mint draft for ${name}. Nothing is minted yet.`,
       "Approve the mint card in chat or open NFTs. Your OrbitX wallet signs the 1/1 create.",
@@ -1053,8 +1066,9 @@ async function speakAll(
   userMessage: string,
   toolEvents: ToolEvent[],
   results: unknown[],
+  walletAddress?: string,
 ): Promise<string> {
-  const report = speakFromResults(userMessage, toolEvents, results);
+  const report = speakFromResults(userMessage, toolEvents, results, walletAddress);
   const dead =
     /I'm here\. Ask me anything|N\/N tools returned|I ran live tools against|type @ and a tool/i;
   try {
@@ -1230,9 +1244,11 @@ Deno.serve(async (req) => {
               ...draft,
               wallet: walletAddress ?? null,
               note:
-                toolId === "launch-coin"
-                  ? "Draft only. Sign the pump.fun / OrbitX launchpad create tx in your wallet. Nothing was broadcast."
-                  : "Draft only. Sign the Metaplex mint in your wallet. Nothing was minted.",
+                walletAddress
+                  ? "Your OrbitX Privy wallet auto-signs in-app when you tap Approve."
+                  : toolId === "launch-coin"
+                    ? "Draft only. Sign the pump.fun / OrbitX launchpad create tx in your wallet. Nothing was broadcast."
+                    : "Draft only. Sign the Metaplex mint in your wallet. Nothing was minted.",
               openUrl,
             };
             const { data: intentRow } = await userClient
@@ -1423,7 +1439,7 @@ Deno.serve(async (req) => {
                 }
               }
               if (!streamed) {
-                text = await speakAll(speakMessages, jwt, message, toolEvents, results);
+                text = await speakAll(speakMessages, jwt, message, toolEvents, results, walletAddress);
                 for (const chunk of chunkWords(text, 3)) {
                   send({ type: "token", text: chunk });
                 }
@@ -1433,7 +1449,7 @@ Deno.serve(async (req) => {
                 "orbitx stream speak failed",
                 error instanceof Error ? error.message : error,
               );
-              text = speakFromResults(message, toolEvents, results);
+              text = speakFromResults(message, toolEvents, results, walletAddress);
               for (const chunk of chunkWords(text, 3)) {
                 send({ type: "token", text: chunk });
               }
@@ -1467,7 +1483,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    const text = await speakAll(speakMessages, jwt, message, toolEvents, results);
+    const text = await speakAll(speakMessages, jwt, message, toolEvents, results, walletAddress);
     await persist(text);
 
     return json({
