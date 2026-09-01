@@ -1,4 +1,5 @@
 import { Platform } from "react-native";
+import { Buffer } from "buffer";
 import bs58 from "bs58";
 
 import { isInsideWalletBrowser } from "./walletOpen";
@@ -94,6 +95,10 @@ function pubkeyFromKey(key: { toBase58?: () => string; toString(): string } | nu
     throw new Error("Wallet did not return a public key.");
   }
   return pubkey;
+}
+
+export function utf8ToBase64(value: string): string {
+  return Buffer.from(new TextEncoder().encode(value)).toString("base64");
 }
 
 export function isSolanaPubkey(value: string): boolean {

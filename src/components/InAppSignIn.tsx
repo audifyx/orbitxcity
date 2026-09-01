@@ -19,7 +19,11 @@ import bs58 from "bs58";
 import { Buffer } from "buffer";
 
 import { useAuth } from "../lib/auth";
-import { isSolanaPubkey, isSolanaSignature } from "../lib/wallets";
+import {
+  isSolanaPubkey,
+  isSolanaSignature,
+  utf8ToBase64,
+} from "../lib/wallets";
 import { colors } from "../theme";
 
 type Mode = "email" | "phone";
@@ -134,8 +138,7 @@ export function InAppSignIn() {
   solanaRef.current = solana;
   const resumed = useRef(false);
   const {
-    requestSignInMessage,
-    signInWithSignature,
+    signInWithEmbeddedWallet,
     connecting,
     session,
     disconnect,
@@ -176,16 +179,17 @@ export function InAppSignIn() {
         "Could not create your OrbitX wallet. Check the code and try again.",
       );
     }
-    setStatus("Requesting a fresh sign-in nonce…");
-    const message = await requestSignInMessage(wallet.address);
-    setStatus("Sign the fresh nonce challenge. This is not a transaction.");
-    const provider = await wallet.getProvider();
-    const signed = await provider.request({
-      method: "signMessage",
-      params: { message },
+    setStatus("Requesting sign-in…");
+    await signInWithEmbeddedWallet(wallet.address, async (message) => {
+      setStatus("Approve the sign-in. This is not a transaction.");
+      const provider = await wallet.getProvider();
+      const signed = await provider.request({
+        method: "signMessage",
+        params: { message: utf8ToBase64(message) },
+      });
+      return toBase58Signature(signed);
     });
-    await signInWithSignature(wallet.address, toBase58Signature(signed));
-  }, [requestSignInMessage, signInWithSignature]);
+  }, [signInWithEmbeddedWallet]);
 
   const sendCode = useCallback(async () => {
     setLocalError(null);
