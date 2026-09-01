@@ -140,6 +140,25 @@ export async function invokeFunction(
   const { data, error } = await supabase.functions.invoke(name, { body });
 
   if (error) {
+    const context = (error as { context?: unknown }).context;
+    if (context && typeof context === "object" && "clone" in context) {
+      try {
+        const detail = await (context as Response).clone().json() as unknown;
+        if (detail && typeof detail === "object") {
+          const record = detail as Record<string, unknown>;
+          const serverMessage =
+            (typeof record.error === "string" && record.error) ||
+            (typeof record.message === "string" && record.message);
+          if (serverMessage) {
+            throw new Error(serverMessage);
+          }
+        }
+      } catch (detailError) {
+        if (detailError instanceof Error && detailError.message !== error.message) {
+          throw detailError;
+        }
+      }
+    }
     throw new Error(error.message ?? `Edge function "${name}" failed`);
   }
 

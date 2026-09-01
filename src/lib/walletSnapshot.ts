@@ -42,10 +42,15 @@ function firstArray(record: Record<string, unknown>, keys: string[]): RawToken[]
 function normalizeSnapshot(raw: unknown): WalletSnapshot {
   const record =
     typeof raw === "object" && raw !== null ? (raw as Record<string, unknown>) : {};
-  const data =
+  const nestedData =
     typeof record.data === "object" && record.data !== null
       ? (record.data as Record<string, unknown>)
-      : record;
+      : null;
+  const balanceData =
+    typeof record.balance === "object" && record.balance !== null
+      ? (record.balance as Record<string, unknown>)
+      : null;
+  const data = { ...record, ...(nestedData ?? {}), ...(balanceData ?? {}) };
 
   const rawTokens = firstArray(data, [
     "tokens",
@@ -149,7 +154,6 @@ export async function fetchWalletData(wallet: string): Promise<WalletSnapshot> {
   // Try the richest portfolio source first, then fall back. Each backend has a
   // slightly different contract, so we send a superset of the common params.
   const attempts: Array<{ name: string; body: Record<string, unknown> }> = [
-    { name: "wallet-portfolio", body: { address: wallet, wallet_address: wallet, wallet } },
     {
       name: "wallet-manager",
       body: { action: "get_balance", wallet_address: wallet, wallet },
