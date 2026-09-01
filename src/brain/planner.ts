@@ -41,7 +41,7 @@ const FORENSIC_VERBS =
   /\b(forensic|x-?ray|first\s?buyer|sniper|bundle|insider|dev\s?wallet)\b/i;
 
 const EXPLICIT_WRITE_VERBS =
-  /\b(execute|broadcast|send\s?swap|place\s?order|post\s?now|publish|list\s?nft|sell\s?nft)\b/i;
+  /\b(execute|broadcast|send\s?swap|place\s?order|buy|sell|swap|trade|purchase|exchange|post\s?now|publish|list\s?nft|sell\s?nft)\b/i;
 
 const QUOTE_ONLY_VERBS = /\b(quote|price|how\s?much|estimate)\b/i;
 
@@ -476,14 +476,24 @@ export function planFromUtterance(
   }
 
   if (mentions.length > 0) {
-    const notes = [`Using @ ${mentions.map((tool) => tool.id).join(", ")}`];
+    const mentionedIds = mentions.map((tool) => tool.id);
+    const directSwap = mentionedIds.includes("jupiter-swap") &&
+      /\b(buy|sell|swap|trade|purchase|exchange)\b/i.test(trimmed) &&
+      !QUOTE_ONLY_VERBS.test(trimmed);
+    const toolIds = directSwap
+      ? ["jupiter-quote", "jupiter-price", "jupiter-swap"]
+      : mentionedIds;
+    const notes = [`Using @ ${mentionedIds.join(", ")}`];
+    if (directSwap) {
+      notes.push("Direct Jupiter swap command detected: quote first, then require wallet confirmation before signing.");
+    }
     if (addresses.length > 0) {
       notes.push(`Solana address(es) detected: ${addresses.join(", ")}`);
     }
     return {
       agentIds: agentIds.length > 0 ? agentIds : ["master"],
-      toolIds: mentions.map((tool) => tool.id),
-      intent,
+      toolIds: toolIds.filter((id) => tools.some((tool) => tool.id === id)),
+      intent: directSwap ? "trade" : intent,
       notes,
     };
   }
