@@ -11,6 +11,7 @@ function b64ToBytes(b64: string): Uint8Array {
 
 export async function signAndSendSwapTransaction(
   swapTransactionB64: string,
+  _sendNative?: (transaction: Uint8Array) => Promise<Uint8Array | string>,
 ): Promise<string> {
   const provider = getInjectedPhantom();
   if (!provider?.signAndSendTransaction) {

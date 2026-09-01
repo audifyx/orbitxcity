@@ -9,6 +9,8 @@ import {
   View,
 } from "react-native";
 import { useRouter } from "expo-router";
+import { useEmbeddedSolanaWallet } from "@privy-io/expo";
+import { Connection, VersionedTransaction } from "@solana/web3.js";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import {
@@ -49,6 +51,7 @@ import {
   invokeFunctionStream,
   supabase,
 } from "../lib/supabase";
+import { solanaRpcUrl } from "../lib/env";
 import { colors } from "../theme";
 
 const CATEGORY_MAP: Record<BrainToolCategory, ToolCategory> = {
@@ -136,7 +139,33 @@ export function ChatThread({
 }: ChatThreadProps) {
   const insets = useSafeAreaInsets();
   const { userId, wallet } = useAuth();
+  const { wallets: embeddedSolanaWallets } = useEmbeddedSolanaWallet();
   const router = useRouter();
+  const sendNativeTransaction = useCallback(
+    async (transaction: Uint8Array): Promise<Uint8Array | string> => {
+      const embeddedWallet = embeddedSolanaWallets?.[0];
+      if (!embeddedWallet) {
+        throw new Error("Your embedded Solana wallet is not ready. Try again.");
+      }
+      const provider = await embeddedWallet.getProvider();
+      const result = await provider.request({
+        method: "signAndSendTransaction",
+        params: {
+          transaction: VersionedTransaction.deserialize(transaction),
+          connection: new Connection(solanaRpcUrl, "confirmed"),
+        },
+      });
+      if (
+        !result ||
+        typeof result !== "object" ||
+        typeof (result as { signature?: unknown }).signature !== "string"
+      ) {
+        throw new Error("Privy did not return a transaction signature.");
+      }
+      return (result as { signature: string }).signature;
+    },
+    [embeddedSolanaWallets],
+  );
 
   const [conversationId, setConversationId] = useState<string | undefined>(
     initialConversationId,
@@ -458,7 +487,10 @@ export function ChatThread({
           userPublicKey: wallet,
         });
         patch("submitted");
-        const signature = await signAndSendSwapTransaction(swapTx);
+        const signature = await signAndSendSwapTransaction(
+          swapTx,
+          sendNativeTransaction,
+        );
         if (intentId && isUuid(intentId)) {
           await supabase
             .from("orbitx_ai_transaction_intents")
@@ -515,7 +547,7 @@ export function ChatThread({
         }
       }
     },
-    [matchTxCard, wallet],
+    [matchTxCard, sendNativeTransaction, wallet],
   );
 
   const selectedModel = MODELS.find((model) => model.id === modelId) ?? MODELS[0];
