@@ -22,6 +22,7 @@ import {
 } from "./phantom";
 import { supabase, walletAuth, warmWalletAuth } from "./supabase";
 import { connectWithPrivy, consumePrivyHostResult, isPrivyConfigured } from "./privyConnect";
+import { logoutPrivySession } from "./privyProvider";
 import { openHostedAuth } from "./walletOpen";
 import {
   connectBrowserWallet,
@@ -497,14 +498,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     persistWallet(null);
 
     const { error: signOutError } = await supabase.auth.signOut();
-    if (signOutError) {
-      setError(signOutError.message);
-      throw new Error(signOutError.message);
-    }
+    await logoutPrivySession().catch(() => undefined);
 
     await clearPhantomSecureStore();
     setWallet(null);
     setSession(null);
+
+    if (signOutError) {
+      setError(signOutError.message);
+      throw new Error(signOutError.message);
+    }
   }, []);
 
   const value = useMemo<AuthContextValue>(

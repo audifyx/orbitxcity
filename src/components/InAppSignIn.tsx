@@ -133,7 +133,13 @@ export function InAppSignIn() {
   const solanaRef = useRef(solana);
   solanaRef.current = solana;
   const resumed = useRef(false);
-  const { requestSignInMessage, signInWithSignature, connecting } = useAuth();
+  const {
+    requestSignInMessage,
+    signInWithSignature,
+    connecting,
+    session,
+    disconnect,
+  } = useAuth();
 
   const [mode, setMode] = useState<Mode>("email");
   const [identifier, setIdentifier] = useState("");
@@ -244,14 +250,17 @@ export function InAppSignIn() {
     setBusy(true);
     setStatus("Finishing your OrbitX wallet…");
     void finishWalletSession()
-      .catch((error) => {
+      .catch(async (error) => {
+        if (!session) {
+          await disconnect().catch(() => undefined);
+        }
         setLocalError(friendlyPrivyError(error));
         setStatus(null);
       })
       .finally(() => {
         setBusy(false);
       });
-  }, [finishWalletSession, isReady, user]);
+  }, [disconnect, finishWalletSession, isReady, session, user]);
 
   const displayError =
     localError ?? (!user && privyError ? friendlyPrivyError(privyError) : null);
