@@ -10,7 +10,7 @@ import {
 } from "react-native";
 import { useRouter } from "expo-router";
 import { useEmbeddedSolanaWallet } from "@privy-io/expo";
-import { Connection, VersionedTransaction } from "@solana/web3.js";
+import { Connection, PublicKey, VersionedTransaction } from "@solana/web3.js";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import {
@@ -495,6 +495,17 @@ export function ChatThread({
 
       patch("awaiting_signature");
       try {
+        if (quote.inputMint === "So11111111111111111111111111111111111111112") {
+          const connection = new Connection(solanaRpcUrl, "confirmed");
+          const balanceLamports = await connection.getBalance(new PublicKey(wallet), "confirmed");
+          const inputLamports = Number(quote.inAmount);
+          const feeReserveLamports = 5_000_000;
+          if (Number.isFinite(inputLamports) && balanceLamports < inputLamports + feeReserveLamports) {
+            throw new Error(
+              `Insufficient SOL for this swap. Available ${(balanceLamports / 1_000_000_000).toFixed(6)} SOL; required at least ${((inputLamports + feeReserveLamports) / 1_000_000_000).toFixed(6)} SOL including fees.`,
+            );
+          }
+        }
         const swapTx = await fetchSwapTransaction({
           quoteResponse: quote,
           userPublicKey: wallet,
@@ -548,8 +559,10 @@ export function ChatThread({
           );
         }
       } catch (error) {
-        const detail =
-          error instanceof Error ? error.message : "Swap signing failed";
+        const rawDetail = error instanceof Error ? error.message : "Swap signing failed";
+        const detail = /insufficient lamports|custom program error: 0x1|simulation failed/i.test(rawDetail)
+          ? "Swap could not be funded by the connected wallet. Check your SOL balance and leave extra SOL for network fees and token-account rent."
+          : rawDetail;
         setStorageError(detail);
         patch("failed");
         if (intentId && isUuid(intentId)) {

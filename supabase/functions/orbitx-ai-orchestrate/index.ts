@@ -320,6 +320,27 @@ function parseSolAmount(text: string): number | null {
   const n = Number(match[1]);
   return Number.isFinite(n) && n > 0 ? n : null;
 }
+function parsePercent(text: string): number | null {
+  const match = text.match(/(\d+(?:\.\d+)?)\s*%/);
+  if (!match) return null;
+  const n = Number(match[1]);
+  return Number.isFinite(n) && n > 0 && n <= 100 ? n : null;
+}
+function parseDollarAmount(text: string): number | null {
+  const match = text.match(/(?:\$\s*(\d+(?:\.\d+)?)|(\d+(?:\.\d+)?)\s*(?:usd|dollars?))/i);
+  if (!match) return null;
+  const n = Number(match[1] ?? match[2]);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+async function dollarToLamports(text: string): Promise<number | null> {
+  const usd = parseDollarAmount(text);
+  if (usd == null) return null;
+  const response = await tfetch(`https://lite-api.jup.ag/price/v2?ids=${SOL_MINT}`, { headers: { Accept: "application/json" } }, 8000);
+  const body = await response.json() as { data?: Record<string, { price?: string }> };
+  const price = Number(body.data?.[SOL_MINT]?.price);
+  if (!response.ok || !Number.isFinite(price) || price <= 0) throw new Error("Could not resolve the live SOL/USD price for this dollar-sized swap.");
+  return Math.max(1, Math.floor((usd / price) * 1_000_000_000));
+}
 
 function slugName(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
@@ -566,7 +587,7 @@ function parseCreateDraft(text: string): {
   };
 }
 
-function payloadForTool(
+async function payloadForTool(
   toolId: string,
   message: string,
   addresses: string[],
@@ -595,12 +616,17 @@ function payloadForTool(
     return { wallet, mint };
   }
   if (toolId === "jupiter-quote") {
-    const sol = parseSolAmount(message) ?? 0.1;
+    const dollarLamports = await dollarToLamports(message);
+    const sol = parseSolAmount(message);
+    const amount = dollarLamports ?? (sol != null ? Math.round(sol * 1_000_000_000) : 100_000_000);
+    const selling = /\bsell\b/i.test(message);
     return {
-      inputMint: SOL_MINT,
-      outputMint: mint ?? SOL_MINT,
-      amount: Math.round(sol * 1_000_000_000),
+      inputMint: selling ? (mint ?? SOL_MINT) : SOL_MINT,
+      outputMint: selling ? SOL_MINT : (mint ?? SOL_MINT),
+      amount,
       slippageBps: 50,
+      side: selling ? "sell" : "buy",
+      ...(parsePercent(message) != null ? { percent: parsePercent(message) } : {}),
     };
   }
   if (toolId === "jupiter-price") {
@@ -1247,7 +1273,7 @@ Deno.serve(async (req) => {
               },
             });
           } else {
-            const payload = payloadForTool(toolId, message, addresses, walletAddress);
+            const payload = await payloadForTool(toolId, message, addresses, walletAddress);
             result = await callFn(toolId, payload, jwt);
             if (toolId === "jupiter-quote" && isRecord(result)) {
               const quote = isRecord(result.quote) ? result.quote : result;
