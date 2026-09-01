@@ -16,6 +16,7 @@ import {
   usePrivy,
 } from "@privy-io/expo";
 import bs58 from "bs58";
+import { Buffer } from "buffer";
 
 import { useAuth } from "../lib/auth";
 import { isSolanaPubkey, isSolanaSignature } from "../lib/wallets";
@@ -39,25 +40,65 @@ function isE164Phone(value: string): boolean {
   return /^\+[1-9]\d{7,14}$/.test(value);
 }
 
+function encodeSignatureBytes(bytes: Uint8Array): string | null {
+  if (bytes.length !== 64) {
+    return null;
+  }
+  const encoded = bs58.encode(bytes);
+  return isSolanaSignature(encoded) ? encoded : null;
+}
+
+function encodeSignatureString(value: string): string | null {
+  const trimmed = value.trim();
+  if (isSolanaSignature(trimmed)) {
+    return trimmed;
+  }
+
+  const hex = trimmed.replace(/^0x/, "");
+  if (/^[0-9a-fA-F]{128}$/.test(hex)) {
+    return encodeSignatureBytes(Uint8Array.from(Buffer.from(hex, "hex")));
+  }
+
+  if (/^[A-Za-z0-9+/]+={0,2}$/.test(trimmed)) {
+    try {
+      return encodeSignatureBytes(
+        Uint8Array.from(Buffer.from(trimmed, "base64")),
+      );
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
 function toBase58Signature(value: unknown): string {
-  if (typeof value === "string" && isSolanaSignature(value)) {
-    return value;
+  if (typeof value === "string") {
+    const encoded = encodeSignatureString(value);
+    if (encoded) {
+      return encoded;
+    }
   }
   if (value instanceof Uint8Array) {
-    const encoded = bs58.encode(value);
-    if (isSolanaSignature(encoded)) {
+    const encoded = encodeSignatureBytes(value);
+    if (encoded) {
+      return encoded;
+    }
+  }
+  if (Array.isArray(value)) {
+    const encoded = encodeSignatureBytes(Uint8Array.from(value));
+    if (encoded) {
       return encoded;
     }
   }
   if (value && typeof value === "object") {
     const rec = value as Record<string, unknown>;
-    if (typeof rec.signature === "string" && isSolanaSignature(rec.signature)) {
-      return rec.signature;
-    }
-    if (rec.signature instanceof Uint8Array) {
-      const encoded = bs58.encode(rec.signature);
-      if (isSolanaSignature(encoded)) {
-        return encoded;
+    for (const nested of [rec.signature, rec.data, rec.result]) {
+      if (nested !== undefined) {
+        try {
+          return toBase58Signature(nested);
+        } catch {
+          // Try the next native response shape.
+        }
       }
     }
   }
@@ -143,6 +184,11 @@ export function InAppSignIn() {
     setLocalError(null);
     setBusy(true);
     try {
+      if (user) {
+        setStatus("You are already signed in. Finishing your OrbitX session…");
+        await finishWalletSession();
+        return;
+      }
       if (mode === "email") {
         const email = identifier.trim().toLowerCase();
         if (!looksLikeEmail(email)) {
@@ -164,7 +210,7 @@ export function InAppSignIn() {
     } finally {
       setBusy(false);
     }
-  }, [emailLogin, identifier, mode, smsLogin]);
+  }, [emailLogin, finishWalletSession, identifier, mode, smsLogin, user]);
 
   const verifyCode = useCallback(async () => {
     setLocalError(null);
@@ -207,7 +253,7 @@ export function InAppSignIn() {
   }, [finishWalletSession, isReady, user]);
 
   const displayError =
-    localError ?? (privyError ? friendlyPrivyError(privyError) : null);
+    localError ?? (!user && privyError ? friendlyPrivyError(privyError) : null);
   const working = busy || connecting;
 
   if (!isReady) {
@@ -294,7 +340,11 @@ export function InAppSignIn() {
           <ActivityIndicator color={colors.frost} />
         ) : (
           <Text style={styles.primaryButtonText}>
-            {codeSent ? "Verify and enter OrbitX" : "Send code"}
+            {codeSent
+              ? "Verify and enter OrbitX"
+              : user
+                ? "Continue to OrbitX"
+                : "Send code"}
           </Text>
         )}
       </Pressable>
