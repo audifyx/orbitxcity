@@ -74,9 +74,10 @@ const KNOWN_TOOLS = [
   "birdseye-analytics",
   "solana-tracker",
   "oxw-token-scan",
-  "jupiter-quote",
-  "jupiter-price",
   "jupiter-tokens",
+  "jupiter-price",
+  "jupiter-swap",
+  "jupiter-order",
   "alerts",
   "wallet-manager",
   "news-fetcher",
@@ -1157,14 +1158,19 @@ Deno.serve(async (req) => {
       "x-poster",
       "nft-execute-sale",
     ]);
+    const directSwapMention = mentions.includes("jupiter-swap") &&
+      /\b(buy|sell|swap|trade|purchase|exchange)\b/i.test(message) &&
+      !/\b(quote|price|how\s+much|estimate)\b/i.test(message);
     let toolIds = (
       !live
         ? []
-        : mentions.length > 0
-          ? mentions
-          : requestedTools.length > 0
-            ? requestedTools
-            : planTools(message, intent)
+        : directSwapMention
+          ? ["jupiter-quote", "jupiter-price"]
+          : mentions.length > 0
+            ? mentions
+            : requestedTools.length > 0
+              ? requestedTools
+              : planTools(message, intent)
     ).filter((id) => !blocked.has(id));
 
     if (
@@ -1255,7 +1261,7 @@ Deno.serve(async (req) => {
                   input_mint: SOL_MINT,
                   output_mint: addresses[0] ?? null,
                   amount_raw: String(payload.amount ?? ""),
-                  quote: compact(quote),
+                  quote,
                 })
                 .select("id")
                 .single();
@@ -1268,9 +1274,9 @@ Deno.serve(async (req) => {
                   outAmount: String(quote.outAmount ?? ""),
                   slippageBps: quote.slippageBps ?? 50,
                   status: "preview",
-                  route: hops > 0 ? `${hops} hop Jupiter` : "Jupiter",
+                  route: hops > 0 ? `${hops} hop ${quote.provider === "raptor" ? "Raptor" : "Jupiter"}` : (quote.provider === "raptor" ? "Raptor" : "Jupiter"),
                   intentId: intentRow?.id ?? "",
-                  quoteJson: JSON.stringify(compact(quote)),
+                  quoteJson: JSON.stringify(quote),
                   inputMint: SOL_MINT,
                   outputMint: addresses[0] ?? SOL_MINT,
                 },

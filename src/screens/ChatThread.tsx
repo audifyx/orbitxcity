@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -182,6 +182,7 @@ export function ChatThread({
   const [toolSheetOpen, setToolSheetOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [paletteQuery, setPaletteQuery] = useState("");
+  const confirmTxRef = useRef<((card: MessageCard) => Promise<void>) | null>(null);
 
   const loadMessages = useCallback(async (convId: string) => {
     setLoadingHistory(true);
@@ -420,6 +421,18 @@ export function ChatThread({
     }
 
     setSending(false);
+
+    const directTrade = /\b(buy|sell|swap|trade|purchase|exchange)\b/i.test(text);
+    const previewCard = result.cards.find(
+      (card) => card.kind === "tx" && card.data.status === "preview" && card.data.quoteJson,
+    );
+    if (directTrade && previewCard && confirmTxRef.current) {
+      await confirmTxRef.current({
+        kind: previewCard.kind,
+        title: previewCard.title,
+        data: flattenCardData(previewCard.data),
+      });
+    }
   }, [
     draft,
     sending,
@@ -549,6 +562,8 @@ export function ChatThread({
     },
     [matchTxCard, sendNativeTransaction, wallet],
   );
+
+  confirmTxRef.current = handleConfirmTx;
 
   const selectedModel = MODELS.find((model) => model.id === modelId) ?? MODELS[0];
 
