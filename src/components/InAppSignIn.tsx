@@ -170,8 +170,9 @@ export function InAppSignIn() {
         "Could not create your OrbitX wallet. Check the code and try again.",
       );
     }
-    setStatus("Approve the sign-in. This is not a transaction.");
+    setStatus("Requesting a fresh sign-in nonce…");
     const message = await requestSignInMessage(wallet.address);
+    setStatus("Sign the fresh nonce challenge. This is not a transaction.");
     const provider = await wallet.getProvider();
     const signed = await provider.request({
       method: "signMessage",
