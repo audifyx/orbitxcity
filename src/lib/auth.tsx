@@ -382,7 +382,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       try {
         if (Platform.OS !== "web") {
-          await openHostedAuth();
+          await connectWithPrivy();
           return;
         }
 

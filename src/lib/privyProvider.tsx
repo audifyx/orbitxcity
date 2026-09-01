@@ -1,22 +1,48 @@
-import type { ReactNode } from "react";
-import { PrivyProvider } from "@privy-io/expo";
-
+import { useEffect, type ReactNode } from "react";
+import { PrivyProvider, usePrivy } from "@privy-io/expo";
 import { privyAppId, privyClientId } from "./env";
 
-/**
- * Native Privy provider — wraps the app so screens can use Privy's real
- * React Native hooks (useLoginWithEmail, useLoginWithSMS,
- * useEmbeddedSolanaWallet, etc.) for true in-app authentication, instead of
- * redirecting out to the hosted ogscan.fun browser page. Wallet export still
- * intentionally uses that hosted page — this only covers login.
- */
+let logoutPrivyImpl: (() => Promise<void>) | null = null;
+
+export async function logoutPrivySession(): Promise<void> {
+  if (!logoutPrivyImpl) {
+    return;
+  }
+  await logoutPrivyImpl();
+}
+
+function PrivySessionBinder({ children }: { children: ReactNode }) {
+  const { logout } = usePrivy();
+
+  useEffect(() => {
+    logoutPrivyImpl = logout;
+    return () => {
+      if (logoutPrivyImpl === logout) {
+        logoutPrivyImpl = null;
+      }
+    };
+  }, [logout]);
+
+  return <>{children}</>;
+}
+
 export function OrbitxPrivyProvider({ children }: { children: ReactNode }) {
   if (!privyAppId) {
     return <>{children}</>;
   }
+
   return (
-    <PrivyProvider appId={privyAppId} clientId={privyClientId || undefined}>
-      {children}
+    <PrivyProvider
+      appId={privyAppId}
+      clientId={privyClientId || undefined}
+      config={{
+        embedded: {
+          ethereum: { createOnLogin: "off" },
+          solana: { createOnLogin: "all-users" },
+        },
+      }}
+    >
+      <PrivySessionBinder>{children}</PrivySessionBinder>
     </PrivyProvider>
   );
 }
