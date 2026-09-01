@@ -42,6 +42,7 @@ import {
 import { useAuth } from "../lib/auth";
 import {
   confirmSignature,
+  fetchQuote,
   fetchSwapTransaction,
   parseQuoteJson,
   signAndSendSwapTransaction,
@@ -183,6 +184,7 @@ export function ChatThread({
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [paletteQuery, setPaletteQuery] = useState("");
   const confirmTxRef = useRef<((card: MessageCard) => Promise<void>) | null>(null);
+  const sellAllRef = useRef<(() => Promise<void>) | null>(null);
 
   const loadMessages = useCallback(async (convId: string) => {
     setLoadingHistory(true);
@@ -305,6 +307,11 @@ export function ChatThread({
   const handleSend = useCallback(async () => {
     const text = rewriteLegacyToolPrompt(draft.trim(), [...TOOLS]);
     if (!text || sending) {
+      return;
+    }
+    if (/\bsell\s+(all|everything)\b.*\b(tokens?|holdings?|assets?)\b.*\b(sol|SOL)\b/i.test(text) && sellAllRef.current) {
+      setDraft("");
+      await sellAllRef.current();
       return;
     }
 
@@ -577,6 +584,47 @@ export function ChatThread({
   );
 
   confirmTxRef.current = handleConfirmTx;
+
+  const handleSellAll = useCallback(async () => {
+    if (!wallet) {
+      setStorageError("Sign in before selling tokens.");
+      return;
+    }
+    setStorageError(null);
+    try {
+      const connection = new Connection(solanaRpcUrl, "confirmed");
+      const parsed = await connection.getParsedTokenAccountsByOwner(new PublicKey(wallet), {
+        programId: new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"),
+      });
+      const candidates = parsed.value.flatMap((account) => {
+        const info = (account.account.data as { parsed?: { info?: { mint?: string; tokenAmount?: { amount?: string; decimals?: number } } } }).parsed?.info;
+        const mint = info?.mint;
+        const amount = info?.tokenAmount?.amount;
+        if (!mint || !amount || amount === "0" || mint === "So11111111111111111111111111111111111111112") return [];
+        return [{ mint, amount }];
+      });
+      if (candidates.length === 0) {
+        setStorageError("No non-SOL token balances were found to sell.");
+        return;
+      }
+      let completed = 0;
+      for (const candidate of candidates) {
+        const quote = await fetchQuote({
+          inputMint: candidate.mint,
+          outputMint: "So11111111111111111111111111111111111111112",
+          amount: candidate.amount,
+          slippageBps: 75,
+        });
+        const swapTx = await fetchSwapTransaction({ quoteResponse: quote, userPublicKey: wallet });
+        const signature = await signAndSendSwapTransaction(swapTx, sendNativeTransaction);
+        completed += 1;
+        setStorageError(`Sold ${completed}/${candidates.length} token balances into SOL. Latest ${signature.slice(0, 8)}…`);
+      }
+    } catch (error) {
+      setStorageError(error instanceof Error ? error.message : "Sell-all failed before completion.");
+    }
+  }, [sendNativeTransaction, wallet]);
+  sellAllRef.current = handleSellAll;
 
   const selectedModel = MODELS.find((model) => model.id === modelId) ?? MODELS[0];
 

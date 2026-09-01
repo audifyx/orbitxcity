@@ -332,6 +332,22 @@ function parseDollarAmount(text: string): number | null {
   const n = Number(match[1] ?? match[2]);
   return Number.isFinite(n) && n > 0 ? n : null;
 }
+async function dollarToTokenBaseUnits(text: string, mint: string): Promise<number | null> {
+  const usd = parseDollarAmount(text);
+  if (usd == null) return null;
+  const [priceResponse, tokenResponse] = await Promise.all([
+    tfetch(`https://lite-api.jup.ag/price/v2?ids=${mint}`, { headers: { Accept: "application/json" } }, 8000),
+    tfetch(`https://tokens.jup.ag/token/${mint}`, { headers: { Accept: "application/json" } }, 8000),
+  ]);
+  const priceBody = await priceResponse.json() as { data?: Record<string, { price?: string }> };
+  const tokenBody = await tokenResponse.json() as { decimals?: number };
+  const price = Number(priceBody.data?.[mint]?.price);
+  const decimals = Number(tokenBody.decimals);
+  if (!priceResponse.ok || !Number.isFinite(price) || price <= 0 || !Number.isInteger(decimals) || decimals < 0 || decimals > 18) {
+    throw new Error("Could not resolve the live token price and decimals for this dollar-sized sell.");
+  }
+  return Math.max(1, Math.floor((usd / price) * (10 ** decimals)));
+}
 async function dollarToLamports(text: string): Promise<number | null> {
   const usd = parseDollarAmount(text);
   if (usd == null) return null;
@@ -616,10 +632,12 @@ async function payloadForTool(
     return { wallet, mint };
   }
   if (toolId === "jupiter-quote") {
-    const dollarLamports = await dollarToLamports(message);
+    const selling = /\bsell\b/i.test(message);
+    const dollarLamports = selling && mint
+      ? await dollarToTokenBaseUnits(message, mint)
+      : await dollarToLamports(message);
     const sol = parseSolAmount(message);
     const amount = dollarLamports ?? (sol != null ? Math.round(sol * 1_000_000_000) : 100_000_000);
-    const selling = /\bsell\b/i.test(message);
     return {
       inputMint: selling ? (mint ?? SOL_MINT) : SOL_MINT,
       outputMint: selling ? SOL_MINT : (mint ?? SOL_MINT),
