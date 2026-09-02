@@ -9,10 +9,6 @@ import {
   TextInput,
   View,
 } from "react-native";
-import {
-  useEmbeddedSolanaWallet,
-  usePrivy,
-} from "@privy-io/expo";
 import bs58 from "bs58";
 import { Buffer } from "buffer";
 
@@ -112,33 +108,13 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function friendlyPrivyError(error: unknown): string {
-  const message = error instanceof Error ? error.message : "Sign-in failed.";
-  const lower = message.toLowerCase();
-  if (
-    lower.includes("app identifier") ||
-    lower.includes("application identifier") ||
-    lower.includes("client id") ||
-    lower.includes("client_id") ||
-    lower.includes("allowed_native") ||
-    lower.includes("invalid origin")
-  ) {
-    return "Privy is not set up for Expo Go yet. In the Privy dashboard Clients tab, add app identifiers host.exp.Exponent and ai.orbitx.app, URL schemes exp and orbitx, then set EXPO_PUBLIC_PRIVY_CLIENT_ID. Stay in this app.";
-  }
-  return message;
+function friendlyAuthError(error: unknown): string {
+  return error instanceof Error ? error.message : "Sign-in failed.";
 }
 
 export function InAppSignIn() {
-  const { isReady, user, error: privyError } = usePrivy();
-  const authenticated = isReady && Boolean(user);
-  const solana = useEmbeddedSolanaWallet();
-  const solanaRef = useRef(solana);
-  solanaRef.current = solana;
-  const privyRef = useRef({ isReady, authenticated, user });
-  privyRef.current = { isReady, authenticated, user };
   const resumed = useRef(false);
   const {
-    attachEmbeddedWallet,
     connecting,
     session,
     disconnect,
@@ -151,48 +127,6 @@ export function InAppSignIn() {
   const [status, setStatus] = useState<string | null>(null);
   const [localError, setLocalError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-
-  const finishWalletSession = useCallback(async () => {
-    setStatus("Connecting your OrbitX wallet…");
-    const deadline = Date.now() + 45_000;
-    while (
-      (!privyRef.current.isReady || !privyRef.current.authenticated || !privyRef.current.user) &&
-      Date.now() < deadline
-    ) {
-      await sleep(200);
-    }
-    if (!privyRef.current.isReady || !privyRef.current.authenticated || !privyRef.current.user) {
-      throw new Error("Your account session did not finish initializing. Please try again.");
-    }
-    setStatus("Creating your OrbitX wallet…");
-    let current = solanaRef.current;
-    let wallets = current.wallets ?? [];
-    if (wallets.length === 0 && typeof current.create === "function") {
-      try {
-        await current.create();
-      } catch (createError) {
-        const text =
-          createError instanceof Error ? createError.message.toLowerCase() : "";
-        if (!text.includes("already")) {
-          throw createError;
-        }
-      }
-    }
-    while (wallets.length === 0 && Date.now() < deadline) {
-      await sleep(200);
-      current = solanaRef.current;
-      wallets = current.wallets ?? [];
-    }
-    const wallet = wallets.find((item) => isSolanaPubkey(item.address));
-    if (!wallet) {
-      throw new Error(
-        "Could not create your OrbitX wallet. Check the code and try again.",
-      );
-    }
-    setStatus("Requesting sign-in…");
-    await attachEmbeddedWallet(wallet.address);
-    setStatus("OrbitX wallet ready.");
-  }, [attachEmbeddedWallet]);
 
   const sendCode = useCallback(async () => {
     setLocalError(null);
@@ -216,12 +150,12 @@ export function InAppSignIn() {
       setCodeSent(true);
       setStatus("Enter the code we sent you.");
     } catch (error) {
-      setLocalError(friendlyPrivyError(error));
+      setLocalError(friendlyAuthError(error));
       setStatus(null);
     } finally {
       setBusy(false);
     }
-  }, [finishWalletSession, identifier, mode]);
+  }, [identifier, mode]);
 
   const verifyCode = useCallback(async () => {
     setLocalError(null);
@@ -249,43 +183,18 @@ export function InAppSignIn() {
         });
         if (error) throw new Error(error.message);
       }
-      await finishWalletSession();
     } catch (error) {
-      setLocalError(friendlyPrivyError(error));
+      setLocalError(friendlyAuthError(error));
       setStatus(null);
     } finally {
       setBusy(false);
     }
-  }, [code, finishWalletSession, identifier, mode]);
+  }, [code, identifier, mode]);
 
-  useEffect(() => {
-    if (!user) {
-      resumed.current = false;
-      return;
-    }
-    if (!isReady || session || resumed.current) {
-      return;
-    }
-    resumed.current = true;
-    setBusy(true);
-    setStatus("Finishing your OrbitX wallet…");
-    void finishWalletSession()
-      .catch(async (error) => {
-        if (!session) {
-          await disconnect().catch(() => undefined);
-        }
-        setLocalError(friendlyPrivyError(error));
-        setStatus(null);
-      })
-      .finally(() => {
-        setBusy(false);
-      });
-  }, [disconnect, finishWalletSession, isReady, session, user]);
-
-  const displayError = localError ?? (privyError ? friendlyPrivyError(privyError) : null);
+  const displayError = localError;
   const resetLocalSession = useCallback(async () => {
     setLocalError(null);
-    setStatus("Resetting the local Privy session…");
+    setStatus("Resetting the local session…");
     setCodeSent(false);
     setCode("");
     resumed.current = false;
@@ -294,15 +203,6 @@ export function InAppSignIn() {
   }, [disconnect]);
 
   const working = busy || connecting;
-
-  if (!isReady) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator color={colors.signal} />
-        <Text style={styles.status}>Starting in-app sign-in…</Text>
-      </View>
-    );
-  }
 
   return (
     <KeyboardAvoidingView
@@ -392,17 +292,6 @@ export function InAppSignIn() {
           accessibilityLabel="Resend code"
         >
           <Text style={styles.resend}>Resend code</Text>
-        </Pressable>
-      ) : null}
-
-      {user ? (
-        <Pressable
-          onPress={() => void resetLocalSession()}
-          disabled={working}
-          accessibilityRole="button"
-          accessibilityLabel="Reset local session"
-        >
-          <Text style={styles.reset}>Reset local session</Text>
         </Pressable>
       ) : null}
     </KeyboardAvoidingView>

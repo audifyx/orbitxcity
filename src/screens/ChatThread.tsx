@@ -9,7 +9,6 @@ import {
   View,
 } from "react-native";
 import { useRouter } from "expo-router";
-import { useEmbeddedSolanaWallet } from "@privy-io/expo";
 import { Connection, PublicKey, VersionedTransaction } from "@solana/web3.js";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -53,6 +52,7 @@ import {
   supabase,
 } from "../lib/supabase";
 import { solanaRpcUrl } from "../lib/env";
+import { signAndSendJupiterMobileTransaction } from "../lib/jupiterMobileWallet";
 import { colors } from "../theme";
 
 const CATEGORY_MAP: Record<BrainToolCategory, ToolCategory> = {
@@ -140,32 +140,15 @@ export function ChatThread({
 }: ChatThreadProps) {
   const insets = useSafeAreaInsets();
   const { userId, wallet } = useAuth();
-  const { wallets: embeddedSolanaWallets } = useEmbeddedSolanaWallet();
   const router = useRouter();
   const sendNativeTransaction = useCallback(
     async (transaction: Uint8Array): Promise<Uint8Array | string> => {
-      const embeddedWallet = embeddedSolanaWallets?.[0];
-      if (!embeddedWallet) {
-        throw new Error("Your embedded Solana wallet is not ready. Try again.");
+      if (Platform.OS === "web") {
+        throw new Error("A Jupiter Wallet connection is required to sign this swap.");
       }
-      const provider = await embeddedWallet.getProvider();
-      const result = await provider.request({
-        method: "signAndSendTransaction",
-        params: {
-          transaction: VersionedTransaction.deserialize(transaction),
-          connection: new Connection(solanaRpcUrl, "confirmed"),
-        },
-      });
-      if (
-        !result ||
-        typeof result !== "object" ||
-        typeof (result as { signature?: unknown }).signature !== "string"
-      ) {
-        throw new Error("Privy did not return a transaction signature.");
-      }
-      return (result as { signature: string }).signature;
+      return signAndSendJupiterMobileTransaction(transaction);
     },
-    [embeddedSolanaWallets],
+    [],
   );
 
   const [conversationId, setConversationId] = useState<string | undefined>(

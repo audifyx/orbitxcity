@@ -4,7 +4,6 @@ import { useRouter } from "expo-router";
 
 import { ProfileView, type ProfileQuickLink } from "../../src/components";
 import { useAuth } from "../../src/lib/auth";
-import { walletExportUrl } from "../../src/lib/hostedAuth";
 import { supabase } from "../../src/lib/supabase";
 import { openExternalUrl } from "../../src/lib/walletOpen";
 
@@ -17,7 +16,7 @@ type ProfileRow = {
 const QUICK_LINKS: ProfileQuickLink[] = [
   { id: "wallet", label: "Wallet", hint: "Holdings, portfolio value, and PnL" },
   { id: "settings", label: "Settings", hint: "Model, memory, and permissions" },
-  { id: "export", label: "Export wallet", hint: "Reveal your private key on ogscan.fun" },
+  { id: "export", label: "Connect wallet", hint: "Connect Jupiter Wallet to trade" },
 ];
 
 function formatDate(value?: string): string | undefined {
@@ -102,7 +101,7 @@ export default function ProfileScreen() {
       } else if (id === "settings") {
         router.push("/settings");
       } else if (id === "export") {
-        void openExternalUrl(walletExportUrl());
+        router.push("/wallet");
       }
     },
     [router],

@@ -1,11 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
-import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { LimitLadder, PerformancePanel, PortfolioView, type LadderOrder, type PortfolioToken } from "../../src/components";
 import { useAuth } from "../../src/lib/auth";
-import { walletExportUrl } from "../../src/lib/hostedAuth";
 import { openExternalUrl } from "../../src/lib/walletOpen";
 import { fetchWalletData, type WalletSnapshot } from "../../src/lib/walletSnapshot";
 import { colors } from "../../src/theme";
@@ -13,7 +12,7 @@ import { colors } from "../../src/theme";
 export default function WalletScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { wallet, disconnect } = useAuth();
+  const { wallet, disconnect, connect, connecting } = useAuth();
 
   const [snapshot, setSnapshot] = useState<WalletSnapshot | null>(null);
   const [loading, setLoading] = useState(false);
@@ -76,8 +75,18 @@ export default function WalletScreen() {
   }, [wallet]);
 
   const exportWallet = useCallback(() => {
-    void openExternalUrl(walletExportUrl());
+    setError("Connect Jupiter Wallet before trading.");
   }, []);
+
+  const connectJupiter = useCallback(async () => {
+    setError(null);
+    try {
+      await connect("jupiter");
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not connect Jupiter Wallet.");
+    }
+  }, [connect, load]);
 
   const buyToken = useCallback(
     (token: PortfolioToken) => {
@@ -133,13 +142,18 @@ export default function WalletScreen() {
     <View style={[styles.root, { paddingBottom: insets.bottom }]}>
       <View style={styles.header}>
         <Text style={styles.title}>Wallet</Text>
-        <Text style={styles.subtitle}>Your OrbitX in-app wallet</Text>
+        <Text style={styles.subtitle}>Connect Jupiter Wallet to trade</Text>
       </View>
 
       {!wallet ? (
-        <Text style={styles.empty}>
-          Sign in with email or phone and OrbitX creates this wallet for you.
-        </Text>
+        <View style={styles.emptyBlock}>
+          <Text style={styles.empty}>
+            Your Supabase account is ready. Connect Jupiter Wallet to view holdings and approve swaps.
+          </Text>
+          <Pressable style={styles.connectButton} onPress={() => void connectJupiter()} disabled={connecting}>
+            {connecting ? <ActivityIndicator color={colors.void} /> : <Text style={styles.connectButtonText}>Connect Jupiter Wallet</Text>}
+          </Pressable>
+        </View>
       ) : (
         <>
           <View style={styles.tabRow}>
@@ -268,6 +282,20 @@ const styles = StyleSheet.create({
     color: colors.mute,
     fontFamily: "Inter_400Regular",
     fontSize: 14,
+  },
+  emptyBlock: {
+    padding: 20,
+    gap: 14,
+  },
+  connectButton: {
+    backgroundColor: colors.signal,
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: "center",
+  },
+  connectButtonText: {
+    color: colors.void,
+    fontFamily: "Inter_600SemiBold",
   },
   empty: {
     color: colors.mute,

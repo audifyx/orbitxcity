@@ -42,7 +42,6 @@ export type SettingsViewProps = {
   onSelectPermission: (id: string) => void;
   pausing?: boolean;
   onPauseAll: () => void;
-  onExportWallet: () => void;
   onOpenProfile: () => void;
   copied?: boolean;
   onCopyAddress?: () => void;
@@ -72,7 +71,6 @@ export function SettingsView({
   onSelectPermission,
   pausing = false,
   onPauseAll,
-  onExportWallet,
   onOpenProfile,
   copied = false,
   onCopyAddress,
@@ -126,23 +124,6 @@ export function SettingsView({
             </Pressable>
           ) : null}
         </View>
-
-        <View style={styles.rowDivider} />
-
-        <Pressable
-          style={styles.linkRow}
-          onPress={onExportWallet}
-          accessibilityRole="button"
-          accessibilityLabel="Export wallet"
-        >
-          <View style={styles.accountText}>
-            <Text style={styles.accountValue}>Export wallet</Text>
-            <Text style={styles.accountHint}>
-              Reveal your private key securely on ogscan.fun
-            </Text>
-          </View>
-          <Text style={styles.linkChevron}>↗</Text>
-        </Pressable>
 
         <View style={styles.rowDivider} />
 
@@ -267,8 +248,8 @@ export function SettingsView({
         <Text style={styles.privacyText}>
           Conversations are stored in your OrbitX account with RLS. Message
           contents are sent to the selected model provider to generate replies.
-          Email and phone sign-in create an in-app wallet. Private keys never
-          leave Privy&apos;s secure environment — OrbitX cannot see them.
+          Email and phone sign-in use Supabase. Wallets remain in your connected
+          Jupiter or other external wallet; OrbitX never receives private keys.
         </Text>
       </View>
     </ScrollView>

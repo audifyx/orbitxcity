@@ -6,10 +6,9 @@
     "@expo-google-fonts/inter": "^0.4.2",
     "@expo-google-fonts/space-grotesk": "^0.4.1",
     "@expo/metro-runtime": "~6.1.2",
-    "@privy-io/expo": "^0.71.1",
-    "@privy-io/expo-native-extensions": "^0.0.12",
-    "@privy-io/react-auth": "^3.38.0",
     "@react-native-async-storage/async-storage": "2.2.0",
+    "@solana-mobile/mobile-wallet-adapter-protocol": "^2.3.0",
+    "@solana-mobile/mobile-wallet-adapter-protocol-web3js": "^2.3.0",
     "@solana-program/memo": "^0.12.0",
     "@solana-program/system": "^0.12.2",
     "@solana-program/token": "^0.12.0",
@@ -67,8 +66,7 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "build:privy-host": "node scripts/build-privy-host.mjs",
-    "build:web": "npm run build:privy-host && EXPO_NO_METRO_LAZY=1 expo export -p web",
+    "build:web": "EXPO_NO_METRO_LAZY=1 expo export -p web",
     "typecheck": "tsc --noEmit"
   },
   "private": true

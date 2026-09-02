@@ -13,8 +13,7 @@
       "env": {
         "EXPO_PUBLIC_SUPABASE_URL": "https://ffjipnkhcebjvttliptb.supabase.co",
         "EXPO_PUBLIC_SOLANA_RPC_URL": "https://api.mainnet-beta.solana.com",
-        "EXPO_PUBLIC_APP_URL": "https://orbitxcity.vercel.app",
-        "EXPO_PUBLIC_PRIVY_APP_ID": "cmtdqdoj0043z0dlabgpr7l6g"
+        "EXPO_PUBLIC_APP_URL": "https://orbitxcity.vercel.app"
       }
     },
     "preview": {
@@ -25,8 +24,7 @@
       "env": {
         "EXPO_PUBLIC_SUPABASE_URL": "https://ffjipnkhcebjvttliptb.supabase.co",
         "EXPO_PUBLIC_SOLANA_RPC_URL": "https://api.mainnet-beta.solana.com",
-        "EXPO_PUBLIC_APP_URL": "https://orbitxcity.vercel.app",
-        "EXPO_PUBLIC_PRIVY_APP_ID": "cmtdqdoj0043z0dlabgpr7l6g"
+        "EXPO_PUBLIC_APP_URL": "https://orbitxcity.vercel.app"
       }
     },
     "production": {
@@ -36,8 +34,7 @@
       "env": {
         "EXPO_PUBLIC_SUPABASE_URL": "https://ffjipnkhcebjvttliptb.supabase.co",
         "EXPO_PUBLIC_SOLANA_RPC_URL": "https://api.mainnet-beta.solana.com",
-        "EXPO_PUBLIC_APP_URL": "https://orbitxcity.vercel.app",
-        "EXPO_PUBLIC_PRIVY_APP_ID": "cmtdqdoj0043z0dlabgpr7l6g"
+        "EXPO_PUBLIC_APP_URL": "https://orbitxcity.vercel.app"
       }
     }
   }

@@ -7,7 +7,6 @@
   "framework": null,
   "rewrites": [
     {
-      "source": "/((?!_expo/|favicon.ico|privy-host).*)",
       "destination": "/"
     }
   ]

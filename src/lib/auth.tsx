@@ -12,19 +12,15 @@ import type { Session } from "@supabase/supabase-js";
 import { Platform } from "react-native";
 import * as Linking from "expo-linking";
 import * as SecureStore from "expo-secure-store";
-import { parseAuthCallback } from "./hostedAuth";
 import {
   clearPhantomSecureStore,
-  startNativeSign,
   handleNativeConnectRedirect,
   handleNativeSignRedirect,
   WALLET_PUBKEY_KEY,
 } from "./phantom";
 import { isMissingNonceError, withSiwsLock } from "./siws";
 import { supabase, walletAuth, warmWalletAuth } from "./supabase";
-import { connectWithPrivy, consumePrivyHostResult, isPrivyConfigured } from "./privyConnect";
-import { logoutPrivySession } from "./privyProvider";
-import { openHostedAuth } from "./walletOpen";
+import { connectJupiterMobileWallet } from "./jupiterMobileWallet";
 import {
   connectBrowserWallet,
   isSolanaPubkey,
@@ -61,11 +57,6 @@ interface AuthContextValue {
   ) => Promise<{ pubkey: string; signature: string }>;
   requestSignInMessage: (pubkey: string) => Promise<string>;
   signInWithSignature: (pubkey: string, signature: string) => Promise<void>;
-  signInWithEmbeddedWallet: (
-    pubkey: string,
-    signMessage: (message: string) => Promise<string>,
-  ) => Promise<void>;
-  attachEmbeddedWallet: (pubkey: string) => Promise<void>;
   completeNativeConnect: (url: string) => Promise<void>;
   completeNativeSign: (url: string) => Promise<void>;
   clearError: () => void;
@@ -288,17 +279,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
 
     void (async () => {
-      try {
-        const hosted = consumePrivyHostResult();
-        if (hosted) {
-          await finishVerification(hosted.pubkey, hosted.signature);
-        }
-      } catch (hostedError) {
-        if (mounted) {
-          setError(publicAuthError(hostedError, "Wallet sign-in failed."));
-        }
-      }
-
       if (!mounted) {
         return;
       }
@@ -386,77 +366,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [finishVerification],
   );
 
-  const attachEmbeddedWallet = useCallback(async (pubkey: string) => {
-    const trimmedPubkey = pubkey.trim();
-    if (!isSolanaPubkey(trimmedPubkey)) {
-      throw new Error("Embedded wallet address is invalid.");
-    }
-    const currentSession = (await supabase.auth.getSession()).data.session;
-    if (!currentSession?.user.id) {
-      throw new Error("Your Supabase session is not ready yet.");
-    }
-    const { error: identityError } = await supabase
-      .from("wallet_identities")
-      .upsert(
-        { user_id: currentSession.user.id, wallet: trimmedPubkey },
-        { onConflict: "user_id" },
-      );
-    if (identityError) {
-      throw new Error(identityError.message);
-    }
-    setWallet(trimmedPubkey);
-    persistWallet(trimmedPubkey);
-  }, []);
-
-  const signInWithEmbeddedWallet = useCallback(
-    async (
-      pubkey: string,
-      signMessage: (message: string) => Promise<string>,
-    ) => {
-      const trimmedPubkey = pubkey.trim();
-      if (!isSolanaPubkey(trimmedPubkey)) {
-        throw new Error("Enter a valid Solana wallet address.");
-      }
-
-      setConnecting(true);
-      setError(null);
-      try {
-        await withSiwsLock(async () => {
-          const attempt = async () => {
-            const nonceData = parseNonceResponse(
-              await walletAuth("nonce", { pubkey: trimmedPubkey }),
-            );
-            setPendingPubkey(trimmedPubkey);
-            await SecureStore.setItemAsync(WALLET_PUBKEY_KEY, trimmedPubkey).catch(
-              () => undefined,
-            );
-            const signature = (await signMessage(nonceData.message)).trim();
-            if (!isSolanaSignature(signature)) {
-              throw new Error("Wallet did not return a valid signature.");
-            }
-            await finishVerification(trimmedPubkey, signature);
-          };
-
-          try {
-            await attempt();
-          } catch (verifyError) {
-            if (!isMissingNonceError(verifyError)) {
-              throw verifyError;
-            }
-            await attempt();
-          }
-        });
-      } catch (verifyError) {
-        const message = publicAuthError(verifyError, "Wallet sign-in failed.");
-        setError(message);
-        throw new Error(message);
-      } finally {
-        setConnecting(false);
-      }
-    },
-    [finishVerification],
-  );
-
   const connect = useCallback(
     async (
       _walletId?: WalletId,
@@ -467,18 +376,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       try {
         if (Platform.OS !== "web") {
-          await connectWithPrivy();
-          return;
+          const pubkey = await connectJupiterMobileWallet();
+          setWallet(pubkey);
+          persistWallet(pubkey);
+          const currentSession = (await supabase.auth.getSession()).data.session;
+          if (currentSession?.user.id) {
+            const { error: identityError } = await supabase
+              .from("wallet_identities")
+              .upsert(
+                { user_id: currentSession.user.id, wallet: pubkey },
+                { onConflict: "user_id" },
+              );
+            if (identityError) throw new Error(identityError.message);
+          }
+          return { pubkey, signature: "" };
         }
 
-        if (isPrivyConfigured()) {
-          await connectWithPrivy();
-          return;
-        }
-
-        throw new Error(
-          "OrbitX is missing the Privy App ID on this build. Set PRIVY_APP_ID or EXPO_PUBLIC_PRIVY_APP_ID on Vercel.",
-        );
+        const connected = await connectBrowserWallet("jupiter");
+        setWallet(connected.pubkey);
+        persistWallet(connected.pubkey);
+        return { pubkey: connected.pubkey, signature: "" };
       } catch (connectError) {
         const message = publicAuthError(connectError, "Sign-in failed.");
         if (!message) {
@@ -493,50 +410,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [],
   );
 
-  const consumedAuthUrl = useRef<string | null>(null);
-
-  useEffect(() => {
-    if (Platform.OS === "web") {
-      return;
-    }
-
-    const consume = (url: string | null) => {
-      if (!url || consumedAuthUrl.current === url) {
-        return;
-      }
-      const parsed = parseAuthCallback(url);
-      if (!parsed) {
-        return;
-      }
-      consumedAuthUrl.current = url;
-      void signInWithSignature(parsed.pubkey, parsed.signature).catch(
-        () => undefined,
-      );
-    };
-
-    const subscription = Linking.addEventListener("url", ({ url }) => {
-      consume(url);
-    });
-    void Linking.getInitialURL().then(consume);
-
-    return () => {
-      subscription.remove();
-    };
-  }, [signInWithSignature]);
-
   const completeNativeConnect = useCallback(async (url: string) => {
     setConnecting(true);
     setError(null);
 
     try {
       const { pubkey } = await handleNativeConnectRedirect(url);
-      setPendingPubkey(pubkey);
       setWallet(pubkey);
-
-      const nonceData = parseNonceResponse(
-        await walletAuth("nonce", { pubkey }),
-      );
-      await startNativeSign(nonceData.message);
+      persistWallet(pubkey);
+      const currentSession = (await supabase.auth.getSession()).data.session;
+      if (currentSession?.user.id) {
+        const { error: identityError } = await supabase
+          .from("wallet_identities")
+          .upsert(
+            { user_id: currentSession.user.id, wallet: pubkey },
+            { onConflict: "user_id" },
+          );
+        if (identityError) throw new Error(identityError.message);
+      }
     } catch (nativeConnectError) {
       const message = publicAuthError(nativeConnectError, "Phantom connect failed.");
       setError(message);
@@ -582,7 +473,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     persistWallet(null);
 
     const { error: signOutError } = await supabase.auth.signOut();
-    await logoutPrivySession().catch(() => undefined);
 
     await clearPhantomSecureStore();
     setWallet(null);
@@ -606,8 +496,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       requestWalletSignature,
       requestSignInMessage,
       signInWithSignature,
-      signInWithEmbeddedWallet,
-      attachEmbeddedWallet,
       completeNativeConnect,
       completeNativeSign,
       clearError,
@@ -623,8 +511,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       requestWalletSignature,
       requestSignInMessage,
       signInWithSignature,
-      signInWithEmbeddedWallet,
-      attachEmbeddedWallet,
       completeNativeConnect,
       completeNativeSign,
       clearError,

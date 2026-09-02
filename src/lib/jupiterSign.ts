@@ -15,7 +15,7 @@ export async function signAndSendSwapTransaction(
 ): Promise<string> {
   if (!sendNative) {
     throw new Error(
-      "A connected embedded Solana wallet is required to sign this swap.",
+      "A connected Jupiter Wallet is required to sign this swap.",
     );
   }
   const result = await sendNative(decodeBase64(swapTransactionB64));
@@ -25,5 +25,5 @@ export async function signAndSendSwapTransaction(
   if (result instanceof Uint8Array && result.length > 0) {
     return bs58.encode(result);
   }
-  throw new Error("Privy did not return a transaction signature.");
+  throw new Error("Jupiter Wallet did not return a transaction signature.");
 }

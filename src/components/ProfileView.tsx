@@ -138,7 +138,7 @@ export function ProfileView({
         </View>
         <View style={[styles.metaRow, styles.metaRowLast]}>
           <Text style={styles.metaKey}>Wallet type</Text>
-          <Text style={styles.metaValue}>OrbitX embedded (Privy)</Text>
+          <Text style={styles.metaValue}>Connected Jupiter Wallet</Text>
         </View>
       </View>
 

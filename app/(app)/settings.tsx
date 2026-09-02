@@ -14,7 +14,6 @@ import {
   type SettingsPermissionOption,
 } from "../../src/components";
 import { useAuth } from "../../src/lib/auth";
-import { walletExportUrl } from "../../src/lib/hostedAuth";
 import { supabase } from "../../src/lib/supabase";
 import { openExternalUrl } from "../../src/lib/walletOpen";
 
@@ -279,7 +278,6 @@ export default function SettingsScreen() {
       onSelectPermission={(id) => void savePermission(id)}
       pausing={pausing}
       onPauseAll={pauseAllAgents}
-      onExportWallet={() => void openExternalUrl(walletExportUrl())}
       onOpenProfile={() => router.push("/profile")}
       copied={copied}
       onCopyAddress={() => void copyAddress()}
