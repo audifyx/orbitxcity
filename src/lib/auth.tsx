@@ -65,6 +65,7 @@ interface AuthContextValue {
     pubkey: string,
     signMessage: (message: string) => Promise<string>,
   ) => Promise<void>;
+  attachEmbeddedWallet: (pubkey: string) => Promise<void>;
   completeNativeConnect: (url: string) => Promise<void>;
   completeNativeSign: (url: string) => Promise<void>;
   clearError: () => void;
@@ -385,6 +386,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [finishVerification],
   );
 
+  const attachEmbeddedWallet = useCallback(async (pubkey: string) => {
+    const trimmedPubkey = pubkey.trim();
+    if (!isSolanaPubkey(trimmedPubkey)) {
+      throw new Error("Embedded wallet address is invalid.");
+    }
+    const currentSession = (await supabase.auth.getSession()).data.session;
+    if (!currentSession?.user.id) {
+      throw new Error("Your Supabase session is not ready yet.");
+    }
+    const { error: identityError } = await supabase
+      .from("wallet_identities")
+      .upsert(
+        { user_id: currentSession.user.id, wallet: trimmedPubkey },
+        { onConflict: "user_id" },
+      );
+    if (identityError) {
+      throw new Error(identityError.message);
+    }
+    setWallet(trimmedPubkey);
+    persistWallet(trimmedPubkey);
+  }, []);
+
   const signInWithEmbeddedWallet = useCallback(
     async (
       pubkey: string,
@@ -584,6 +607,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       requestSignInMessage,
       signInWithSignature,
       signInWithEmbeddedWallet,
+      attachEmbeddedWallet,
       completeNativeConnect,
       completeNativeSign,
       clearError,
@@ -600,6 +624,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       requestSignInMessage,
       signInWithSignature,
       signInWithEmbeddedWallet,
+      attachEmbeddedWallet,
       completeNativeConnect,
       completeNativeSign,
       clearError,

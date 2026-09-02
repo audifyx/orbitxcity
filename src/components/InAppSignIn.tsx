@@ -11,10 +11,6 @@ import {
 } from "react-native";
 import {
   useEmbeddedSolanaWallet,
-  useLinkEmail,
-  useLinkSMS,
-  useLoginWithEmail,
-  useLoginWithSMS,
   usePrivy,
 } from "@privy-io/expo";
 import bs58 from "bs58";
@@ -27,6 +23,7 @@ import {
   utf8ToBase64,
 } from "../lib/wallets";
 import { colors } from "../theme";
+import { supabase } from "../lib/supabase";
 
 type Mode = "email" | "phone";
 
@@ -44,35 +41,6 @@ function normalizePhone(value: string): string {
 
 function isE164Phone(value: string): boolean {
   return /^\+[1-9]\d{7,14}$/.test(value);
-}
-
-function hasLinkedIdentifier(
-  user: unknown,
-  mode: Mode,
-  identifier: string,
-): boolean {
-  const accounts = (user as { linkedAccounts?: unknown[] } | null)?.linkedAccounts;
-  if (!Array.isArray(accounts)) {
-    return false;
-  }
-  const normalized = mode === "email" ? identifier.trim().toLowerCase() : normalizePhone(identifier);
-  return accounts.some((account) => {
-    if (!account || typeof account !== "object") {
-      return false;
-    }
-    const record = account as Record<string, unknown>;
-    if (mode === "email" && record.type === "email") {
-      return [record.address, record.email].some(
-        (value) => typeof value === "string" && value.trim().toLowerCase() === normalized,
-      );
-    }
-    if (mode === "phone" && record.type === "phone") {
-      return [record.number, record.phoneNumber].some(
-        (value) => typeof value === "string" && normalizePhone(value) === normalized,
-      );
-    }
-    return false;
-  });
 }
 
 function encodeSignatureBytes(bytes: Uint8Array): string | null {
@@ -162,16 +130,15 @@ function friendlyPrivyError(error: unknown): string {
 
 export function InAppSignIn() {
   const { isReady, user, error: privyError } = usePrivy();
-  const emailLogin = useLoginWithEmail();
-  const smsLogin = useLoginWithSMS();
-  const emailLink = useLinkEmail();
-  const smsLink = useLinkSMS();
+  const authenticated = isReady && Boolean(user);
   const solana = useEmbeddedSolanaWallet();
   const solanaRef = useRef(solana);
   solanaRef.current = solana;
+  const privyRef = useRef({ isReady, authenticated, user });
+  privyRef.current = { isReady, authenticated, user };
   const resumed = useRef(false);
   const {
-    signInWithEmbeddedWallet,
+    attachEmbeddedWallet,
     connecting,
     session,
     disconnect,
@@ -186,8 +153,18 @@ export function InAppSignIn() {
   const [busy, setBusy] = useState(false);
 
   const finishWalletSession = useCallback(async () => {
-    setStatus("Creating your OrbitX wallet…");
+    setStatus("Connecting your OrbitX wallet…");
     const deadline = Date.now() + 45_000;
+    while (
+      (!privyRef.current.isReady || !privyRef.current.authenticated || !privyRef.current.user) &&
+      Date.now() < deadline
+    ) {
+      await sleep(200);
+    }
+    if (!privyRef.current.isReady || !privyRef.current.authenticated || !privyRef.current.user) {
+      throw new Error("Your account session did not finish initializing. Please try again.");
+    }
+    setStatus("Creating your OrbitX wallet…");
     let current = solanaRef.current;
     let wallets = current.wallets ?? [];
     if (wallets.length === 0 && typeof current.create === "function") {
@@ -213,16 +190,9 @@ export function InAppSignIn() {
       );
     }
     setStatus("Requesting sign-in…");
-    await signInWithEmbeddedWallet(wallet.address, async (message) => {
-      setStatus("Approve the sign-in. This is not a transaction.");
-      const provider = await wallet.getProvider();
-      const signed = await provider.request({
-        method: "signMessage",
-        params: { message: utf8ToBase64(message) },
-      });
-      return toBase58Signature(signed);
-    });
-  }, [signInWithEmbeddedWallet]);
+    await attachEmbeddedWallet(wallet.address);
+    setStatus("OrbitX wallet ready.");
+  }, [attachEmbeddedWallet]);
 
   const sendCode = useCallback(async () => {
     setLocalError(null);
@@ -233,23 +203,15 @@ export function InAppSignIn() {
         if (!looksLikeEmail(email)) {
           throw new Error("Enter a valid email address.");
         }
-        if (user && hasLinkedIdentifier(user, mode, email)) {
-          setStatus("This email is already linked. Resuming OrbitX…");
-          await finishWalletSession();
-          return;
-        }
-        await (user ? emailLink.sendCode({ email }) : emailLogin.sendCode({ email }));
+        const { error } = await supabase.auth.signInWithOtp({ email });
+        if (error) throw new Error(error.message);
       } else {
         const phone = normalizePhone(identifier);
         if (!isE164Phone(phone)) {
           throw new Error("Enter a phone number with country code, like +15551234567.");
         }
-        if (user && hasLinkedIdentifier(user, mode, phone)) {
-          setStatus("This phone is already linked. Resuming OrbitX…");
-          await finishWalletSession();
-          return;
-        }
-        await (user ? smsLink.sendCode({ phone }) : smsLogin.sendCode({ phone }));
+        const { error } = await supabase.auth.signInWithOtp({ phone });
+        if (error) throw new Error(error.message);
       }
       setCodeSent(true);
       setStatus("Enter the code we sent you.");
@@ -259,7 +221,7 @@ export function InAppSignIn() {
     } finally {
       setBusy(false);
     }
-  }, [emailLink, emailLogin, finishWalletSession, identifier, mode, smsLink, smsLogin, user]);
+  }, [finishWalletSession, identifier, mode]);
 
   const verifyCode = useCallback(async () => {
     setLocalError(null);
@@ -272,18 +234,20 @@ export function InAppSignIn() {
       setStatus("Checking your code…");
       if (mode === "email") {
         const email = identifier.trim().toLowerCase();
-        if (user) {
-          await emailLink.linkWithCode({ code: otp, email });
-        } else {
-          await emailLogin.loginWithCode({ code: otp });
-        }
+        const { error } = await supabase.auth.verifyOtp({
+          email,
+          token: otp,
+          type: "email",
+        });
+        if (error) throw new Error(error.message);
       } else {
         const phone = normalizePhone(identifier);
-        if (user) {
-          await smsLink.linkWithCode({ code: otp, phone });
-        } else {
-          await smsLogin.loginWithCode({ code: otp });
-        }
+        const { error } = await supabase.auth.verifyOtp({
+          phone,
+          token: otp,
+          type: "sms",
+        });
+        if (error) throw new Error(error.message);
       }
       await finishWalletSession();
     } catch (error) {
@@ -292,7 +256,7 @@ export function InAppSignIn() {
     } finally {
       setBusy(false);
     }
-  }, [code, emailLink, emailLogin, finishWalletSession, identifier, mode, smsLink, smsLogin, user]);
+  }, [code, finishWalletSession, identifier, mode]);
 
   useEffect(() => {
     if (!user) {
@@ -318,8 +282,7 @@ export function InAppSignIn() {
       });
   }, [disconnect, finishWalletSession, isReady, session, user]);
 
-  const displayError =
-    localError ?? (!user && privyError ? friendlyPrivyError(privyError) : null);
+  const displayError = localError ?? (privyError ? friendlyPrivyError(privyError) : null);
   const resetLocalSession = useCallback(async () => {
     setLocalError(null);
     setStatus("Resetting the local Privy session…");
@@ -416,11 +379,7 @@ export function InAppSignIn() {
           <ActivityIndicator color={colors.frost} />
         ) : (
           <Text style={styles.primaryButtonText}>
-            {codeSent
-              ? "Verify and enter OrbitX"
-              : user
-                ? "Continue to OrbitX"
-                : "Send code"}
+            {codeSent ? "Verify and enter OrbitX" : "Send code"}
           </Text>
         )}
       </Pressable>
