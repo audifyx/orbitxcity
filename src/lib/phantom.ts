@@ -332,3 +332,96 @@ export async function clearPhantomSecureStore(): Promise<void> {
     }),
   );
 }
+
+const PHANTOM_UL_SIGN_TRANSACTION = "https://phantom.app/ul/v1/signTransaction";
+
+interface SignTransactionPayload {
+  transaction: string;
+}
+
+let pendingTransactionResolve: ((transaction: Uint8Array) => void) | null = null;
+let pendingTransactionReject: ((error: Error) => void) | null = null;
+
+export async function startNativeTransaction(
+  transaction: Uint8Array,
+): Promise<Uint8Array> {
+  const session = await SecureStore.getItemAsync(PHANTOM_SESSION_KEY);
+  const phantomRemotePk = await SecureStore.getItemAsync(PHANTOM_REMOTE_PK_KEY);
+  if (!session || !phantomRemotePk) {
+    throw new Error("Phantom session is missing. Connect your wallet first.");
+  }
+
+  const dappKeyPair = await getDappKeyPair();
+  const nonce = nacl.randomBytes(24);
+  const payload = {
+    transaction: bs58.encode(transaction),
+    session,
+  };
+  const encryptedPayload = nacl.box(
+    Buffer.from(JSON.stringify(payload)),
+    nonce,
+    bs58.decode(phantomRemotePk),
+    dappKeyPair.secretKey,
+  );
+  const params = new URLSearchParams({
+    dapp_encryption_public_key: bs58.encode(dappKeyPair.publicKey),
+    nonce: bs58.encode(nonce),
+    redirect_link: redirectLink("/ontransaction"),
+    payload: bs58.encode(encryptedPayload),
+  });
+
+  const signedTransaction = new Promise<Uint8Array>((resolve, reject) => {
+    pendingTransactionResolve = resolve;
+    pendingTransactionReject = reject;
+  });
+
+  try {
+    await Linking.openURL(`${PHANTOM_UL_SIGN_TRANSACTION}?${params.toString()}`);
+  } catch (error) {
+    pendingTransactionResolve = null;
+    pendingTransactionReject = null;
+    throw error instanceof Error
+      ? error
+      : new Error("Could not open Phantom to sign the transaction.");
+  }
+
+  return signedTransaction;
+}
+
+export async function handleNativeTransactionRedirect(
+  url: string,
+): Promise<{ transaction: Uint8Array }> {
+  const params = parseRedirectParams(url);
+  assertNoPhantomError(params);
+  const data = params.get("data");
+  const nonce = params.get("nonce");
+  const phantomRemotePk = await SecureStore.getItemAsync(PHANTOM_REMOTE_PK_KEY);
+  if (!data || !nonce || !phantomRemotePk) {
+    throw new Error("Invalid Phantom transaction redirect.");
+  }
+
+  const dappKeyPair = await getDappKeyPair();
+  const decrypted = decryptPhantomPayload(
+    data,
+    nonce,
+    bs58.decode(phantomRemotePk),
+    dappKeyPair.secretKey,
+  );
+  const response = JSON.parse(
+    Buffer.from(decrypted).toString("utf8"),
+  ) as SignTransactionPayload;
+  if (!response.transaction) {
+    throw new Error("Phantom did not return a signed transaction.");
+  }
+  const signed = bs58.decode(response.transaction);
+  pendingTransactionResolve?.(signed);
+  pendingTransactionResolve = null;
+  pendingTransactionReject = null;
+  return { transaction: signed };
+}
+
+export function rejectPendingNativeTransaction(error: Error): void {
+  pendingTransactionReject?.(error);
+  pendingTransactionResolve = null;
+  pendingTransactionReject = null;
+}

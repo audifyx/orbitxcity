@@ -52,7 +52,7 @@ import {
   supabase,
 } from "../lib/supabase";
 import { solanaRpcUrl } from "../lib/env";
-import { signAndSendJupiterMobileTransaction } from "../lib/jupiterMobileWallet";
+import { startNativeTransaction } from "../lib/phantom";
 import { colors } from "../theme";
 
 const CATEGORY_MAP: Record<BrainToolCategory, ToolCategory> = {
@@ -144,9 +144,15 @@ export function ChatThread({
   const sendNativeTransaction = useCallback(
     async (transaction: Uint8Array): Promise<Uint8Array | string> => {
       if (Platform.OS === "web") {
-        throw new Error("A Jupiter Wallet connection is required to sign this swap.");
+        throw new Error("A connected wallet is required to sign this swap.");
       }
-      return signAndSendJupiterMobileTransaction(transaction);
+      const signed = await startNativeTransaction(transaction);
+      const connection = new Connection(solanaRpcUrl, "confirmed");
+      const signature = await connection.sendRawTransaction(signed, {
+        skipPreflight: false,
+        maxRetries: 3,
+      });
+      return signature;
     },
     [],
   );

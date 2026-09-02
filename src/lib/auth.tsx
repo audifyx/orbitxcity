@@ -16,11 +16,12 @@ import {
   clearPhantomSecureStore,
   handleNativeConnectRedirect,
   handleNativeSignRedirect,
+  handleNativeTransactionRedirect,
   WALLET_PUBKEY_KEY,
+  startNativeConnect,
 } from "./phantom";
 import { isMissingNonceError, withSiwsLock } from "./siws";
 import { supabase, walletAuth, warmWalletAuth } from "./supabase";
-import { connectJupiterMobileWallet } from "./jupiterMobileWallet";
 import {
   connectBrowserWallet,
   isSolanaPubkey,
@@ -59,6 +60,7 @@ interface AuthContextValue {
   signInWithSignature: (pubkey: string, signature: string) => Promise<void>;
   completeNativeConnect: (url: string) => Promise<void>;
   completeNativeSign: (url: string) => Promise<void>;
+  completeNativeTransaction: (url: string) => Promise<void>;
   clearError: () => void;
   disconnect: () => Promise<void>;
 }
@@ -376,20 +378,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       try {
         if (Platform.OS !== "web") {
-          const pubkey = await connectJupiterMobileWallet();
-          setWallet(pubkey);
-          persistWallet(pubkey);
-          const currentSession = (await supabase.auth.getSession()).data.session;
-          if (currentSession?.user.id) {
-            const { error: identityError } = await supabase
-              .from("wallet_identities")
-              .upsert(
-                { user_id: currentSession.user.id, wallet: pubkey },
-                { onConflict: "user_id" },
-              );
-            if (identityError) throw new Error(identityError.message);
-          }
-          return { pubkey, signature: "" };
+          await startNativeConnect();
+          return { pubkey: "", signature: "" };
         }
 
         const connected = await connectBrowserWallet("jupiter");
@@ -463,6 +453,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [finishVerification, pendingPubkey],
   );
 
+  const completeNativeTransaction = useCallback(async (url: string) => {
+    try {
+      await handleNativeTransactionRedirect(url);
+    } catch (transactionError) {
+      const message = publicAuthError(transactionError, "Phantom transaction failed.");
+      setError(message);
+      throw new Error(message);
+    }
+  }, []);
+
   const clearError = useCallback(() => {
     setError(null);
   }, []);
@@ -498,6 +498,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       signInWithSignature,
       completeNativeConnect,
       completeNativeSign,
+      completeNativeTransaction,
       clearError,
       disconnect,
     }),
@@ -513,6 +514,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       signInWithSignature,
       completeNativeConnect,
       completeNativeSign,
+      completeNativeTransaction,
       clearError,
       disconnect,
     ],

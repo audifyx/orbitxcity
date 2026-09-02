@@ -75,7 +75,7 @@ export default function WalletScreen() {
   }, [wallet]);
 
   const exportWallet = useCallback(() => {
-    setError("Connect Jupiter Wallet before trading.");
+    setError("Connect Phantom Wallet before trading.");
   }, []);
 
   const connectJupiter = useCallback(async () => {
@@ -84,7 +84,7 @@ export default function WalletScreen() {
       await connect("jupiter");
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not connect Jupiter Wallet.");
+      setError(err instanceof Error ? err.message : "Could not connect Phantom Wallet.");
     }
   }, [connect, load]);
 
@@ -142,16 +142,16 @@ export default function WalletScreen() {
     <View style={[styles.root, { paddingBottom: insets.bottom }]}>
       <View style={styles.header}>
         <Text style={styles.title}>Wallet</Text>
-        <Text style={styles.subtitle}>Connect Jupiter Wallet to trade</Text>
+        <Text style={styles.subtitle}>Connect Phantom Wallet to trade</Text>
       </View>
 
       {!wallet ? (
         <View style={styles.emptyBlock}>
           <Text style={styles.empty}>
-            Your Supabase account is ready. Connect Jupiter Wallet to view holdings and approve swaps.
+            Your Supabase account is ready. Connect Phantom Wallet to view holdings and approve swaps.
           </Text>
           <Pressable style={styles.connectButton} onPress={() => void connectJupiter()} disabled={connecting}>
-            {connecting ? <ActivityIndicator color={colors.void} /> : <Text style={styles.connectButtonText}>Connect Jupiter Wallet</Text>}
+            {connecting ? <ActivityIndicator color={colors.void} /> : <Text style={styles.connectButtonText}>Connect Phantom Wallet</Text>}
           </Pressable>
         </View>
       ) : (
