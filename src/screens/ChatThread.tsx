@@ -18,8 +18,6 @@ import {
   MODELS,
   SKILLS,
   TOOLS,
-  asStreamEvent,
-  orchestrateLive,
   planFromUtterance,
   rewriteLegacyToolPrompt,
   searchSkills,
@@ -46,11 +44,8 @@ import {
   parseQuoteJson,
   signAndSendSwapTransaction,
 } from "../lib/jupiter";
-import {
-  invokeFunction,
-  invokeFunctionStream,
-  supabase,
-} from "../lib/supabase";
+import { supabase } from "../lib/supabase";
+import { sendAiMessage, type AiToolEvent } from "../lib/orbitxAi";
 import { solanaRpcUrl } from "../lib/env";
 import { startNativeTransaction } from "../lib/phantom";
 import { colors } from "../theme";
@@ -359,76 +354,35 @@ export function ChatThread({
       patchAssistant({ content: full, streaming: false });
     };
 
-    const result = await orchestrateLive(
-      invokeFunction,
-      Platform.OS === "web"
-        ? async (name, body, onEvent) => {
-            return invokeFunctionStream(name, body, (raw) => {
-              const event = asStreamEvent(raw);
-              if (!event) {
-                return;
-              }
-              if (event.type === "token") {
-                streamed += event.text;
-                patchAssistant({ content: streamed, streaming: true });
-              }
-              if (event.type === "tools") {
-                patchAssistant({
-                  toolEvents: event.toolEvents.map((item) => ({
-                    id: item.id,
-                    label: item.label,
-                    status: item.status,
-                  })),
-                });
-              }
-              onEvent(event);
-            });
-          }
-        : undefined,
-      {
-        message: text,
-        modelId,
-        page,
-        conversationId: convId,
-        walletAddress: wallet ?? undefined,
-      },
-    );
-
-    await reveal(result.text);
+    const response = await sendAiMessage({
+      message: text,
+      model: modelId,
+      conversationId: convId,
+    });
+    const assistant = response.assistantMessage;
+    const mapToolEvent = (event: AiToolEvent) => ({
+      id: event.id,
+      label: event.tool.replace(/^orbitx_/, "").replace(/_/g, " "),
+      status: event.status === "completed" ? "ok" as const
+        : event.status === "failed" || event.status === "cancelled" ? "error" as const
+        : "running" as const,
+    });
+    const remoteEvents = assistant.toolEvents.map(mapToolEvent);
+    await reveal(assistant.content);
 
     patchAssistant({
-      content: result.text,
+      content: assistant.content,
       streaming: false,
-      toolEvents: result.toolEvents.map((event) => ({
-        id: event.id,
-        label: event.label,
-        status: event.status,
-      })),
-      cards: result.cards.map((card) => ({
-        kind: card.kind,
-        title: card.title,
-        data: flattenCardData(card.data),
-      })),
+      toolEvents: remoteEvents,
     });
 
-    if (result.conversationId && isUuid(result.conversationId)) {
-      setConversationId(result.conversationId);
-      onConversationCreated?.(result.conversationId);
+    if (response.conversation?.id && isUuid(response.conversation.id)) {
+      setConversationId(response.conversation.id);
+      onConversationCreated?.(response.conversation.id);
     }
 
     setSending(false);
 
-    const directTrade = /\b(buy|sell|swap|trade|purchase|exchange)\b/i.test(text);
-    const previewCard = result.cards.find(
-      (card) => card.kind === "tx" && card.data.status === "preview" && card.data.quoteJson,
-    );
-    if (directTrade && previewCard && confirmTxRef.current) {
-      await confirmTxRef.current({
-        kind: previewCard.kind,
-        title: previewCard.title,
-        data: flattenCardData(previewCard.data),
-      });
-    }
   }, [
     draft,
     sending,
