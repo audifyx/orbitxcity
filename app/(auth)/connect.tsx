@@ -66,8 +66,8 @@ export default function ConnectScreen() {
         <OrbitMark />
         <Text style={styles.title}>Sign in to OrbitX</Text>
         <Text style={styles.subtitle}>
-          Use your email or phone in this app. OrbitX creates your wallet here.
-          You stay signed in until you log out. Nothing opens a browser.
+          Use your email or phone in this app. After login, connect Jupiter Wallet
+          from the Wallet screen to view holdings and approve swaps.
         </Text>
         <InAppSignIn />
       </View>
