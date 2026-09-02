@@ -202,6 +202,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const [connecting, setConnecting] = useState(false);
   const [pendingPubkey, setPendingPubkey] = useState<string | null>(null);
+  const authHydrated = useRef(false);
+  const latestAuthSession = useRef<Session | null>(null);
 
   const applySession = useCallback(async (nextSession: Session | null) => {
     setSession(nextSession);
@@ -278,7 +280,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!mounted) {
         return;
       }
-      void applySession(nextSession);
+      latestAuthSession.current = nextSession;
+      if (authHydrated.current) {
+        void applySession(nextSession);
+      }
     });
 
     void (async () => {
@@ -308,8 +313,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      await applySession(data.session);
-      if (data.session) {
+      const restoredSession = latestAuthSession.current ?? data.session;
+      await applySession(restoredSession);
+      authHydrated.current = true;
+      if (restoredSession) {
         const stored = readPersistedWallet();
         if (stored) {
           setWallet(stored);

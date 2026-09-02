@@ -247,7 +247,11 @@ export function InAppSignIn() {
   }, [code, emailLogin, finishWalletSession, identifier, mode, smsLogin]);
 
   useEffect(() => {
-    if (!isReady || !user || resumed.current) {
+    if (!user) {
+      resumed.current = false;
+      return;
+    }
+    if (!isReady || session || resumed.current) {
       return;
     }
     resumed.current = true;
