@@ -46,6 +46,35 @@ function isE164Phone(value: string): boolean {
   return /^\+[1-9]\d{7,14}$/.test(value);
 }
 
+function hasLinkedIdentifier(
+  user: unknown,
+  mode: Mode,
+  identifier: string,
+): boolean {
+  const accounts = (user as { linkedAccounts?: unknown[] } | null)?.linkedAccounts;
+  if (!Array.isArray(accounts)) {
+    return false;
+  }
+  const normalized = mode === "email" ? identifier.trim().toLowerCase() : normalizePhone(identifier);
+  return accounts.some((account) => {
+    if (!account || typeof account !== "object") {
+      return false;
+    }
+    const record = account as Record<string, unknown>;
+    if (mode === "email" && record.type === "email") {
+      return [record.address, record.email].some(
+        (value) => typeof value === "string" && value.trim().toLowerCase() === normalized,
+      );
+    }
+    if (mode === "phone" && record.type === "phone") {
+      return [record.number, record.phoneNumber].some(
+        (value) => typeof value === "string" && normalizePhone(value) === normalized,
+      );
+    }
+    return false;
+  });
+}
+
 function encodeSignatureBytes(bytes: Uint8Array): string | null {
   if (bytes.length !== 64) {
     return null;
@@ -204,11 +233,21 @@ export function InAppSignIn() {
         if (!looksLikeEmail(email)) {
           throw new Error("Enter a valid email address.");
         }
+        if (user && hasLinkedIdentifier(user, mode, email)) {
+          setStatus("This email is already linked. Resuming OrbitX…");
+          await finishWalletSession();
+          return;
+        }
         await (user ? emailLink.sendCode({ email }) : emailLogin.sendCode({ email }));
       } else {
         const phone = normalizePhone(identifier);
         if (!isE164Phone(phone)) {
           throw new Error("Enter a phone number with country code, like +15551234567.");
+        }
+        if (user && hasLinkedIdentifier(user, mode, phone)) {
+          setStatus("This phone is already linked. Resuming OrbitX…");
+          await finishWalletSession();
+          return;
         }
         await (user ? smsLink.sendCode({ phone }) : smsLogin.sendCode({ phone }));
       }
@@ -281,6 +320,16 @@ export function InAppSignIn() {
 
   const displayError =
     localError ?? (!user && privyError ? friendlyPrivyError(privyError) : null);
+  const resetLocalSession = useCallback(async () => {
+    setLocalError(null);
+    setStatus("Resetting the local Privy session…");
+    setCodeSent(false);
+    setCode("");
+    resumed.current = false;
+    await disconnect();
+    setStatus(null);
+  }, [disconnect]);
+
   const working = busy || connecting;
 
   if (!isReady) {
@@ -386,6 +435,17 @@ export function InAppSignIn() {
           <Text style={styles.resend}>Resend code</Text>
         </Pressable>
       ) : null}
+
+      {user ? (
+        <Pressable
+          onPress={() => void resetLocalSession()}
+          disabled={working}
+          accessibilityRole="button"
+          accessibilityLabel="Reset local session"
+        >
+          <Text style={styles.reset}>Reset local session</Text>
+        </Pressable>
+      ) : null}
     </KeyboardAvoidingView>
   );
 }
@@ -483,6 +543,12 @@ const styles = StyleSheet.create({
   },
   resend: {
     color: colors.mute,
+    fontFamily: "Inter_400Regular",
+    fontSize: 13,
+    paddingVertical: 6,
+  },
+  reset: {
+    color: "#FF9A9A",
     fontFamily: "Inter_400Regular",
     fontSize: 13,
     paddingVertical: 6,
