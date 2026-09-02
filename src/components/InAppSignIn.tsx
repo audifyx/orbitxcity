@@ -11,6 +11,8 @@ import {
 } from "react-native";
 import {
   useEmbeddedSolanaWallet,
+  useLinkEmail,
+  useLinkSMS,
   useLoginWithEmail,
   useLoginWithSMS,
   usePrivy,
@@ -133,6 +135,8 @@ export function InAppSignIn() {
   const { isReady, user, error: privyError } = usePrivy();
   const emailLogin = useLoginWithEmail();
   const smsLogin = useLoginWithSMS();
+  const emailLink = useLinkEmail();
+  const smsLink = useLinkSMS();
   const solana = useEmbeddedSolanaWallet();
   const solanaRef = useRef(solana);
   solanaRef.current = solana;
@@ -195,23 +199,18 @@ export function InAppSignIn() {
     setLocalError(null);
     setBusy(true);
     try {
-      if (user) {
-        setStatus("You are already signed in. Finishing your OrbitX session…");
-        await finishWalletSession();
-        return;
-      }
       if (mode === "email") {
         const email = identifier.trim().toLowerCase();
         if (!looksLikeEmail(email)) {
           throw new Error("Enter a valid email address.");
         }
-        await emailLogin.sendCode({ email });
+        await (user ? emailLink.sendCode({ email }) : emailLogin.sendCode({ email }));
       } else {
         const phone = normalizePhone(identifier);
         if (!isE164Phone(phone)) {
           throw new Error("Enter a phone number with country code, like +15551234567.");
         }
-        await smsLogin.sendCode({ phone });
+        await (user ? smsLink.sendCode({ phone }) : smsLogin.sendCode({ phone }));
       }
       setCodeSent(true);
       setStatus("Enter the code we sent you.");
@@ -221,7 +220,7 @@ export function InAppSignIn() {
     } finally {
       setBusy(false);
     }
-  }, [emailLogin, finishWalletSession, identifier, mode, smsLogin, user]);
+  }, [emailLink, emailLogin, finishWalletSession, identifier, mode, smsLink, smsLogin, user]);
 
   const verifyCode = useCallback(async () => {
     setLocalError(null);
@@ -233,9 +232,19 @@ export function InAppSignIn() {
       }
       setStatus("Checking your code…");
       if (mode === "email") {
-        await emailLogin.loginWithCode({ code: otp });
+        const email = identifier.trim().toLowerCase();
+        if (user) {
+          await emailLink.linkWithCode({ code: otp, email });
+        } else {
+          await emailLogin.loginWithCode({ code: otp });
+        }
       } else {
-        await smsLogin.loginWithCode({ code: otp });
+        const phone = normalizePhone(identifier);
+        if (user) {
+          await smsLink.linkWithCode({ code: otp, phone });
+        } else {
+          await smsLogin.loginWithCode({ code: otp });
+        }
       }
       await finishWalletSession();
     } catch (error) {
@@ -244,7 +253,7 @@ export function InAppSignIn() {
     } finally {
       setBusy(false);
     }
-  }, [code, emailLogin, finishWalletSession, identifier, mode, smsLogin]);
+  }, [code, emailLink, emailLogin, finishWalletSession, identifier, mode, smsLink, smsLogin, user]);
 
   useEffect(() => {
     if (!user) {
